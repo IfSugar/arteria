@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "📖 Read me: install, AiMesh nodes, commands and how the numbers are made"
+    url: https://github.com/IfSugar/arteria#readme
+    about: "Requirements, installing and updating, setting up node access, and where each number comes from"
+  - name: "🔒 Report a security problem privately"
+    url: https://github.com/IfSugar/arteria/security/policy
+    about: "Please don't open a public issue for security problems"
+  - name: "🧰 Asuswrt-Merlin, AiMesh, amtm or another addon"
+    url: https://www.snbforums.com/forums/asuswrt-merlin-addons.60/
+    about: "Questions about the firmware, AiMesh, amtm or other addons belong on the SNBForums Asuswrt-Merlin AddOns forum"
