@@ -10,7 +10,8 @@
 #  2. The page's request (service-event "start arteria") starts the sampler; it reads the node's
 #     clients over the session, writes live.htm and names.htm, and stops when the page says so.
 #  3. Without the node key, the node is reported as "nokey" and never retried in a loop.
-#  4. install hooks itself in and adds exactly one menu line before Traffic Monitor; uninstall
+#  4. A stale pid file never makes Arteria signal another process, or keeps the sampler from starting.
+#  5. install hooks itself in and adds exactly one menu line before Traffic Monitor; uninstall
 #     removes everything it added and nothing else.
 #
 # Usage: .github/tests/router.sh [path/to/arteria.sh]   (needs busybox, python3)
@@ -224,6 +225,23 @@ runi service_event start arteriastop
 sleep 3
 pgrep -f "$N" > /dev/null 2>&1 && bad "the node session outlived the page" || ok "node session ends with the sampler"
 rm -rf "$R/tmp/arteria" "$W"
+
+# ---- 3: stale pid files never touch someone else's process ----------------------------------------
+# The router reuses pids within minutes. A pid file left behind (a sampler or node session that was
+# killed) may by then name an unrelated process: it must neither be signalled nor block the sampler.
+sleep 300 & other=$!
+mkdir -p "$R/tmp/arteria"; echo "$other" > "$R/tmp/arteria/sampler.pid"
+runi service_event start arteria
+sleep 4
+[ "$(cat "$R/tmp/arteria/sampler.pid" 2>/dev/null)" != "$other" ] && [ -f "$R/tmp/arteria/sampler.pid" ] \
+	&& ok "a stale sampler pid file doesn't keep the sampler from starting" || bad "the sampler didn't start over a stale pid file"
+runi service_event start arteriastop
+sleep 3
+echo "$other" > "$R/tmp/arteria/sampler.pid"; echo "$other" > "$R/tmp/arteria/node.021000000080.pid"
+runi startup > /dev/null 2>&1   # stops the sampler and node sessions, as an update or uninstall does
+kill -0 "$other" 2>/dev/null && ok "stale pid files never signal another process" || bad "Arteria killed a process that wasn't its own"
+kill "$other" 2>/dev/null; wait "$other" 2>/dev/null || true
+rm -rf "$R/tmp/arteria" "$W" "$R/tmp/menuTree.js" "$R/jffs/addons/arteria/webui_page" "$R"/www/user/user*
 
 # ---- 4: install and uninstall ----------------------------------------------------------------
 printf '#!/bin/sh\n/some/other/script startup &\n' > "$R/jffs/scripts/services-start"

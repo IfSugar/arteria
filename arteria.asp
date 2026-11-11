@@ -265,9 +265,13 @@ function iconSvg(name, size, color) {
    (Merlin passes it to the addon's service-event hook). The router stops sampling about 20 s
    after the last request, so a closed or hidden page costs the router nothing. */
 function page() { return window.location.pathname.substring(1) || 'index.asp'; }
+/* The same fields, with the same values, as the standard addon form below (formScriptActions):
+   start_apply.htm is the router's settings handler, so it gets nothing else, and never an empty
+   productid (the form's value is the router's own, filled in by the router). */
 function pokeBody(action) {
-	return 'productid=&current_page=' + encodeURIComponent(page()) + '&next_page=' + encodeURIComponent(page()) +
-		'&action_mode=apply&action_script=' + action + '&action_wait=';
+	var f = document.formScriptActions, pid = f && f.productid ? f.productid.value : '';
+	return (pid ? 'productid=' + encodeURIComponent(pid) + '&' : '') + 'current_page=' + encodeURIComponent(page()) +
+		'&next_page=' + encodeURIComponent(page()) + '&action_mode=apply&action_script=' + action + '&action_wait=';
 }
 function poke(action) {
 	if (A.useForm && action === 'start_arteria') {   // fallback: the same form other addon pages submit
