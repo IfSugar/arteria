@@ -11,10 +11,10 @@ It adds a **Traffic Analyzer → Arteria** tab with two views:
 
 | View | What it shows |
 |---|---|
-| **Map** | An isometric drawing of your network. Cables are pipes, Wi-Fi links are arcs, and each moving packet is traffic: they bunch up as throughput rises. Blue flows toward the device (download), orange toward the internet (upload), violet is the AiMesh backhaul. Devices connected through a node stand in its zone. On a busy network the smallest devices are grouped into a *+N more* tray. |
+| **Map** | An isometric drawing of your network. Cables are pipes, Wi-Fi links are arcs, and each moving packet is traffic: packets grow and bunch up as throughput rises, at the same calm speed. Blue flows toward the device (download), orange toward the internet (upload), violet is the AiMesh backhaul. Devices connected through a node stand in its zone. On a busy network the smallest devices are grouped into a *+N more* tray. |
 | **Flow** | A Sankey "river" from the internet (and traffic between your own devices) through the router, each band, port and node, to every device. Ribbon width follows throughput; switch between Download and Upload. Rows keep a fixed order, so nothing jumps around while you watch. |
 
-Tap any device to trace its path: everything else dims, and the readout shows its download and upload, its share of the total, its signal, link rate and the path its traffic takes (for example *RT-AX86U → Hall → LG TV*). Below the views: the busiest devices right now (Map) and the internet throughput of the last two minutes (Flow). Notices flag a weak or offline backhaul and nodes that can't be read.
+Tap any device to trace its path: everything else dims, and the readout shows its download and upload, its share of the total, its signal, link rate and the path its traffic takes (for example *RT-AX86U → Hall → LG TV*). Below the views: the busiest devices right now (Map) and the internet throughput of the last two minutes (Flow). The **Mb/s | MB/s** switch at the top shows every rate in megabits (as internet plans and speed tests do) or megabytes per second (as file downloads do); link rates stay in Mb/s, as the hardware states them. Notices flag a weak or offline backhaul and nodes that can't be read.
 
 ## Screenshots
 
@@ -90,7 +90,7 @@ Every 2 seconds while the page is open, the router writes one sample, and the pa
 - **Wired devices**: the router's port counters (`/proc/net/dev`), with the bridge's address table telling which device is on which port. Several devices behind a switch on one port share one figure.
 - **Internet**: the WAN interface's counters.
 - **AiMesh backhaul**: the counters of the node's backhaul link (its Wi-Fi station or WDS link, or its wired port).
-- **Local traffic** is what your devices send each other through the router: all device traffic minus what went to the internet.
+- **Local traffic** is what your devices send each other through the router, or to the router itself (its web pages, DNS answers, a USB share): all device traffic minus what went to the internet. That's why the **Whole network** readout is usually higher than the **Internet** figures: it's everything your devices received and sent, internet plus local, and its bars show the internet part solid and the local part lighter.
 - **Names** come from the router's own client list: the nicknames you set, the names the router detected, DHCP host names and the AiMesh client list.
 
 Reading these counters doesn't disturb Wi-Fi, and no setting is ever changed.
