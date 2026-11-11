@@ -11,7 +11,7 @@
 #     clients over the session, writes live.htm and names.htm, and stops when the page says so.
 #  3. Without the node key, the node is reported as "nokey" and never retried in a loop.
 #  4. A stale pid file never makes Arteria signal another process, or keeps the sampler from starting.
-#  5. install hooks itself in and adds exactly one menu line before Traffic Monitor; uninstall
+#  5. install hooks itself in and adds its menu line before Traffic Monitor (Merlin has it in two menus); uninstall
 #     removes everything it added and nothing else.
 #
 # Usage: .github/tests/router.sh [path/to/arteria.sh]   (needs busybox, python3)
@@ -52,7 +52,7 @@ case "\$2" in
 	wl0_ifname) echo eth6 ;; wl1_ifname) echo eth7 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
 	lan_ifnames) echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7" ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
 	lan_ipaddr) echo 192.168.50.1 ;; http_username) echo admin ;; sshd_port) echo 2222 ;; sshd_enable) echo 1 ;;
-	jffs2_scripts) echo 1 ;;
+	jffs2_scripts) echo 1 ;; rc_support) echo "mssid 2.4G 5G usbX1 bwdpi wl6 amas" ;;
 	cfg_device_list) echo "<RP-AX56>192.168.50.10>$NODE>0" ;;
 	custom_clientlist) echo "<Living room TV>02:CC:00:00:00:05>0>23>><Kids \"tablet\"\\\\>02:CC:00:00:00:13>0>21>>" ;;
 esac
@@ -111,7 +111,39 @@ printf '{"%s":{"2G":{"02:CC:00:00:00:11":{"ip":"192.168.50.4","rssi":"-49"}}}}' 
 printf '{"02:CC:00:00:00:03":{"mac":"02:CC:00:00:00:03","name":"Client","vendor":"Apple","type":0}}' > "$R/jffs/nmp_cl_json.js"
 printf '1794400000 02:cc:00:00:00:04 192.168.50.20 Pixel-8 *\n' > "$R/var/lib/misc/dnsmasq.leases"
 printf 'am_settings_get() { :; }\n' > "$R/usr/sbin/helper.sh"
-printf 'var menuList = [\n{url: "TrafficAnalyzer_Statistic.asp", tabName: "Statistic"},\n{url: "Main_TrafficMonitor_realtime.asp", tabName: "Traffic Monitor"},\n{url: "Main_TrafficMonitor_last24.asp", tabName: "__INHERIT__"},\n{url: "Tools_OtherSettings.asp", tabName: "Other"},\n];\n' > "$R/www/require/modules/menuTree.js"
+# Laid out like Merlin 3004.388's menuTree.js: Traffic Monitor is in two menus (Traffic Manager for
+# models without Trend Micro's engine, Traffic Analyzer for those with it; only one is shown), plus Tools.
+cat > "$R/www/require/modules/menuTree.js" <<'EOF'
+var menuTree = { list: [
+			{
+				menuName: "<#Menu_TrafficManager#>",
+				index: "menu_QoS",
+				tab: [
+					{url: "QoS_EZQoS.asp", tabName: "<#menu5_3_2#>"},
+					{url: "Main_TrafficMonitor_realtime.asp", tabName: "<#traffic_monitor#>"},
+					{url: "Main_TrafficMonitor_last24.asp", tabName: "__INHERIT__"},
+				]
+			},
+			{
+				menuName: "<#Traffic_Analyzer#>",
+				index: "menu_TrafficAnalyzer",
+				tab: [
+					{url: "TrafficAnalyzer_Statistic.asp", tabName: "<#Statistic#>"},
+					{url: "Main_TrafficMonitor_realtime.asp", tabName: "<#traffic_monitor#>"},
+					{url: "Main_TrafficMonitor_last24.asp", tabName: "__INHERIT__"},
+				]
+			},
+			{
+				menuName: "<#Menu_usb_application#>",
+				index: "menu_Tools",
+				tab: [
+					{url: "Tools_OtherSettings.asp", tabName: "Other Settings"},
+				]
+			}
+		],
+		exclude: { menus: function () { var retArray = []; retArray.push("Main_TrafficMonitor_realtime.asp"); return retArray; } }
+};
+EOF
 
 # ---- the node: its own nvram and wl, reached through a stand-in dbclient ----------------------------
 cat > "$N/nvram" <<EOF
@@ -129,6 +161,7 @@ sed "s#$F/assoc#$F/node-assoc#" "$B/wl" > "$N/wl"
 cat > "$B/dbclient" <<EOF
 #!$bb sh
 # a node that accepts only the router's Arteria key
+[ "\$1 \$2" = "-o help" ] && { printf 'Available options:\\n\\tBatchMode\\n\\tPort\\n' >&2; exit 0; }
 echo "\$*" >> "$t/dbclient.args"
 key=""; while [ \$# -gt 1 ]; do [ "\$1" = -i ] && key=\$2; shift; done
 [ -n "\$key" ] && [ -s "\$key" ] || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
@@ -221,6 +254,7 @@ EOF
 grep -q '<' "$W/live.htm" "$W/names.htm" && bad "a raw '<' reached the page's data (httpd would run it as a template)" || ok "no raw '<' in the data files"
 [ "$(grep -c "sh -s" "$t/dbclient.cmds" 2>/dev/null || echo 0)" = 1 ] && ok "one SSH session per node" || bad "SSH sessions: $(grep -c 'sh -s' "$t/dbclient.cmds" 2>/dev/null)"
 grep -q -- "-p 2222 .*admin@192.168.50.10 sh -s" "$t/dbclient.args" && ok "the session uses the router's SSH port and admin name" || { bad "SSH arguments:"; cat "$t/dbclient.args"; }
+grep -- " -i " "$t/dbclient.args" | grep -qv -- "-o BatchMode=yes" && { bad "a key login without BatchMode (dbclient could ask for a password):"; cat "$t/dbclient.args"; } || ok "key logins never offer a password (BatchMode)"
 runi service_event start arteriastop
 sleep 3
 pgrep -f "$N" > /dev/null 2>&1 && bad "the node session outlived the page" || ok "node session ends with the sampler"
@@ -252,8 +286,12 @@ page=$(cat "$R/jffs/addons/arteria/webui_page" 2>/dev/null || echo none)
 [ "$page" = user1.asp ] && [ -f "$R/www/user/user1.asp" ] && ok "install mounts the page in the first free slot" || bad "page slot: $page"
 grep -q 'arteria-version: ' "$R/www/user/user1.asp" && ok "mounted page is Arteria's" || bad "mounted page isn't arteria.asp"
 m="$R/tmp/menuTree.js"
-if [ "$(grep -c 'tabName: "Arteria"' "$m")" = 1 ] && [ "$(grep -n 'Arteria' "$m" | cut -d: -f1)" -lt "$(grep -n 'Main_TrafficMonitor_realtime' "$m" | cut -d: -f1)" ] \
-	&& [ "$(wc -l < "$m")" -eq $(( $(wc -l < "$t/menu.before") + 1 )) ]; then ok "one menu line, before Traffic Monitor"; else bad "menu:"; cat "$m"; fi
+# exactly two new lines, each right before a Traffic Monitor tab (in the menu that's shown, and the other)
+if [ "$(grep -c 'tabName: "Arteria"' "$m")" = 2 ] && [ "$(wc -l < "$m")" -eq $(( $(wc -l < "$t/menu.before") + 2 )) ] \
+	&& awk '/tabName: "Arteria"/ { a = 1; next } a { if ($0 !~ /url: "Main_TrafficMonitor_realtime.asp"/) bad = 1; a = 0 } END { exit bad }' "$m"; then
+	ok "menu: Arteria right before Traffic Monitor, in both menus that have it"
+else bad "menu:"; cat "$m"; fi
+grep -q 'Traffic Analyzer -> Arteria' "$t/install.out" && ok "install points to Traffic Analyzer" || { bad "install output:"; cat "$t/install.out"; }
 grep -q "arteria.sh startup & # arteria" "$R/jffs/scripts/services-start" && grep -q 'service_event "$@" & # arteria' "$R/jffs/scripts/service-event" && ok "hooks added" || bad "hooks missing"
 grep -qi "key login works\|Node(s) without the key" "$t/install.out" && ok "install checks node access" || { bad "install didn't check the nodes:"; cat "$t/install.out"; }
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"

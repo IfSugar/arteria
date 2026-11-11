@@ -150,6 +150,15 @@ node_stas() {
 ssh_home() { [ -d "$SSH_HOME/.ssh" ] || { mkdir -p "$SSH_HOME/.ssh" && chmod 700 "$SSH_HOME/.ssh"; } 2>/dev/null; }
 node_file() { printf '%s/node.%s' "$TMPD" "$(printf '%s' "$1" | tr -d :)"; }
 
+# Key logins must never fall back to a password: when a node refuses the key, dbclient asks for one on
+# the terminal, and a password typed there would make a refused key look like it works. Dropbear 2024.84
+# and later (Merlin 3004.388.13 has 2026.94) have -o BatchMode=yes, which turns password and
+# keyboard-interactive logins off. Prints that option, or nothing on an older dbclient.
+ssh_batch() { dbclient -o help 2>&1 | grep -q BatchMode && printf '%s' '-o BatchMode=yes'; }
+# True if this process can reach a terminal (dbclient opens /dev/tty itself to ask for a password,
+# whatever stdin is). The sampler, started by the router's service events, has none.
+has_tty() { ( exec < /dev/tty ) 2> /dev/null; }
+
 ssh_port() { p=$(nvram get sshd_port); case "$p" in ''|*[!0-9]*) p=22 ;; esac; printf '%s' "$p"; }
 ssh_user() { if [ -n "$NODE_USER" ]; then printf '%s' "$NODE_USER"; else u=$(nvram get http_username); printf '%s' "${u:-admin}"; fi; }
 
@@ -224,7 +233,7 @@ EOF
 node_start() {   # mac ip
 	f=$(node_file "$1")
 	: > "$f.out"; : > "$f.err"; now > "$f.start"; rm -f "$f.fail" "$f.last"
-	(HOME="$SSH_HOME" exec dbclient -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
+	(HOME="$SSH_HOME" exec dbclient $BATCH -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
 		< "$TMPD/node.sh" >> "$f.out" 2>> "$f.err" 8>&- &
 	echo $! > "$f.pid"
 }
@@ -337,7 +346,7 @@ sample_init() {
 	MODEL=$(nvram get productid)
 	FW=$(fw_version)
 	OWN=$(own_macs | awk '{ printf "%s\"%s\"", (c++ ? "," : ""), $1 }')
-	PORT=$(ssh_port); SSHUSER=$(ssh_user)
+	PORT=$(ssh_port); SSHUSER=$(ssh_user); BATCH=$(ssh_batch)
 	ssh_home
 	NODE_LIST=""
 	[ "$NODES" = on ] && NODE_LIST=$(node_list)
@@ -475,23 +484,26 @@ mount_webui() {
 	cp -f "$PAGE_SRC" "$WWW_USER/$am_webui_page"
 	echo "$TITLE" > "$WWW_USER/${am_webui_page%.asp}.title"
 	[ "$(cat "$ADDON_DIR/webui_page" 2>/dev/null)" = "$am_webui_page" ] || echo "$am_webui_page" > "$ADDON_DIR/webui_page"
-	# Menu: edit a copy, and only swap it in if the result is exactly one new line (ours) at a
-	# known anchor. A broken menuTree.js would break the router's whole menu, so never risk it.
+	# Menu: edit a copy, and only swap it in if the result is exactly our new lines at known anchors.
+	# A broken menuTree.js would break the router's whole menu, so never risk it.
 	[ -f "$TMP_MENUTREE" ] || cp -f "$MENUTREE" "$TMP_MENUTREE"
 	new="$TMP_MENUTREE.$NAME.$$"
 	sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$new"
 	before=$(wc -l < "$new")
 	entry="{url: \"$am_webui_page\", tabName: \"$TITLE\"},"
-	# Traffic Analyzer -> just before Traffic Monitor (the tabs after it inherit its name, so never
-	# after it); Merlin's Tools menu as a fallback.
-	where=""
-	for a in "i:Main_TrafficMonitor_realtime.asp:Traffic Analyzer" "a:Tools_OtherSettings.asp:Tools"; do
-		how=${a%%:*}; rest=${a#*:}; anchor=${rest%%:*}
-		if [ "$(grep -c "url: \"$anchor\"" "$new")" = "1" ]; then
-			sed -i "/url: \"$anchor\"/$how $entry" "$new"; where=${rest#*:}; break
-		fi
-	done
-	if [ -n "$where" ] && [ "$(grep -c "tabName: \"$TITLE\"" "$new")" = "1" ] && [ "$(wc -l < "$new")" -eq $((before + 1)) ]; then
+	# Just before Traffic Monitor (the tabs after it inherit its name, so never after it). Merlin's
+	# menu lists Traffic Monitor in two menus, Traffic Analyzer (models with Trend Micro's engine, like
+	# the RT-AX86U) and Traffic Manager (the others), and shows one of them: Arteria goes in both.
+	# Merlin's Tools menu is the fallback.
+	where=""; added=0
+	n=$(grep -c 'url: "Main_TrafficMonitor_realtime.asp"' "$new")
+	if [ "$n" -ge 1 ] && [ "$n" -le 2 ]; then
+		sed -i "/url: \"Main_TrafficMonitor_realtime.asp\"/i $entry" "$new"; added=$n
+		case ",$(nvram get rc_support | tr ' ' ',')," in *,bwdpi,*) where="Traffic Analyzer" ;; *) where="Traffic Manager" ;; esac
+	elif [ "$(grep -c 'url: "Tools_OtherSettings.asp"' "$new")" = 1 ]; then
+		sed -i "/url: \"Tools_OtherSettings.asp\"/a $entry" "$new"; added=1; where="Tools"
+	fi
+	if [ -n "$where" ] && [ "$(grep -c "tabName: \"$TITLE\"" "$new")" = "$added" ] && [ "$(wc -l < "$new")" -eq $((before + added)) ]; then
 		mv -f "$new" "$TMP_MENUTREE"
 		menu_remount
 		echo "$where" > "$TMPD/menu_where"
@@ -559,10 +571,14 @@ make_key() {
 }
 pub_key() { dropbearkey -y -f "$KEY" 2>/dev/null | awk '/^ssh-/ { print $1, $2, "arteria"; exit }'; }
 
-# Try the key on a node without a terminal (no password prompt can appear). Gives up after 8 s.
-node_try() {   # ip -> 0 if the key works
-	mkdir -p "$TMPD"; ssh_home; o="$TMPD/try.$$"
-	(HOME="$SSH_HOME" exec dbclient -y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
+# Try the key on a node: key only, never a password (see ssh_batch). Gives up after 8 s.
+# Returns 0 if the key works, 1 if not, 2 if it can't be tried without risking a password prompt
+# (an older dbclient, run from a terminal).
+node_try() {   # ip
+	mkdir -p "$TMPD"; ssh_home; o="$TMPD/try.$$"; TRY_ERR=""
+	b=$(ssh_batch)
+	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
+	(HOME="$SSH_HOME" exec dbclient $b -y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
 		< /dev/null > "$o" 2>&1 &
 	p=$!; i=0
 	while kill -0 "$p" 2>/dev/null; do
@@ -585,8 +601,12 @@ nodes_cmd() {   # [test]
 		line="  ${al:-$model} ($model, $ip)"
 		if [ "$1" = test ]; then
 			if [ ! -s "$KEY" ]; then line="$line: no key yet, run '$SCRIPT nodekey'"
-			elif node_try "$ip"; then line="$line: key login OK"
-			else line="$line: key login failed${TRY_ERR:+ ($TRY_ERR)}; run '$SCRIPT nodekey'"
+			else
+				node_try "$ip"; rc=$?
+				if [ $rc -eq 0 ]; then line="$line: key login OK"
+				elif [ $rc -eq 2 ]; then line="$line: can't test here ($TRY_ERR); open the page, it shows whether the node answers"
+				else line="$line: key login failed${TRY_ERR:+ ($TRY_ERR)}; run '$SCRIPT nodekey'"
+				fi
 			fi
 		else
 			line="$line: $(node_state "$(node_file "$mac")")"
@@ -620,7 +640,8 @@ nodekey() {   # [node-ip]
 		say "${al:-$model} ($model, $ip)"
 		# a node that was reset has a new host key: forget the old one so it can be pinned again
 		[ -f "$SSH_HOME/.ssh/known_hosts" ] && sed -i "/^$ip /d; /^\[$ip\]:/d" "$SSH_HOME/.ssh/known_hosts"
-		if node_try "$ip"; then say "  Already has the key."; continue; fi
+		node_try "$ip"; rc=$?
+		if [ $rc -eq 0 ]; then say "  Already has the key."; continue; fi
 		say "  Enter the node's password (your router's admin password). It goes to the node only and isn't stored."
 		out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1)
 		case "$out" in
@@ -628,7 +649,9 @@ nodekey() {   # [node-ip]
 			*arteria-added-key*) say "  Key added."; sleep 4 ;;
 			*) say "  Couldn't log in: $(printf '%s' "$out" | tail -1 | cut -c1-120)"; fails=$((fails + 1)); continue ;;
 		esac
-		if node_try "$ip"; then say "  Key login works."
+		node_try "$ip"; rc=$?
+		if [ $rc -eq 0 ]; then say "  Key login works."
+		elif [ $rc -eq 2 ]; then say "  Can't test the key from here; open the page: it shows whether the node answers."
 		else say "  The key still doesn't work${TRY_ERR:+ ($TRY_ERR)}."; fails=$((fails + 1))
 		fi
 	done < "$TMPD/nodekey.list"

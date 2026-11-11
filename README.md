@@ -65,7 +65,7 @@ The installer:
 4. mounts the page
 5. if you have AiMesh nodes, offers to give them the router's key (see [AiMesh nodes](#aimesh-nodes))
 
-Open **Traffic Analyzer → Arteria** (the tab before *Traffic Monitor*). If the tab doesn't show up, reload the router page with **Ctrl+F5** (Windows) or **Cmd+Shift+R** (Mac): browsers cache the router's menu. The installer also prints a direct link to the page.
+Open **Traffic Analyzer → Arteria**, the tab before *Traffic Monitor* (on models without Trend Micro's engine, that menu is *Traffic Manager*). If the tab doesn't show up, reload the router page with **Ctrl+F5** (Windows) or **Cmd+Shift+R** (Mac): browsers cache the router's menu. The installer also prints a direct link to the page.
 
 **Updating:** run `/jffs/addons/arteria/arteria.sh update`. It asks GitHub for the latest release, and if that's a newer version it installs it over the old one, keeping your settings, the node key and the page slot. `update force` reinstalls the latest release. Only published releases are installed, never unreleased work.
 
@@ -79,7 +79,7 @@ The router only knows a node's backhaul: the total going to and from it. To show
 
 - **A key only the router holds.** At install, Arteria creates an SSH key in `/jffs/addons/arteria/node_key` and offers to add its public half to each node's authorized keys. That asks for the node's password once (your router's admin password, which AiMesh nodes share); it goes to the node only and is never stored. Run `arteria.sh nodekey` any time to do it later, or again after a node was reset. Like your own SSH key would be, it's a full admin login on each node, so it never leaves the router (readable by root only). AiMesh doesn't copy the router's authorized keys to its nodes, so this is needed even if you log in to the router with a key.
 - **One session per node, only while the page is open.** The router keeps one SSH session to each node, on the router's SSH port and with its admin name. The node runs a small read-only loop that prints its clients' counters every 2 seconds. When you close the page the router hangs up and the loop ends; it also ends by itself after 30 minutes.
-- **Key login only.** The sampler has no terminal, so it can never ask for or send a password. If a node refuses the key, Arteria says so on the page and doesn't retry until the page is opened again. Each node's host key is pinned on first use, in `/jffs/addons/arteria/.ssh/known_hosts`.
+- **Key login only.** Arteria never offers a node a password: key logins use Dropbear's `-o BatchMode=yes` (Dropbear 2024.84 and later; Merlin 3004.388.13 has 2026.94), and the sampler has no terminal anyway. On an older SSH client, `nodes test` won't try the key from a terminal, since it couldn't stop a password prompt; the page still shows whether each node answers. If a node refuses the key, Arteria says so on the page and doesn't retry until the page is opened again. Each node's host key is pinned on first use, in `/jffs/addons/arteria/.ssh/known_hosts`.
 - **Nothing on the node changes** except the one line in its authorized keys. `arteria.sh nodes test` checks key login on every node. To stop reading nodes, set `NODES=off` in the config.
 
 ## How the numbers are made
@@ -158,7 +158,7 @@ Arteria follows amtm's conventions for third-party scripts:
 - **JFFS (flash):** about 170 KB of addon files and the node key, written at install. One tagged line is added to each of `/jffs/scripts/services-start` and `service-event`. Nothing is written to flash while sampling, apart from a node's host key the first time Arteria connects to it.
 - **Settings:** the only router setting it may change is *JFFS custom scripts and configs*, switched on if it's off.
 - **AiMesh nodes:** when you run `nodekey` (or say yes at install), one line is added to each node's authorized keys (*Administration → System → Authorized Keys*, stored in the node's nvram). Nothing else on a node is changed.
-- **RAM only (gone after a reboot, recreated at boot):** the web page, the menu entry and the sample files (a few KB). The menu is edited on a copy and swapped in only if the result is exactly the one expected line.
+- **RAM only (gone after a reboot, recreated at boot):** the web page, the menu entry and the sample files (a few KB). The menu is edited on a copy and swapped in only if the result is exactly the expected lines: one before each *Traffic Monitor* tab (Merlin lists it in two menus and shows one).
 - **Load:** nothing at all while the page is closed. While it's open: one sample every 2 seconds at the lowest CPU priority (`nice 19`), plus one SSH session per node, each reading its own counters. The page's footer shows how long the last sample took and the router's load.
 
 To remove everything: `arteria.sh uninstall`. The key line each node lists stays until you remove it from the node's *Authorized Keys* (or reset the node), but with the router's key deleted it no longer opens anything. If the web UI ever looks wrong, a reboot clears all RAM-side changes.
