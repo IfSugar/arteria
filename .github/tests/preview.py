@@ -129,6 +129,7 @@ class H(BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         if path in ('/', '/user1.asp'):
             page = open(ASP, encoding='utf-8').read()
+            page = page.replace('<% nvram_get("productid"); %>', 'RT-AX86U')   # what the router fills in
             page = re.sub(r'<%.*?%>', '', page)
             return self.send(page)
         if path == '/ext/arteria/live.htm':

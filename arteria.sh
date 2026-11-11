@@ -80,6 +80,14 @@ have() {
 # Background work runs at the lowest CPU priority, so routing, Wi-Fi and the web UI always come first.
 lowprio() { renice -n 19 -p $$ >/dev/null 2>&1 || true; }
 
+# A pid read from one of our files is only ours while that process still runs our command. A router
+# reuses pids quickly (every sample starts dozens of short programs), and a stale file must never
+# make Arteria signal someone else's process.
+pid_ours() {   # pid pattern
+	case "$1" in ''|*[!0-9]*) return 1 ;; esac
+	tr '\000' ' ' < "/proc/$1/cmdline" 2>/dev/null | grep -q -- "$2"
+}
+
 web_dir() {
 	d="$(readlink -f "$WWW_USER" 2>/dev/null)"
 	[ -n "$d" ] || d="$WWW_USER"
@@ -215,7 +223,7 @@ EOF
 # has no terminal, so dbclient can never ask for (or send) a password. Host keys are pinned in $SSH_HOME.
 node_start() {   # mac ip
 	f=$(node_file "$1")
-	: > "$f.out"; : > "$f.err"; now > "$f.start"; rm -f "$f.fail"
+	: > "$f.out"; : > "$f.err"; now > "$f.start"; rm -f "$f.fail" "$f.last"
 	(HOME="$SSH_HOME" exec dbclient -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
 		< "$TMPD/node.sh" >> "$f.out" 2>> "$f.err" 8>&- &
 	echo $! > "$f.pid"
@@ -223,10 +231,10 @@ node_start() {   # mac ip
 node_stop_all() {
 	for p in "$TMPD"/node.*.pid; do
 		[ -f "$p" ] || continue
-		kill "$(cat "$p")" 2>/dev/null; rm -f "$p"
+		q=$(cat "$p" 2>/dev/null); pid_ours "$q" dbclient && kill "$q" 2>/dev/null; rm -f "$p"
 	done
 }
-node_running() { p=$(cat "$1.pid" 2>/dev/null); [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }
+node_running() { pid_ours "$(cat "$1.pid" 2>/dev/null)" dbclient; }
 
 # ok: fresh counters; wait: connecting; nokey: the node refused the key ('nodekey' fixes it);
 # hostkey: the node's identity changed ('nodekey' re-pins it); down: unreachable; off: node access is off.
@@ -234,7 +242,7 @@ node_state() {   # file-base -> state
 	if [ "$NODES" != on ]; then echo off; return; fi
 	if [ ! -s "$KEY" ] || ! have dbclient; then echo nokey; return; fi
 	f=$1
-	if grep -q '^#E' "$f.out" 2>/dev/null; then
+	if grep -q '^#E' "$f.out" 2>/dev/null || grep -q '^#E' "$f.last" 2>/dev/null; then
 		age=$(( $(now) - $(date -r "$f.out" +%s 2>/dev/null || echo 0) ))
 		[ "$age" -le $((INTERVAL * 3 + 4)) ] && { echo ok; return; }
 	fi
@@ -265,19 +273,24 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 		fi
 		node_start "$mac" "$ip"
 	done
-	# keep the output files small (dbclient appends, so emptying them is safe)
+	# keep the output files small (dbclient appends, so emptying them is safe), keeping the last
+	# complete block aside so the page doesn't lose the node's devices for a sample
 	for o in "$TMPD"/node.*.out; do
 		[ -f "$o" ] || continue
-		[ "$(wc -c < "$o")" -gt 262144 ] && : > "$o"
+		if [ "$(wc -c < "$o")" -gt 131072 ]; then
+			awk '/^#B / { b = "" } { b = b $0 "\n" } /^#E/ { last = b } END { printf "%s", last }' "$o" > "${o%.out}.last"
+			: > "$o"
+		fi
 	done
 	return 0
 }
 
 # The last complete block a node sent, as JSON: "up":"<node uptime>","c":[rows].
+# Only rows between a "#B" and its "#E" count: the file can be emptied in the middle of a block.
 NODE_AWK="$ROWS_AWK"'
-/^#B / { cur = ""; cc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; next }
-/^S / && $2 ~ /^[A-Za-z0-9.]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9A-Fa-f:]+$/ { cur = cur (cc++ ? "," : "") row(); next }
-/^#E/ { last = cur; lup = cup; done = 1; next }
+/^#B / { cur = ""; cc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
+open && /^S / && $2 ~ /^[A-Za-z0-9.]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9A-Fa-f:]+$/ { cur = cur (cc++ ? "," : "") row(); next }
+/^#E/ { if (open) { last = cur; lup = cup; done = 1 } open = 0; next }
 END { if (done) printf "\"up\":\"%s\",\"c\":[%s]", lup, last; else printf "\"up\":null,\"c\":[]" }'
 
 nodes_json() {
@@ -288,7 +301,7 @@ nodes_json() {
 		[ $c -gt 0 ] && printf ','; c=1
 		printf '{"mac":"%s","ip":"%s","model":"%s","alias":"%s","sta":"%s","state":"%s",' \
 			"$mac" "$ip" "$(js "$model")" "$(js "$(node_alias "$mac")")" "$(node_stas "$mac")" "$(node_state "$f")"
-		if [ -s "$f.out" ]; then awk "$NODE_AWK" "$f.out"; else printf '"up":null,"c":[]'; fi
+		if [ -s "$f.out" ] || [ -s "$f.last" ]; then cat "$f.last" "$f.out" 2>/dev/null | awk "$NODE_AWK"; else printf '"up":null,"c":[]'; fi
 		printf '}'
 	done
 }
@@ -366,7 +379,7 @@ hb_fresh() {
 	hb=$(date -r "$TMPD/heartbeat" +%s 2>/dev/null) || return 1
 	[ $(( $(now) - hb )) -le "$IDLE_STOP" ]
 }
-sampler_running() { p=$(cat "$TMPD/sampler.pid" 2>/dev/null); [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }
+sampler_running() { pid_ours "$(cat "$TMPD/sampler.pid" 2>/dev/null)" "$NAME.sh sampler"; }
 
 sampler() {
 	mkdir -p "$TMPD" "$(web_dir)"
@@ -377,7 +390,7 @@ sampler() {
 	trap 'node_stop_all; rm -f "$TMPD/sampler.pid"; exit 0' INT TERM
 	sample_init
 	write_node_script > "$TMPD/node.sh"
-	rm -f "$TMPD"/node.*.fail "$TMPD"/node.*.start
+	rm -f "$TMPD"/node.*.fail "$TMPD"/node.*.start "$TMPD"/node.*.last
 	WD=$(web_dir); seq=0; ms=0
 	log "sampling started (page open)"
 	export_names
@@ -412,7 +425,7 @@ service_event() {   # action service
 
 stop_all() {   # sampler and node sessions, e.g. before an update or uninstall
 	p=$(cat "$TMPD/sampler.pid" 2>/dev/null)
-	[ -n "$p" ] && kill "$p" 2>/dev/null
+	pid_ours "$p" "$NAME.sh sampler" && kill "$p" 2>/dev/null
 	node_stop_all
 	rm -f "$TMPD/sampler.pid" "$TMPD/heartbeat"
 }
