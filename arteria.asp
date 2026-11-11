@@ -51,6 +51,10 @@
 #ar .ar-sum b { font-weight: 600; }
 #ar .ar-sum .dn { color: var(--dnt); font-weight: 700; }
 #ar .ar-sum .up { color: var(--upt); font-weight: 700; }
+#ar .ar-unit { display: flex; flex: none; height: 32px; border: 1px solid #6b7b80; border-radius: 16px; overflow: hidden; }
+#ar .ar-unit button { background: none; border: 0; margin: 0; padding: 0 9px; min-width: 44px; color: #c3c2b7; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+#ar .ar-unit button:hover { color: #fff; }
+#ar .ar-unit button.on { background: #3a4549; color: #fff; cursor: default; }
 #ar .ar-live { min-height: 44px; padding: 0 16px; display: flex; align-items: center; gap: 8px; border-radius: 22px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
 #ar .ar-live .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); flex: none; }
 #ar .ar-live.live .dot { background: #3ddc97; animation: arblink 1.6s ease-in-out infinite; }
@@ -162,14 +166,16 @@
 var VERSION = '1.0.0';
 var BASE = '/ext/arteria/';
 var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';
-/* Packets: one CSS class per density bucket (b0 = busiest). Spacing tightens on a log scale as throughput rises;
-   every packet moves at the same speed, so only the spacing carries the number. */
-var PERIODS = [18, 22, 26, 30, 36, 44, 54, 66, 78];
-var PK_W = [5.0, 4.7, 4.4, 4.1, 3.7, 3.3, 2.9, 2.5, 2.2];
-var SPEED = 105, SK_SPEED = 70;
+/* Packets: one CSS class per bucket (b0 = busiest). As throughput rises on a log scale, packets grow
+   (wider and longer) and sit closer together. They all move at the same slow, steady speed, so nothing
+   speeds up or flickers when traffic changes: watching the map for minutes should be calm. */
+var PERIODS = [28, 32, 36, 41, 47, 54, 62, 71, 80];   /* spacing, px */
+var PK_W = [8.0, 7.2, 6.4, 5.6, 4.9, 4.2, 3.6, 3.0, 2.6];   /* width, px */
+var PK_D = [5.0, 4.5, 4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0];   /* length beyond the round caps, px */
+var SPEED = 40, SK_SPEED = 42;   /* px per second: map packets, flow streaks */
 
 var A = {
-	tab: 'map', mode: 'dn', sel: null, paused: false,
+	tab: 'map', mode: 'dn', unit: 'Mb', sel: null, paused: false,
 	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false,
 	prev: {}, sm: {}, bk: {}, names: null, namesAt: 0,
 	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowAt: 0,
@@ -185,16 +191,19 @@ function esc(s) {
 }
 function n1(v) { return (Math.round(v * 10) / 10).toString(); }
 function hash(s) { var h = 7; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 100003; return h; }
+/* Rates are kept in Mb/s (megabits); A.unit 'MB' shows them in megabytes (÷ 8): kB/s, MB/s, GB/s.
+   Link rates (Wi-Fi and Ethernet) stay in Mb/s, as the hardware states them. */
 function fmt(x) {
 	if (x === null || x === undefined || isNaN(x)) return { n: '—', u: '' };
-	if (x < 0.0005) return { n: '0', u: 'kb/s' };
-	if (x < 0.9995) return { n: String(Math.round(x * 1000)), u: 'kb/s' };
-	if (x < 99.95) return { n: x.toFixed(1), u: 'Mb/s' };
-	if (x < 999.5) return { n: x.toFixed(0), u: 'Mb/s' };
-	return { n: (x / 1000).toFixed(2), u: 'Gb/s' };
+	var B = A.unit === 'MB', v = B ? x / 8 : x, k = B ? 'kB/s' : 'kb/s', m = B ? 'MB/s' : 'Mb/s';
+	if (v < 0.0005) return { n: '0', u: k };
+	if (v < 0.9995) return { n: String(Math.round(v * 1000)), u: k };
+	if (v < 99.95) return { n: v.toFixed(1), u: m };
+	if (v < 999.5) return { n: v.toFixed(0), u: m };
+	return { n: (v / 1000).toFixed(2), u: B ? 'GB/s' : 'Gb/s' };
 }
 function full(x) { var f = fmt(x); return f.u ? f.n + ' ' + f.u : f.n; }
-function short(x) { var f = fmt(x); return f.n === '0' ? '0' : (f.u === 'kb/s' ? f.n + 'k' : (f.u === 'Gb/s' ? f.n + 'G' : f.n)); }
+function short(x) { var f = fmt(x), u = f.u.charAt(0); return f.n === '0' ? '0' : (u === 'k' ? f.n + 'k' : (u === 'G' ? f.n + 'G' : f.n)); }
 function store(k, v) {
 	try { if (v === undefined) return localStorage.getItem('arteria.' + k); localStorage.setItem('arteria.' + k, v); }
 	catch (e) { return null; }
@@ -209,7 +218,7 @@ function mix(hex, t, to) {
    re-start the packets every poll. */
 function bucketOf(key, x) {
 	if (!(x > 0.0005)) { A.bk[key] = 'bx'; return 'bx'; }
-	var p = 78 - 17 * Math.log10(10 * x + 1), want = PERIODS.length - 1;
+	var p = 80 - 17 * Math.log10(10 * x + 1), want = PERIODS.length - 1;
 	for (var i = 0; i < PERIODS.length; i++) if (p <= PERIODS[i]) { want = i; break; }
 	var cur = A.bk[key];
 	if (cur && cur !== 'bx') {
@@ -223,9 +232,9 @@ function packetCss() {
 	var out = [], keys = {};
 	PERIODS.forEach(function (P, i) {
 		keys[P] = 1; keys[2 * P] = 1;
-		out.push('#ar .pk.b' + i + '{stroke-dasharray:3 ' + (P - 3) + ';animation-name:arp' + P + ';animation-duration:' + (P / SPEED).toFixed(3) + 's;stroke-width:' + PK_W[i] + 'px}');
-		out.push('#ar .pk.h.b' + i + '{stroke-width:' + (PK_W[i] * 2.7).toFixed(1) + 'px}');
-		out.push('#ar .pk.t.b' + i + '{stroke-width:' + (PK_W[i] * 0.72).toFixed(1) + 'px}#ar .pk.t.h.b' + i + '{stroke-width:' + (PK_W[i] * 1.75).toFixed(1) + 'px}');
+		out.push('#ar .pk.b' + i + '{stroke-dasharray:' + PK_D[i] + ' ' + (P - PK_D[i]) + ';animation-name:arp' + P + ';animation-duration:' + (P / SPEED).toFixed(3) + 's;stroke-width:' + PK_W[i] + 'px}');
+		out.push('#ar .pk.h.b' + i + '{stroke-width:' + (PK_W[i] * 1.9).toFixed(1) + 'px}');
+		out.push('#ar .pk.t.b' + i + '{stroke-width:' + (PK_W[i] * 0.8).toFixed(1) + 'px}#ar .pk.t.h.b' + i + '{stroke-width:' + (PK_W[i] * 1.5).toFixed(1) + 'px}');
 		out.push('#ar .sk.b' + i + '{stroke-dasharray:11 ' + (2 * P - 11) + ';animation-name:arp' + (2 * P) + ';animation-duration:' + (2 * P / SK_SPEED).toFixed(3) + 's}');
 	});
 	out.push('#ar .pk.bx,#ar .sk.bx{display:none}');
@@ -818,7 +827,7 @@ function mapSignature(L) {
 
 /* lanes: one direction of one link, a soft halo plus a bright capsule riding the same dash pattern */
 function lane(d, color, glow, key, tube) {
-	var dl = -(hash(key) % 100) / 100 * 0.74, t = tube ? ' t' : '';
+	var dl = -(hash(key) % 100) / 100 * 2, t = tube ? ' t' : '';
 	return '<path d="' + d + '" data-lane="' + key + '" data-cls="df-a pk h' + t + '" class="df-a pk h' + t + ' bx" style="fill:none;stroke:' + glow + ';stroke-opacity:.3;stroke-linecap:round;animation-delay:' + dl.toFixed(2) + 's"/>' +
 		'<path d="' + d + '" data-lane="' + key + '" data-cls="df-a pk' + t + '" class="df-a pk' + t + ' bx" style="fill:none;stroke:' + color + ';stroke-linecap:round;animation-delay:' + dl.toFixed(2) + 's"/>';
 }
@@ -1440,8 +1449,12 @@ function linkShort(dv) {
 
 /* ---------------------------------------------------------------- the readout card (both views) */
 function readoutFor(net) {
-	var id = A.sel, d = { icon: 'router', badge: 'Router', name: 'Whole network', link: (net.router.model || 'Router') + ' · every client link added up' };
-	var dn = net.total.dn, up = net.total.up, sdn = 'all clients', sup = 'all clients';
+	/* Whole network: everything your devices received and sent. That's the internet plus local traffic:
+	   between your own devices, and to or from the router itself (its pages, DNS, a USB share). The bar
+	   shows the internet part solid and the local part lighter. */
+	var id = A.sel, d = { icon: 'router', badge: 'Router', name: 'Whole network', link: (net.router.model || 'Router') + ' · all your devices, internet and local' };
+	var dn = net.total.dn, up = net.total.up;
+	var sdn = full(net.wan.dn) + ' internet + ' + full(net.local.dn) + ' local', sup = full(net.wan.up) + ' internet + ' + full(net.local.up) + ' local';
 	var k1 = 'Clients', v1 = net.clients + ' online', k2 = 'Local traffic', v2 = full(net.local.dn), path = 'Through the router';
 	var note = A.tab === 'map' ? 'Tap a device label on the map to trace its path.' : 'Tap a device row to trace it through the ribbons.', tone = INK2;
 	var pct = function (a, b) { return a === null || !(b > 0) ? 0 : Math.max(0, Math.min(100, Math.round(100 * a / b))); };
@@ -1485,7 +1498,8 @@ function readoutFor(net) {
 		if (dv.st === 'off') { sdn = sup = 'offline'; note = 'Offline.'; tone = BAD; }
 	}
 	var a = fmt(dn), b = fmt(up);
-	return { d: d, dnN: a.n, dnU: a.u, upN: b.n, upU: b.u, dnW: pct(dn, net.total.dn) + '%', upW: pct(up, net.total.up) + '%', dnS: sdn, upS: sup, k1: k1, v1: v1, k2: k2, v2: v2, path: path, note: note, tone: tone, all: !id };
+	return { d: d, dnN: a.n, dnU: a.u, upN: b.n, upU: b.u, dnW: pct(dn, net.total.dn) + '%', upW: pct(up, net.total.up) + '%', dnS: sdn, upS: sup, k1: k1, v1: v1, k2: k2, v2: v2, path: path, note: note, tone: tone, all: !id,
+		dnNet: pct(net.wan.dn, net.total.dn), upNet: pct(net.wan.up, net.total.up) };
 }
 function renderReadout(net) {
 	var r = readoutFor(net), el = $('arReadout');
@@ -1494,6 +1508,8 @@ function renderReadout(net) {
 	$('arRoBadge').textContent = r.d.badge; $('arRoName').textContent = r.d.name; $('arRoLink').textContent = r.d.link;
 	$('arRoDnN').textContent = r.dnN; $('arRoDnU').textContent = r.dnU; $('arRoUpN').textContent = r.upN; $('arRoUpU').textContent = r.upU;
 	$('arRoDnW').style.width = r.all ? '100%' : r.dnW; $('arRoUpW').style.width = r.all ? '100%' : r.upW;
+	var split = function (c, p) { return r.all ? 'linear-gradient(90deg,' + c + ' ' + p + '%,' + c + '59 ' + p + '%)' : c; };
+	$('arRoDnW').style.background = split('#59c3ff', r.dnNet); $('arRoUpW').style.background = split('#ff8a3d', r.upNet);
 	$('arRoDnS').textContent = r.dnS; $('arRoUpS').textContent = r.upS;
 	$('arRoK1').textContent = r.k1; $('arRoV1').textContent = r.v1; $('arRoK2').textContent = r.k2; $('arRoV2').textContent = r.v2; $('arRoPath').textContent = r.path;
 	var nt = $('arRoNote'); nt.textContent = r.note; nt.title = r.note; nt.style.color = r.tone;
@@ -1526,14 +1542,16 @@ function renderSide(net) {
 }
 function renderSpark() {
 	var Wd = 244, H = 116, base = H - 20, h = A.hist, n = Math.max(h.length, 2);
-	var mxv = Math.max.apply(null, h.map(function (x) { return Math.max(x.dn, x.up); }).concat([0.001]));
+	var per = A.unit === 'MB' ? 8 : 1;   /* the axis steps are round numbers in the unit shown */
+	var mxv = Math.max.apply(null, h.map(function (x) { return Math.max(x.dn, x.up); }).concat([0.001])) / per;
 	var steps = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000], top = steps[steps.length - 1];
 	for (var i = 0; i < steps.length; i++) if (steps[i] >= mxv * 1.12) { top = steps[i]; break; }
+	top *= per;
 	var cap = Math.round(120 / A.interval);
 	var px = function (i) { return (2 + (cap - h.length + i) * (Wd - 6) / Math.max(cap - 1, 1)).toFixed(1); };
 	var py = function (v) { return (14 + (1 - Math.min(v / top, 1)) * (base - 14)).toFixed(1); };
 	var line = function (k) { return h.length ? 'M' + h.map(function (x, i) { return px(i) + ' ' + py(x[k]); }).join(' L') : 'M0 0'; };
-	var lab = function (v) { return v < 1 ? Math.round(v * 1000) + ' kb/s' : v + ' Mb/s'; };
+	var lab = function (v) { var u = A.unit === 'MB' ? ['kB/s', 'MB/s'] : ['kb/s', 'Mb/s']; v = v / per; return v < 1 ? Math.round(v * 1000) + ' ' + u[0] : v + ' ' + u[1]; };
 	$('arSpDn').setAttribute('d', line('dn')); $('arSpUp').setAttribute('d', line('up'));
 	$('arSpArea').setAttribute('d', h.length ? line('dn') + ' L' + px(h.length - 1) + ' ' + base + ' L' + px(0) + ' ' + base + ' Z' : 'M0 0');
 	if (h.length) { var ex = px(h.length - 1), ey = py(h[h.length - 1].dn); ['arSpDot', 'arSpRip'].forEach(function (id) { $(id).setAttribute('cx', ex); $(id).setAttribute('cy', ey); }); }
@@ -1556,6 +1574,12 @@ function setTab(t) {
 	render();
 }
 function setMode(m) { A.mode = m; store('mode', m); render(); }
+function setUnit(u) {
+	A.unit = u === 'MB' ? 'MB' : 'Mb'; store('unit', A.unit);
+	$('arUnitMb').className = A.unit === 'Mb' ? 'on' : ''; $('arUnitMB').className = A.unit === 'MB' ? 'on' : '';
+	$('arUnitMb').setAttribute('aria-pressed', A.unit === 'Mb' ? 'true' : 'false'); $('arUnitMB').setAttribute('aria-pressed', A.unit === 'MB' ? 'true' : 'false');
+	render();
+}
 function togglePause() {
 	A.paused = !A.paused;
 	if (A.paused) { suspend(); stopBeacon(); } else resume();
@@ -1565,6 +1589,9 @@ function boot() {
 	$('arPackets').textContent = packetCss();
 	A.tab = store('tab') === 'flow' ? 'flow' : 'map';
 	A.mode = store('mode') === 'up' ? 'up' : 'dn';
+	$('arUnitMb').addEventListener('click', function () { setUnit('Mb'); });
+	$('arUnitMB').addEventListener('click', function () { setUnit('MB'); });
+	setUnit(store('unit'));
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
@@ -1630,6 +1657,7 @@ window.Arteria = { state: A, render: render, onSample: onSample, buildNet: build
 			<button type="button" id="arTabFlow" aria-selected="false">Flow</button>
 		</nav>
 		<div class="ar-sum" id="arSum"></div>
+		<div class="ar-unit" role="group" aria-label="Show rates in"><button type="button" id="arUnitMb" class="on" aria-pressed="true" title="Megabits per second, the unit internet plans and speed tests use">Mb/s</button><button type="button" id="arUnitMB" aria-pressed="false" title="Megabytes per second, the unit file downloads show (8 times smaller)">MB/s</button></div>
 		<button type="button" class="ar-live warn" id="arLive" aria-pressed="false" title="Pause or resume. While paused, the router stops sampling."><span class="dot"></span><span id="arLiveTxt">Connecting…</span></button>
 	</div>
 
@@ -1639,7 +1667,7 @@ window.Arteria = { state: A, render: render, onSample: onSample, buildNet: build
 			<div id="arMapScene"></div>
 			<div class="ar-over" style="left:16px;top:14px;width:224px">
 				<div class="eyebrow">Live map</div>
-				<div style="margin-top:4px">Pipes are cables, arcs are Wi-Fi. Each packet is traffic in motion; they bunch up as throughput rises.</div>
+				<div style="margin-top:4px">Pipes are cables, arcs are Wi-Fi. Each packet is traffic in motion; they grow and bunch up as throughput rises.</div>
 			</div>
 			<div class="ar-over ar-legend" style="right:16px;top:14px">
 				<div><span class="sw" style="background:#59c3ff"></span>Download, toward the device</div>
