@@ -260,6 +260,16 @@ sleep 3
 pgrep -f "$N" > /dev/null 2>&1 && bad "the node session outlived the page" || ok "node session ends with the sampler"
 rm -rf "$R/tmp/arteria" "$W"
 
+# nodekey print: one line to paste on a node, which adds the key once and keeps the keys already there
+line=$(run nodekey print 2>&1 | grep "^k='ssh-")
+mkdir -p "$t/nk"; printf 'ssh-ed25519 AAAAown me@laptop' > "$t/nk/store"
+printf '#!%s sh\ncase "$1" in get) cat "%s/nk/store" ;; set) printf "%%s" "${2#sshd_authkeys=}" > "%s/nk/store" ;; esac\n' "$bb" "$t" "$t" > "$t/nk/nvram"
+printf '#!%s sh\nexit 0\n' "$bb" > "$t/nk/service"; chmod +x "$t/nk/nvram" "$t/nk/service"
+if [ -n "$line" ] && PATH="$t/nk:$B" "$bb" sh -c "$line" > /dev/null && PATH="$t/nk:$B" "$bb" sh -c "$line" | grep -q 'already has' \
+	&& [ "$(grep -c '' "$t/nk/store")" = 2 ] && grep -q '^ssh-ed25519 AAAAown me@laptop$' "$t/nk/store" && grep -q 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria$' "$t/nk/store"; then
+	ok "nodekey print: a one-line command that adds the key once and keeps the node's own keys"
+else bad "nodekey print:"; printf '%s\n' "$line"; cat "$t/nk/store"; fi
+
 # ---- 3: stale pid files never touch someone else's process ----------------------------------------
 # The router reuses pids within minutes. A pid file left behind (a sampler or node session that was
 # killed) may by then name an unrelated process: it must neither be signalled nor block the sampler.
