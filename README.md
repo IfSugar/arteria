@@ -80,6 +80,7 @@ The router only knows a node's backhaul: the total going to and from it. To show
 - **A key only the router holds.** At install, Arteria creates an SSH key in `/jffs/addons/arteria/node_key` and offers to add its public half to each node's authorized keys. That asks for the node's password once (your router's admin password, which AiMesh nodes share); it goes to the node only and is never stored. Run `arteria.sh nodekey` any time to do it later, or again after a node was reset. Like your own SSH key would be, it's a full admin login on each node, so it never leaves the router (readable by root only). AiMesh doesn't copy the router's authorized keys to its nodes, so this is needed even if you log in to the router with a key.
 - **One session per node, only while the page is open.** The router keeps one SSH session to each node, on the router's SSH port and with its admin name. The node runs a small read-only loop that prints its clients' counters every 2 seconds. When you close the page the router hangs up and the loop ends; it also ends by itself after 30 minutes.
 - **Key login only.** Arteria never offers a node a password: key logins use Dropbear's `-o BatchMode=yes` (Dropbear 2024.84 and later; Merlin 3004.388.13 has 2026.94), and the sampler has no terminal anyway. On an older SSH client, `nodes test` won't try the key from a terminal, since it couldn't stop a password prompt; the page still shows whether each node answers. If a node refuses the key, Arteria says so on the page and doesn't retry until the page is opened again. Each node's host key is pinned on first use, in `/jffs/addons/arteria/.ssh/known_hosts`.
+- **If a node refuses the right password.** ASUS firmware locks out an address for a while after several failed logins, and then refuses even the right password from it (the node's `/tmp/protect_srv.log` shows it). A refused key doesn't count, a wrong password or user name does. Wait a while, or reboot the node, and run `nodekey` again. Or add the key on the node yourself: `arteria.sh nodekey print` shows one line to paste in an SSH session on the node, from any computer.
 - **Nothing on the node changes** except the one line in its authorized keys. `arteria.sh nodes test` checks key login on every node. To stop reading nodes, set `NODES=off` in the config.
 
 ## How the numbers are made
@@ -112,6 +113,7 @@ Reading these counters doesn't disturb Wi-Fi, and no setting is ever changed.
 /jffs/addons/arteria/arteria.sh nodes test    # try key login on every AiMesh node
 /jffs/addons/arteria/arteria.sh nodekey       # give the nodes the router's key (asks each node's password once)
 /jffs/addons/arteria/arteria.sh nodekey 192.168.50.2   # only that node
+/jffs/addons/arteria/arteria.sh nodekey print # the line to paste on a node yourself, to add the key there
 /jffs/addons/arteria/arteria.sh sample        # print one sample as JSON
 /jffs/addons/arteria/arteria.sh debug         # router, firmware and driver details for issues (no names or addresses)
 /jffs/addons/arteria/arteria.sh startup       # re-apply the web page and menu entry

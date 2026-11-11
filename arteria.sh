@@ -8,7 +8,7 @@
 #
 #  Usage: arteria.sh                    (a menu, when run in a terminal: amtm opens this)
 #         arteria.sh install | update [force | dev [branch]] | uninstall | status | check |
-#                    nodes [test] | nodekey [node-ip] | debug | sample | amtmupdate [check] |
+#                    nodes [test] | nodekey [node-ip | print] | debug | sample | amtmupdate [check] |
 #                    startup | version
 #
 #  Install:  curl -fsL --retry 3 https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh \
@@ -615,10 +615,29 @@ nodes_cmd() {   # [test]
 	done
 }
 
+# The same change nodekey makes, as one line to paste in a shell on the node: add the router's key to
+# the node's authorized keys (keeping any already there), unless it's listed, then restart its SSH server.
+nodekey_line() {   # public-key-line
+	b=$(printf '%s' "$1" | cut -d' ' -f2)
+	printf "k='%s'; c=\$(nvram get sshd_authkeys); case \"\$c\" in *'%s'*) echo 'The node already has the key.' ;; *) nvram set sshd_authkeys=\"\$(printf '%%s\\\\n%%s\\\\n' \"\$c\" \"\$k\" | sed '/^\$/d')\" && nvram commit && echo 'Key added. Restarting SSH: this session may close.' && service restart_sshd ;; esac\n" "$1" "$b"
+}
+nodekey_print() {
+	[ -s "$KEY" ] || make_key || die "Couldn't create the key in $KEY"
+	pub=$(pub_key); [ -n "$pub" ] || die "Couldn't read the public key from $KEY"
+	say "To give a node the router's key yourself: log in to the node over SSH (from any computer,"
+	say "with your router admin name and password), then paste this line and press Enter:"
+	say ""
+	nodekey_line "$pub"
+	say ""
+	say "It adds the key to the node's authorized keys (Administration > System > Authorized Keys on the"
+	say "router lists only the router's own). Then run '$SCRIPT nodes test' here."
+}
+
 # Give each node the router's Arteria key. Asks for the node's password once (the router's admin
 # password, which AiMesh nodes share); it goes to the node only and is never stored. The key is
 # added to the node's authorized keys, keeping any that are already there.
-nodekey() {   # [node-ip]
+nodekey() {   # [node-ip | print]
+	[ "$1" = print ] && { nodekey_print; return; }
 	have dbclient && have dropbearkey || die "This firmware has no SSH client (dbclient/dropbearkey)."
 	[ "$(nvram get sshd_enable)" = "0" ] && die "SSH is off on the router (Administration > System > Enable SSH). AiMesh nodes follow that setting: turn it on (LAN only is enough) and try again."
 	[ -t 0 ] || die "nodekey asks for each node's password, so run it in a terminal."
@@ -658,7 +677,12 @@ nodekey() {   # [node-ip]
 	rm -f "$TMPD/nodekey.list" "$TMPD"/node.*.fail
 	say ""
 	[ $fails -eq 0 ] && say "Done. Reopen the page to see each node's devices." && return 0
-	say "$fails node(s) not set up. Check that SSH is on, the password is right, and run '$SCRIPT nodekey' again."
+	say "$fails node(s) not set up. Check that SSH is on and the password is right."
+	say ""
+	say "If the password is right and the node still refuses it: ASUS firmware locks out an address for a"
+	say "while after several failed logins, and then refuses even the right password from it. The node's"
+	say "/tmp/protect_srv.log shows it. Wait a while (or reboot the node) and run '$SCRIPT nodekey' again,"
+	say "or add the key on the node yourself: '$SCRIPT nodekey print' shows the line to paste there."
 	return 1
 }
 
@@ -1029,7 +1053,7 @@ amtm_update() {   # [check]
 
 usage() {
 	say "Usage: $0 [menu] | install | check | update [force | dev [branch]] | uninstall | status |"
-	say "       nodes [test] | nodekey [node-ip] | debug | sample | amtmupdate [check] | startup | version"
+	say "       nodes [test] | nodekey [node-ip | print] | debug | sample | amtmupdate [check] | startup | version"
 }
 menu_pause() { printf '\n Press Enter to go back to the menu '; read -r dummy || exit 0; }
 menu_uninstall() {   # true once removed
