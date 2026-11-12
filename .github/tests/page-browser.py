@@ -16,7 +16,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'kinds1', 'kinds2', 'kinds3', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile']
+SCENARIOS = ['home', 'bulbs', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile']
 fails = []
 
 

@@ -44,9 +44,9 @@ Arteria draws each device as one of these kinds, with a drawing on the map and a
 
 | | |
 |---|---|
-| Computers | Desktop PC, Mac desktop (iMac, Mac mini, Mac Studio, Mac Pro), laptop |
+| Computers | Desktop PC, Mac desktop (iMac, Mac mini, Mac Studio, Mac Pro), laptop, Raspberry Pi (single-board computer) |
 | Phones and wearables | phone, tablet, watch |
-| Entertainment | TV, streaming box, speaker, home cinema (soundbar), game console |
+| Entertainment | TV, streaming box (Apple TV, Fire TV Cube, Shield), streaming stick (Fire TV Stick, Chromecast), speaker, smart speaker (Echo, HomePod, Nest Audio), home cinema (soundbar), game console |
 | Home and office | printer, NAS, network device (switch, access point) |
 | Smart home | camera, doorbell, smart lock, thermostat, light, smart-home hub, air conditioner, robot vacuum, appliance, smart plug, sensor (motion, leak, smoke...), other smart device |
 

@@ -327,6 +327,9 @@ var ICON = {
 	vacuum: ci(12, 12, 8.5) + ci(12, 9, 2) + 'M9.5 16.5h5',
 	appliance: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5',
 	iot: rr(5, 5, 14, 14, 3) + 'M12 9.5v2.5M12 14.5h.01',
+	pi: rr(2.5, 6, 19, 12, 2) + rr(8.5, 10, 5, 5, 1) + 'M5.5 8.5h7' + rr(16, 9.5, 3.5, 6, .8),
+	stick: rr(2.5, 9, 13.5, 6, 2) + 'M16 10.5h3.5v3H16M6 12h.01',
+	smartspeaker: 'M6 5.5c0-1.4 2.7-2.5 6-2.5s6 1.1 6 2.5v13c0 1.4-2.7 2.5-6 2.5s-6-1.1-6-2.5zM6 5.5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5',
 	more: ci(6, 12, 1.6) + ci(12, 12, 1.6) + ci(18, 12, 1.6),
 	expand: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
 	collapse: 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5',
@@ -481,27 +484,30 @@ var TYPE_LOOSE = { 1: 1, 6: 1, 9: 1, 22: 1, 30: 1, 31: 1, 32: 1, 34: 1 };
 var KIND_STRONG = [
 	['mac', /\bmac[ _-]?(studio|mini|pro)\b|\bimac/i],
 	['laptop', /mac[ _-]?book|\bmbp\b|\bmba\b|laptop|notebook|thinkpad|latitude|zenbook|vivobook|ideapad|chromebook|surface|elitebook|probook|\bxps\b|\byoga\b/i],
+	['pi', /raspberry|\brpi\d*\b|^rpi?\d([-_.]|$)|\bpi[ _-]?[345]\b|pi[ _-]?hole/i],   /* before desktop and nas: a Pi often runs a server */
 	['desktop', /^desktop-[a-z0-9]{4,}|^win-[a-z0-9]{6,}|desktop|workstation|\btower\b|\bpc\b|optiplex|\bnuc\b/i],
 	['nas', /\bnas\b|synology|diskstation|qnap|dxp\d|truenas|unraid|terramaster|asustor|ugreen|proxmox|\bserver\b/i],
-	['streamer', /apple[ _-]?tv|chromecast|fire[ _-]?(tv|stick)|\bshield\b|\broku\b|set[ -]?top|\bstb\b|\bmi ?box/i],
-	['tv', /\btv\b|tv$|television|bravia|webos|tizen|\b[oq]led|hisense|vizio/i],
+	['stick', /fire[ _-]?tv(?![ _-]?cube)|fire[ _-]?stick|chromecast|roku[ _-]?(stick|express)|streaming[ _-]?stick|\bmi[ _-]?stick/i],
+	['streamer', /apple[ _-]?tv|fire[ _-]?tv[ _-]?cube|\bshield\b|\broku\b|set[ -]?top|\bstb\b|\bmi ?box/i],
+	['tv', /\btv\b|tv$|television|bravia|webos|tizen|\b[oq]led|hisense|vizio|^(kd|xr|xbr|kdl)[-_]?\d{2}[a-z]|^(qn|un|qe|ue|gq)\d{2}[a-z]/i],   /* with Sony and Samsung model numbers */
 	['soundbar', /sound ?bar|sonos[ _-]?(arc|beam|ray)|playbar|playbase|av[ -]?receiver|\bavr\b|denon|marantz|yamaha|onkyo|home[ -]?(cinema|theat)/i],
-	['speaker', /speaker|sonos|homepod|\becho\b|echo[ _-]?(dot|show|pop|studio)|alexa|google[ _-]?home|nest[ _-]?(mini|audio|hub)|\bbose\b|\bheos\b|\bjbl\b/i],
+	['smartspeaker', /homepod|\becho\b|echo[ _-]?(dot|show|pop|studio|spot)|alexa(?!['\u2019]s)|google[ _-]?home|nest[ _-]?(mini|audio|hub)/i],
+	['speaker', /speaker|sonos|subwoofer|\bsubw\b|\bbose\b|\bheos\b|\bjbl\b/i],
 	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?deck|\bswitch[ _-]?(oled|lite)\b/i],
-	['tablet', /ipad|tablet|kindle|\bkobo\b|e-?reader|paperwhite|galaxy[ _-]?tab|\btab\b/i],
+	['tablet', /ipad|tablet|[ _-]pad([ _-]|\d|$)|matepad|lenovo[ _-]?tab|kindle|\bkobo\b|e-?reader|paperwhite|galaxy[ _-]?tab|\btab\b/i],
 	['watch', /watch\b|fitbit|garmin|\bmi ?band\b|bracelet/i],
 	['phone', /iphone|\bpixel[ _-]?\d|galaxy[ _-]?[asz]\d|phone\b|redmi|oneplus|\bpoco\b/i],
-	['printer', /printer|laserjet|officejet|deskjet|\benvy ?\d|\bepson|\bbrother\b|\bcanon\b|\bet-\d|\bmfc-|\bhl-l|scanner/i],
+	['printer', /printer|laserjet|officejet|deskjet|envy[ _-]?\d|\bepson|\bbrother\b|\bcanon\b|\bet-\d|\bmfc-|\bhl-l|scanner/i],
 	['doorbell', /doorbell|ring[ _-]?pro|\bring[ _-]?(door|video)/i],
-	['camera', /\bcam\b|camera|ipcam|reolink|\barlo\b|\bblink|\bwyze|\beufy|hikvision|dahua|\bnvr\b|nest[ _-]?cam/i],
+	['camera', /\bcam\b|[a-z]cam(\b|\d)|camera|kamera|ipcam|reolink|\barlo\b|\bblink|\bwyze|\beufy|hikvision|dahua|\bnvr\b|nest[ _-]?cam/i],
 	['lock', /\block\b|smart ?lock|\bnuki\b|\byale\b|schlage/i],
-	['thermostat', /thermostat|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning/i],
-	['light', /bulb|\blamp\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee/i],
-	['hub', /\bbridge\b|\bhub\b|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee/i],
+	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning/i],
+	['light', /bulb|\blamp|\bwled\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee/i],
+	['hub', /\bbridge\b|\bhub\b|\bmyq|garage[ _-]?(door|opener)|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee/i],
 	['air', /\bac\b|a\/c|air ?con|daikin|heat ?pump|climate|mitsubishi|sensibo|midea|\bgree\b/i],
 	['vacuum', /vacuum|roborock|rockrobo|roomba|irobot|deebot|ecovacs|dreame|\bmop\b/i],
 	['appliance', /washer|washing|dryer|fridge|refrigerator|freezer|\boven\b|dishwasher|microwave|kettle|coffee|purifier|humidifier|\bfan\b|heater|boiler|cooker|air ?fryer/i],
-	['plug', /\bplug|smart ?plug|\boutlet\b|socket|wall ?switch|power ?strip|\bhs1\d\d\b|\bkp1\d\d\b/i],
+	['plug', /\bplug|\bchime|\bsp1\d\d\b|chargepoint|ev[ _-]?charger|wallbox|juicebox|\beasee\b|\bzappi\b|wall[ _-]?connector|smart ?plug|\boutlet\b|socket|wall ?switch|power ?strip|\bhs1\d\d\b|\bkp1\d\d\b/i],
 	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara/i],
 	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life/i]
 ];
@@ -514,6 +520,7 @@ var KIND_WEAK = [
 	['tv', /lg innotek|hisense|vizio|tcl king/i],
 	['streamer', /\broku\b/i],
 	['nas', /synology|qnap|ugreen/i],
+	['pi', /raspberry/i],
 	['console', /nintendo|sony interactive/i],
 	['camera', /hikvision|dahua|reolink|arlo/i],
 	['vacuum', /roborock|irobot|ecovacs/i],
@@ -589,7 +596,8 @@ var OS_NAME = { 1: 'Android', 2: 'Windows', 3: 'Linux', 4: 'ASUS', 5: 'Apple' };
 var WIFI_STD = { n: 'Wi-Fi 4 (802.11n)', ac: 'Wi-Fi 5 (802.11ac)', ax: 'Wi-Fi 6 (802.11ax)', be: 'Wi-Fi 7 (802.11be)' };
 var KIND_LABEL = { desktop: 'Desktop PC', mac: 'Mac desktop', laptop: 'Laptop', phone: 'Phone', tablet: 'Tablet', watch: 'Watch', printer: 'Printer', tv: 'TV', streamer: 'Streaming box',
 	speaker: 'Speaker', soundbar: 'Home cinema', console: 'Game console', nas: 'NAS', camera: 'Camera', doorbell: 'Doorbell', lock: 'Smart lock', thermostat: 'Thermostat', light: 'Light',
-	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device' };
+	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
+	pi: 'Single-board computer', stick: 'Streaming stick', smartspeaker: 'Smart speaker' };
 function ago(s) {
 	if (s === null || s === undefined || isNaN(s)) return '—';
 	s = Math.max(0, Math.round(s));
@@ -857,7 +865,7 @@ function MAT(base, light) {
 		hi: 'rgba(255,255,255,' + (light ? '.85' : '.3') + ')', hi2: 'rgba(255,255,255,' + (light ? '.4' : '.12') + ')' };
 }
 var M_BODY = MAT('#48555b'), M_DARK = MAT('#2c363a'), M_BLACK = MAT('#1d2427'), M_WHITE = MAT('#d3dadc', true), M_ALU = MAT('#b4bdc1', true),
-	M_METAL = MAT('#7d8b91'), M_WALL = MAT('#3b484e'), M_TABLE = MAT('#66757c');
+	M_METAL = MAT('#7d8b91'), M_WALL = MAT('#3b484e'), M_TABLE = MAT('#66757c'), M_PCB = MAT('#2f7a4c');
 
 function Obj(id, cx, cy, top) { this.id = id; this.cx = cx; this.cy = cy; this.depth = cx + cy; this.svg = []; this.pts = []; this.anchor = P(cx, cy, top); this.shadow = []; this.target = P(cx, cy, top); }
 Obj.prototype.box = function (X, Y, Z, dx, dy, dz, m, o) {
@@ -1197,6 +1205,51 @@ function drawAir(id, kind, cx, cy, face) {   /* a split air conditioner on a pie
 	o.target = P(cx, cy, 1.62);
 	return o;
 }
+function drawPi(id, kind, cx, cy, face) {   /* a single-board computer (Raspberry Pi): a green board, its chip, pins and ports */
+	var o, b, g;
+	o = new Obj(id, cx, cy, 0.42);
+	[[cx - 0.6, cy - 0.4], [cx + 0.48, cy - 0.4], [cx - 0.6, cy + 0.3], [cx + 0.48, cy + 0.3]].forEach(function (f) { o.box(f[0], f[1], 0, 0.1, 0.1, 0.08, M_METAL, { rim: false }); });
+	o.box(cx - 0.68, cy - 0.46, 0.08, 1.36, 0.92, 0.05, M_PCB, { shadow: true });
+	b = o.last;
+	for (var i = 0; i < 10; i++) { g = o.fp('T', 0.1 + i * 0.062, 0.1, b); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + px(0.9) + '" style="fill:#d9b23a"/>'); }
+	o.box(cx - 0.62, cy - 0.42, 0.13, 0.66, 0.1, 0.1, M_BLACK, { rim: false });   /* the pin header */
+	o.box(cx - 0.3, cy - 0.12, 0.13, 0.34, 0.34, 0.05, M_METAL);                   /* the processor */
+	o.face('T', 0.15, 0.15, 0.85, 0.85, 'fill:#a9b4b8');
+	o.box(cx + 0.12, cy - 0.06, 0.13, 0.16, 0.24, 0.04, M_BLACK, { rim: false });   /* memory */
+	o.box(cx + 0.34, cy - 0.42, 0.13, 0.34, 0.26, 0.24, M_ALU);                    /* two USB ports and the network port */
+	o.box(cx + 0.34, cy - 0.12, 0.13, 0.34, 0.26, 0.24, M_ALU);
+	o.box(cx + 0.34, cy + 0.18, 0.13, 0.34, 0.26, 0.26, M_ALU);
+	o.face('R', 0.2, 0.25, 0.8, 0.75, 'fill:#141b1e');
+	o.led('L', 0.08, 0.5, '#ff5c5c', 0, 0, 0.8, b);
+	o.led('L', 0.14, 0.5, '#3ddc97', 1.3, 0, 0.8, b);
+	o.target = P(cx, cy, 0.46);
+	return o;
+}
+function drawStick(id, kind, cx, cy, face) {   /* a streaming stick (Fire TV Stick, Chromecast, Roku Stick) and its remote */
+	var o;
+	o = new Obj(id, cx, cy, 0.24);
+	o.box(cx - 0.08, cy + 0.12, 0, 0.2, 0.78, 0.06, M_DARK, { shadow: true });   /* the remote */
+	o.svg.push(ell(o.fp('T', 0.5, 0.25), 0.07, 'fill:#141b1e;stroke:#56646a;stroke-width:.8'));
+	[0.45, 0.6, 0.75].forEach(function (v) { var g = o.fp('T', 0.5, v); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + px(0.9) + '" style="fill:#56646a"/>'); });
+	o.box(cx - 0.58, cy - 0.5, 0, 0.92, 0.3, 0.14, M_BLACK, { shadow: true });   /* the stick */
+	o.face('T', 0.08, 0.2, 0.55, 0.8, 'fill:none;stroke:rgba(255,255,255,.12);stroke-width:.8');
+	o.led('L', 0.12, 0.5, DN, 2.4, 0, 0.9);
+	o.box(cx + 0.34, cy - 0.44, 0.02, 0.2, 0.18, 0.1, M_METAL);                   /* its HDMI plug */
+	o.target = P(cx, cy - 0.2, 0.26);
+	return o;
+}
+function drawSmartSpeaker(id, kind, cx, cy, face) {   /* a cylinder smart speaker (Echo Studio, HomePod, Nest Audio): fabric, a light ring on top */
+	var o, c;
+	o = new Obj(id, cx, cy, 1.0);
+	o.disc(cx, cy, 0, 0.42, 0.92, M_DARK, 'ar-cd', { shadow: true });
+	[0.25, 0.45, 0.65].forEach(function (z) { var a = P(cx, cy, z), rx = 1.2247 * 0.42 * G.U, ry = 0.7071 * 0.42 * G.U;
+		o.svg.push('<path d="M' + n1(a[0] - rx) + ' ' + n1(a[1]) + ' A' + n1(rx) + ' ' + n1(ry) + ' 0 0 0 ' + n1(a[0] + rx) + ' ' + n1(a[1]) + '" style="fill:none;stroke:#1f2629;stroke-width:1.1"/>'); });
+	c = P(cx, cy, 0.92);
+	o.svg.push(ell(c, 0.36, 'fill:none;stroke:' + DN + ';stroke-width:1.6'), ell(c, 0.2, 'fill:#141b1e'));
+	[-0.11, 0.11].forEach(function (d) { var g = P(cx + d, cy - d, 0.92); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + px(1) + '" style="fill:#56646a"/>'); });
+	o.target = P(cx, cy, 1.0);
+	return o;
+}
 function drawSpeaker(id, kind, cx, cy, face) {   /* a smart speaker: fabric sides, a light ring on top */
 	var o;
 	o = new Obj(id, cx, cy, 0.9);
@@ -1371,7 +1424,8 @@ var DRAW = {
 	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight,
 	air: drawAir, speaker: drawSpeaker, printer: drawPrinter, watch: drawWatch, camera: drawCamera, streamer: drawStreamer, soundbar: drawSoundbar,
 	doorbell: drawDoorbellLock, lock: drawDoorbellLock, sensor: drawSensorThermostat, thermostat: drawSensorThermostat, plug: drawPlug, hub: drawHub,
-	vacuum: drawVacuum, appliance: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric
+	vacuum: drawVacuum, appliance: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
+	pi: drawPi, stick: drawStick, smartspeaker: drawSmartSpeaker
 };
 /* Devices on the map: one drawing per kind, at (cx, cy) on the floor, facing left (the default) or right.
    Kinds without a drawing of their own get the generic box. */
