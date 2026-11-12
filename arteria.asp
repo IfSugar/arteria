@@ -327,6 +327,9 @@ var ICON = {
 	vacuum: ci(12, 12, 8.5) + ci(12, 9, 2) + 'M9.5 16.5h5',
 	appliance: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5',
 	iot: rr(5, 5, 14, 14, 3) + 'M12 9.5v2.5M12 14.5h.01',
+	pi: rr(2.5, 6, 19, 12, 2) + rr(8.5, 10, 5, 5, 1) + 'M5.5 8.5h7' + rr(16, 9.5, 3.5, 6, .8),
+	stick: rr(2.5, 9, 13.5, 6, 2) + 'M16 10.5h3.5v3H16M6 12h.01',
+	smartspeaker: 'M6 5.5c0-1.4 2.7-2.5 6-2.5s6 1.1 6 2.5v13c0 1.4-2.7 2.5-6 2.5s-6-1.1-6-2.5zM6 5.5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5',
 	more: ci(6, 12, 1.6) + ci(12, 12, 1.6) + ci(18, 12, 1.6),
 	expand: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
 	collapse: 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5',
@@ -481,27 +484,30 @@ var TYPE_LOOSE = { 1: 1, 6: 1, 9: 1, 22: 1, 30: 1, 31: 1, 32: 1, 34: 1 };
 var KIND_STRONG = [
 	['mac', /\bmac[ _-]?(studio|mini|pro)\b|\bimac/i],
 	['laptop', /mac[ _-]?book|\bmbp\b|\bmba\b|laptop|notebook|thinkpad|latitude|zenbook|vivobook|ideapad|chromebook|surface|elitebook|probook|\bxps\b|\byoga\b/i],
+	['pi', /raspberry|\brpi\d*\b|^rpi?\d([-_.]|$)|\bpi[ _-]?[345]\b|pi[ _-]?hole/i],   /* before desktop and nas: a Pi often runs a server */
 	['desktop', /^desktop-[a-z0-9]{4,}|^win-[a-z0-9]{6,}|desktop|workstation|\btower\b|\bpc\b|optiplex|\bnuc\b/i],
 	['nas', /\bnas\b|synology|diskstation|qnap|dxp\d|truenas|unraid|terramaster|asustor|ugreen|proxmox|\bserver\b/i],
-	['streamer', /apple[ _-]?tv|chromecast|fire[ _-]?(tv|stick)|\bshield\b|\broku\b|set[ -]?top|\bstb\b|\bmi ?box/i],
-	['tv', /\btv\b|tv$|television|bravia|webos|tizen|\b[oq]led|hisense|vizio/i],
+	['stick', /fire[ _-]?tv(?![ _-]?cube)|fire[ _-]?stick|chromecast|roku[ _-]?(stick|express)|streaming[ _-]?stick|\bmi[ _-]?stick/i],
+	['streamer', /apple[ _-]?tv|fire[ _-]?tv[ _-]?cube|\bshield\b|\broku\b|set[ -]?top|\bstb\b|\bmi ?box/i],
+	['tv', /\btv\b|tv$|television|bravia|webos|tizen|\b[oq]led|hisense|vizio|^(kd|xr|xbr|kdl)[-_]?\d{2}[a-z]|^(qn|un|qe|ue|gq)\d{2}[a-z]/i],   /* with Sony and Samsung model numbers */
 	['soundbar', /sound ?bar|sonos[ _-]?(arc|beam|ray)|playbar|playbase|av[ -]?receiver|\bavr\b|denon|marantz|yamaha|onkyo|home[ -]?(cinema|theat)/i],
-	['speaker', /speaker|sonos|homepod|\becho\b|echo[ _-]?(dot|show|pop|studio)|alexa|google[ _-]?home|nest[ _-]?(mini|audio|hub)|\bbose\b|\bheos\b|\bjbl\b/i],
+	['smartspeaker', /homepod|\becho\b|echo[ _-]?(dot|show|pop|studio|spot)|alexa(?!['\u2019]s)|google[ _-]?home|nest[ _-]?(mini|audio|hub)/i],
+	['speaker', /speaker|sonos|subwoofer|\bsubw\b|\bbose\b|\bheos\b|\bjbl\b/i],
 	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?deck|\bswitch[ _-]?(oled|lite)\b/i],
-	['tablet', /ipad|tablet|kindle|\bkobo\b|e-?reader|paperwhite|galaxy[ _-]?tab|\btab\b/i],
+	['tablet', /ipad|tablet|[ _-]pad([ _-]|\d|$)|matepad|lenovo[ _-]?tab|kindle|\bkobo\b|e-?reader|paperwhite|galaxy[ _-]?tab|\btab\b/i],
 	['watch', /watch\b|fitbit|garmin|\bmi ?band\b|bracelet/i],
 	['phone', /iphone|\bpixel[ _-]?\d|galaxy[ _-]?[asz]\d|phone\b|redmi|oneplus|\bpoco\b/i],
-	['printer', /printer|laserjet|officejet|deskjet|\benvy ?\d|\bepson|\bbrother\b|\bcanon\b|\bet-\d|\bmfc-|\bhl-l|scanner/i],
+	['printer', /printer|laserjet|officejet|deskjet|envy[ _-]?\d|\bepson|\bbrother\b|\bcanon\b|\bet-\d|\bmfc-|\bhl-l|scanner/i],
 	['doorbell', /doorbell|ring[ _-]?pro|\bring[ _-]?(door|video)/i],
-	['camera', /\bcam\b|camera|ipcam|reolink|\barlo\b|\bblink|\bwyze|\beufy|hikvision|dahua|\bnvr\b|nest[ _-]?cam/i],
+	['camera', /\bcam\b|[a-z]cam(\b|\d)|camera|kamera|ipcam|reolink|\barlo\b|\bblink|\bwyze|\beufy|hikvision|dahua|\bnvr\b|nest[ _-]?cam/i],
 	['lock', /\block\b|smart ?lock|\bnuki\b|\byale\b|schlage/i],
-	['thermostat', /thermostat|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning/i],
-	['light', /bulb|\blamp\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee/i],
-	['hub', /\bbridge\b|\bhub\b|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee/i],
+	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning/i],
+	['light', /bulb|\blamp|\bwled\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee/i],
+	['hub', /\bbridge\b|\bhub\b|\bmyq|garage[ _-]?(door|opener)|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee/i],
 	['air', /\bac\b|a\/c|air ?con|daikin|heat ?pump|climate|mitsubishi|sensibo|midea|\bgree\b/i],
 	['vacuum', /vacuum|roborock|rockrobo|roomba|irobot|deebot|ecovacs|dreame|\bmop\b/i],
 	['appliance', /washer|washing|dryer|fridge|refrigerator|freezer|\boven\b|dishwasher|microwave|kettle|coffee|purifier|humidifier|\bfan\b|heater|boiler|cooker|air ?fryer/i],
-	['plug', /\bplug|smart ?plug|\boutlet\b|socket|wall ?switch|power ?strip|\bhs1\d\d\b|\bkp1\d\d\b/i],
+	['plug', /\bplug|\bchime|\bsp1\d\d\b|chargepoint|ev[ _-]?charger|wallbox|juicebox|\beasee\b|\bzappi\b|wall[ _-]?connector|smart ?plug|\boutlet\b|socket|wall ?switch|power ?strip|\bhs1\d\d\b|\bkp1\d\d\b/i],
 	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara/i],
 	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life/i]
 ];
@@ -514,6 +520,7 @@ var KIND_WEAK = [
 	['tv', /lg innotek|hisense|vizio|tcl king/i],
 	['streamer', /\broku\b/i],
 	['nas', /synology|qnap|ugreen/i],
+	['pi', /raspberry/i],
 	['console', /nintendo|sony interactive/i],
 	['camera', /hikvision|dahua|reolink|arlo/i],
 	['vacuum', /roborock|irobot|ecovacs/i],
@@ -589,7 +596,8 @@ var OS_NAME = { 1: 'Android', 2: 'Windows', 3: 'Linux', 4: 'ASUS', 5: 'Apple' };
 var WIFI_STD = { n: 'Wi-Fi 4 (802.11n)', ac: 'Wi-Fi 5 (802.11ac)', ax: 'Wi-Fi 6 (802.11ax)', be: 'Wi-Fi 7 (802.11be)' };
 var KIND_LABEL = { desktop: 'Desktop PC', mac: 'Mac desktop', laptop: 'Laptop', phone: 'Phone', tablet: 'Tablet', watch: 'Watch', printer: 'Printer', tv: 'TV', streamer: 'Streaming box',
 	speaker: 'Speaker', soundbar: 'Home cinema', console: 'Game console', nas: 'NAS', camera: 'Camera', doorbell: 'Doorbell', lock: 'Smart lock', thermostat: 'Thermostat', light: 'Light',
-	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device' };
+	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
+	pi: 'Single-board computer', stick: 'Streaming stick', smartspeaker: 'Smart speaker' };
 function ago(s) {
 	if (s === null || s === undefined || isNaN(s)) return '—';
 	s = Math.max(0, Math.round(s));
@@ -857,7 +865,7 @@ function MAT(base, light) {
 		hi: 'rgba(255,255,255,' + (light ? '.85' : '.3') + ')', hi2: 'rgba(255,255,255,' + (light ? '.4' : '.12') + ')' };
 }
 var M_BODY = MAT('#48555b'), M_DARK = MAT('#2c363a'), M_BLACK = MAT('#1d2427'), M_WHITE = MAT('#d3dadc', true), M_ALU = MAT('#b4bdc1', true),
-	M_METAL = MAT('#7d8b91'), M_WALL = MAT('#3b484e'), M_TABLE = MAT('#66757c');
+	M_METAL = MAT('#7d8b91'), M_WALL = MAT('#3b484e'), M_TABLE = MAT('#66757c'), M_PCB = MAT('#2f7a4c');
 
 function Obj(id, cx, cy, top) { this.id = id; this.cx = cx; this.cy = cy; this.depth = cx + cy; this.svg = []; this.pts = []; this.anchor = P(cx, cy, top); this.shadow = []; this.target = P(cx, cy, top); }
 Obj.prototype.box = function (X, Y, Z, dx, dy, dz, m, o) {
@@ -1197,6 +1205,51 @@ function drawAir(id, kind, cx, cy, face) {   /* a split air conditioner on a pie
 	o.target = P(cx, cy, 1.62);
 	return o;
 }
+function drawPi(id, kind, cx, cy, face) {   /* a single-board computer (Raspberry Pi): a green board, its chip, pins and ports */
+	var o, b, g;
+	o = new Obj(id, cx, cy, 0.42);
+	[[cx - 0.6, cy - 0.4], [cx + 0.48, cy - 0.4], [cx - 0.6, cy + 0.3], [cx + 0.48, cy + 0.3]].forEach(function (f) { o.box(f[0], f[1], 0, 0.1, 0.1, 0.08, M_METAL, { rim: false }); });
+	o.box(cx - 0.68, cy - 0.46, 0.08, 1.36, 0.92, 0.05, M_PCB, { shadow: true });
+	b = o.last;
+	for (var i = 0; i < 10; i++) { g = o.fp('T', 0.1 + i * 0.062, 0.1, b); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + px(0.9) + '" style="fill:#d9b23a"/>'); }
+	o.box(cx - 0.62, cy - 0.42, 0.13, 0.66, 0.1, 0.1, M_BLACK, { rim: false });   /* the pin header */
+	o.box(cx - 0.3, cy - 0.12, 0.13, 0.34, 0.34, 0.05, M_METAL);                   /* the processor */
+	o.face('T', 0.15, 0.15, 0.85, 0.85, 'fill:#a9b4b8');
+	o.box(cx + 0.12, cy - 0.06, 0.13, 0.16, 0.24, 0.04, M_BLACK, { rim: false });   /* memory */
+	o.box(cx + 0.34, cy - 0.42, 0.13, 0.34, 0.26, 0.24, M_ALU);                    /* two USB ports and the network port */
+	o.box(cx + 0.34, cy - 0.12, 0.13, 0.34, 0.26, 0.24, M_ALU);
+	o.box(cx + 0.34, cy + 0.18, 0.13, 0.34, 0.26, 0.26, M_ALU);
+	o.face('R', 0.2, 0.25, 0.8, 0.75, 'fill:#141b1e');
+	o.led('L', 0.08, 0.5, '#ff5c5c', 0, 0, 0.8, b);
+	o.led('L', 0.14, 0.5, '#3ddc97', 1.3, 0, 0.8, b);
+	o.target = P(cx, cy, 0.46);
+	return o;
+}
+function drawStick(id, kind, cx, cy, face) {   /* a streaming stick (Fire TV Stick, Chromecast, Roku Stick) and its remote */
+	var o;
+	o = new Obj(id, cx, cy, 0.24);
+	o.box(cx - 0.08, cy + 0.12, 0, 0.2, 0.78, 0.06, M_DARK, { shadow: true });   /* the remote */
+	o.svg.push(ell(o.fp('T', 0.5, 0.25), 0.07, 'fill:#141b1e;stroke:#56646a;stroke-width:.8'));
+	[0.45, 0.6, 0.75].forEach(function (v) { var g = o.fp('T', 0.5, v); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + px(0.9) + '" style="fill:#56646a"/>'); });
+	o.box(cx - 0.58, cy - 0.5, 0, 0.92, 0.3, 0.14, M_BLACK, { shadow: true });   /* the stick */
+	o.face('T', 0.08, 0.2, 0.55, 0.8, 'fill:none;stroke:rgba(255,255,255,.12);stroke-width:.8');
+	o.led('L', 0.12, 0.5, DN, 2.4, 0, 0.9);
+	o.box(cx + 0.34, cy - 0.44, 0.02, 0.2, 0.18, 0.1, M_METAL);                   /* its HDMI plug */
+	o.target = P(cx, cy - 0.2, 0.26);
+	return o;
+}
+function drawSmartSpeaker(id, kind, cx, cy, face) {   /* a cylinder smart speaker (Echo Studio, HomePod, Nest Audio): fabric, a light ring on top */
+	var o, c;
+	o = new Obj(id, cx, cy, 1.0);
+	o.disc(cx, cy, 0, 0.42, 0.92, M_DARK, 'ar-cd', { shadow: true });
+	[0.25, 0.45, 0.65].forEach(function (z) { var a = P(cx, cy, z), rx = 1.2247 * 0.42 * G.U, ry = 0.7071 * 0.42 * G.U;
+		o.svg.push('<path d="M' + n1(a[0] - rx) + ' ' + n1(a[1]) + ' A' + n1(rx) + ' ' + n1(ry) + ' 0 0 0 ' + n1(a[0] + rx) + ' ' + n1(a[1]) + '" style="fill:none;stroke:#1f2629;stroke-width:1.1"/>'); });
+	c = P(cx, cy, 0.92);
+	o.svg.push(ell(c, 0.36, 'fill:none;stroke:' + DN + ';stroke-width:1.6'), ell(c, 0.2, 'fill:#141b1e'));
+	[-0.11, 0.11].forEach(function (d) { var g = P(cx + d, cy - d, 0.92); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + px(1) + '" style="fill:#56646a"/>'); });
+	o.target = P(cx, cy, 1.0);
+	return o;
+}
 function drawSpeaker(id, kind, cx, cy, face) {   /* a smart speaker: fabric sides, a light ring on top */
 	var o;
 	o = new Obj(id, cx, cy, 0.9);
@@ -1371,13 +1424,66 @@ var DRAW = {
 	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight,
 	air: drawAir, speaker: drawSpeaker, printer: drawPrinter, watch: drawWatch, camera: drawCamera, streamer: drawStreamer, soundbar: drawSoundbar,
 	doorbell: drawDoorbellLock, lock: drawDoorbellLock, sensor: drawSensorThermostat, thermostat: drawSensorThermostat, plug: drawPlug, hub: drawHub,
-	vacuum: drawVacuum, appliance: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric
+	vacuum: drawVacuum, appliance: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
+	pi: drawPi, stick: drawStick, smartspeaker: drawSmartSpeaker
 };
 /* Devices on the map: one drawing per kind, at (cx, cy) on the floor, facing left (the default) or right.
    Kinds without a drawing of their own get the generic box. */
 function objDevice(id, kind, cx, cy, face) {
 	var draw = kind === 'tv' && face === 'R' ? drawTvSide : (DRAW[kind] || drawGeneric);
 	return draw(id, kind, cx, cy, face);
+}
+/* The Flow's pictures: the Map's own drawings, each made once (per kind, or per router or node model) and cropped
+   to its outline, so it fits any size. The phone, tablet and watch stand on something on the Map; their pictures
+   leave that out, since at this size the stand is all you'd see. */
+function thumbPhone(id, kind, cx, cy) {
+	var o = new Obj(id, cx, cy, 1.1);
+	o.box(cx - 0.28, cy - 0.05, 0, 0.56, 0.1, 1.1, M_BLACK);
+	o.face('L', 0.09, 0.04, 0.91, 0.96, 'fill:url(#ar-scr5)');
+	o.face('L', 0.38, 0.9, 0.62, 0.93, 'fill:#0d1214');
+	o.face('L', 0.18, 0.5, 0.82, 0.62, 'fill:#ffffff;opacity:.2');
+	return o;
+}
+function thumbTablet(id, kind, cx, cy) {
+	var o = new Obj(id, cx, cy, 1.2);
+	o.box(cx - 0.48, cy - 0.04, 0, 0.96, 0.08, 1.2, M_BLACK);
+	o.face('L', 0.07, 0.06, 0.93, 0.94, 'fill:url(#ar-scr5)');
+	o.face('L', 0.14, 0.52, 0.6, 0.86, 'fill:#ffffff;opacity:.16');
+	return o;
+}
+function thumbWatch(id, kind, cx, cy) {
+	var o = new Obj(id, cx, cy, 1.0);
+	o.box(cx - 0.13, cy - 0.03, 0, 0.26, 0.06, 0.32, M_DARK, { rim: false });   /* the strap below */
+	o.box(cx - 0.2, cy - 0.05, 0.3, 0.4, 0.12, 0.42, M_BLACK);
+	o.face('L', 0.1, 0.08, 0.9, 0.92, 'fill:url(#ar-scr4)');
+	o.face('L', 0.24, 0.46, 0.76, 0.6, 'fill:#ffffff;opacity:.2');
+	o.box(cx - 0.13, cy - 0.03, 0.7, 0.26, 0.06, 0.32, M_DARK, { rim: false });   /* and above */
+	return o;
+}
+var THUMB_DRAW = { phone: thumbPhone, tablet: thumbTablet, watch: thumbWatch };
+var THUMB = Object.create(null);
+function thumb(key, make) {
+	var t = THUMB[key];
+	if (!t) {
+		var o = make(), b = o.bbox(), w = b[2] - b[0], h = b[3] - b[1], z = Math.max(w, h, 1), p = z * 0.05;
+		t = THUMB[key] = { svg: o.svg.join(''), vb: [b[0] - (z - w) / 2 - p, b[1] - (z - h) / 2 - p, z + 2 * p, z + 2 * p].map(n1).join(' ') };
+	}
+	return t;
+}
+function picSvg(t, size, svg) {
+	return '<svg width="' + size + '" height="' + size + '" viewBox="' + t.vb + '" aria-hidden="true" style="display:block;flex:none;overflow:visible">' + (svg || t.svg) + '</svg>';
+}
+function devicePic(kind, size) {
+	var draw = THUMB_DRAW[kind] || DRAW[kind];
+	if (!draw) return iconSvg(kind, Math.round(size * 0.6), INK2);   /* "+N more": the three dots */
+	return picSvg(thumb('d:' + kind, function () { return draw('pic', kind, 5, 5, 'L'); }), size);
+}
+function routerPic(model, size) { return picSvg(thumb('r:' + model, function () { return objRouter(model); }), size); }
+function wanPic(size) { return picSvg(thumb('wan', objWan), size); }
+/* A node, its ring violet while it's online and red when it isn't, as on the Map. */
+function nodePic(model, size, online) {
+	var t = thumb('n:' + model, function () { return objNode('pic', 5, 5, model); });
+	return picSvg(t, size, online ? t.svg : t.svg.replace('<g data-ring="pic:lit">', '<g data-ring="pic:lit" class="hide">').replace('<g data-ring="pic:dead" class="hide">', '<g data-ring="pic:dead">'));
 }
 function objTray(cx, cy) {
 	var o = new Obj('more', cx, cy, 0.36);
@@ -1680,21 +1786,9 @@ function buildMap(net, L) {
 		return '<g data-lead="' + lb.id + '" class="ob"><path d="M' + n1(lb.px) + ' ' + n1(lb.py) + ' L' + n1(lb.ax) + ' ' + n1(lb.ay) + '" style="fill:none;stroke:rgba(255,255,255,.4);stroke-width:1"/>' +
 			'<circle cx="' + n1(lb.ax) + '" cy="' + n1(lb.ay) + '" r="2" style="fill:#f0efec"/></g>';
 	});
-	var grad = function (id, a, b, c) {
-		return '<linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:' + a + '"/>' + (c ? '<stop offset=".55" style="stop-color:' + b + '"/>' : '') + '<stop offset="1" style="stop-color:' + (c || b) + '"/></linearGradient>';
-	};
-	var defs = '<defs><linearGradient id="ar-floor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:#43535b"/><stop offset="1" style="stop-color:#2e3b41"/></linearGradient>' +
-		grad('ar-scr1', '#123049', '#2c76a6', '#6cc6ea') + grad('ar-scr2', '#22265a', '#4f57bd', '#a3acf5') + grad('ar-scr3', '#0f2a40', '#2f78a6') + grad('ar-scr4', '#1b3346', '#4a96c0') + grad('ar-scr5', '#1a3a52', '#5aa9d6') +
-		'<linearGradient id="ar-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" style="stop-color:#59c3ff;stop-opacity:.5"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></linearGradient>' +
-		'<radialGradient id="ar-halo"><stop offset=".45" style="stop-color:#59c3ff;stop-opacity:.34"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></radialGradient>' +
-		'<radialGradient id="ar-globe" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#bfe8ff"/><stop offset=".5" style="stop-color:#59c3ff"/><stop offset="1" style="stop-color:#1e6fa3"/></radialGradient>' +
-		'<radialGradient id="ar-glow"><stop offset=".3" style="stop-color:#ffcc00;stop-opacity:.36"/><stop offset="1" style="stop-color:#ffcc00;stop-opacity:0"/></radialGradient>' +
-		'<radialGradient id="ar-bulb" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#fff6d0"/><stop offset=".5" style="stop-color:#ffcc00"/><stop offset="1" style="stop-color:#b38f00"/></radialGradient>' +
-		'<linearGradient id="ar-cw" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_WHITE.l + '"/><stop offset=".5" style="stop-color:' + M_WHITE.r + '"/></linearGradient>' +
-		'<linearGradient id="ar-cd" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_DARK.l + '"/><stop offset=".5" style="stop-color:' + M_DARK.r + '"/></linearGradient>' +
-		'<filter id="ar-blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>';
+
 	var svg = '<svg width="' + G.SW + '" height="' + G.SH + '" viewBox="0 0 ' + G.SW + ' ' + G.SH + '" role="img" aria-label="Isometric map of your network: traffic moving between the internet, the router, its AiMesh nodes and each device">' +
-		defs + floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3" filter="url(#ar-blur)">' + sh.join('') + '</g>' +
+		floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3" filter="url(#ar-blur)">' + sh.join('') + '</g>' +
 		objs.map(function (o) { return '<g data-obj="' + o.id + '" class="ob">' + o.svg.join('') + '</g>'; }).join('') +
 		arcs.map(function (a) { return a.svg; }).join('') + hubs.join('') + marks.join('') + leaders.join('') + '</svg>';
 	var html = labels.map(function (lb) {
@@ -1855,6 +1949,23 @@ function setNotice(text, color) {
 }
 
 /* the map, every poll: classes and numbers only (the scene is rebuilt only when stands change) */
+/* The gradients and filter the drawings use, in one hidden SVG that is always rendered (#arDefs): a gradient inside
+   a hidden SVG draws nothing in Chrome, and the Flow shows the Map's drawings while the Map is hidden. */
+function sceneDefs() {
+	var grad = function (id, a, b, c) {
+		return '<linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:' + a + '"/>' + (c ? '<stop offset=".55" style="stop-color:' + b + '"/>' : '') + '<stop offset="1" style="stop-color:' + (c || b) + '"/></linearGradient>';
+	};
+	return '<defs><linearGradient id="ar-floor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:#43535b"/><stop offset="1" style="stop-color:#2e3b41"/></linearGradient>' +
+		grad('ar-scr1', '#123049', '#2c76a6', '#6cc6ea') + grad('ar-scr2', '#22265a', '#4f57bd', '#a3acf5') + grad('ar-scr3', '#0f2a40', '#2f78a6') + grad('ar-scr4', '#1b3346', '#4a96c0') + grad('ar-scr5', '#1a3a52', '#5aa9d6') +
+		'<linearGradient id="ar-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" style="stop-color:#59c3ff;stop-opacity:.5"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></linearGradient>' +
+		'<radialGradient id="ar-halo"><stop offset=".45" style="stop-color:#59c3ff;stop-opacity:.34"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></radialGradient>' +
+		'<radialGradient id="ar-globe" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#bfe8ff"/><stop offset=".5" style="stop-color:#59c3ff"/><stop offset="1" style="stop-color:#1e6fa3"/></radialGradient>' +
+		'<radialGradient id="ar-glow"><stop offset=".3" style="stop-color:#ffcc00;stop-opacity:.36"/><stop offset="1" style="stop-color:#ffcc00;stop-opacity:0"/></radialGradient>' +
+		'<radialGradient id="ar-bulb" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#fff6d0"/><stop offset=".5" style="stop-color:#ffcc00"/><stop offset="1" style="stop-color:#b38f00"/></radialGradient>' +
+		'<linearGradient id="ar-cw" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_WHITE.l + '"/><stop offset=".5" style="stop-color:' + M_WHITE.r + '"/></linearGradient>' +
+		'<linearGradient id="ar-cd" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_DARK.l + '"/><stop offset=".5" style="stop-color:' + M_DARK.r + '"/></linearGradient>' +
+		'<filter id="ar-blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>';
+}
 function renderMap(net) {
 	if (G.big && Math.min(net.nodes.length, 3) !== G.nodes) fit();   /* a node joined or left: its zone */
 	var L = mapLayout(net), sig = mapSignature(L);
@@ -1938,6 +2049,9 @@ function renderMap(net) {
 
 /* ---------------------------------------------------------------- the flow (Sankey) */
 var FBW = { src: 10, rt: 12, link: 10, mesh: 10, dev: 8 }, FGAP = 3, FGGAP = 11, FSGAP = 34, FKCAP = 11.5;
+/* The Flow's pictures (px), larger in the expanded view; FTOP: just under the column titles */
+var FPIC = { row: 30, wan: 36, rt: 46, node: 38 }, FPIC_BIG = { row: 34, wan: 46, rt: 58, node: 48 }, FTOP = 76;
+function FP() { return G.big ? FPIC_BIG : FPIC; }
 /* The big view's flow: columns spread across the stage, a row for every device (up to 60), wider rows
    with more columns, and no height limit: the stage scrolls instead of the ribbons shrinking. */
 function flowGeom(w, h) {
@@ -1981,8 +2095,8 @@ function flowGroups(net) {
 	return gs;
 }
 function flowSignature(gs) { return G.key + JSON.stringify(gs.map(function (g) { return [g.id, g.rows.map(function (r) { return r.id; })]; })); }
-function buildFlow(gs) {
-	var o = [], keys = [], FX0 = G.flow.x;
+function buildFlow(gs, net) {
+	var o = [], keys = [], FX0 = G.flow.x, model = net && net.router ? net.router.model || '' : '';
 	var rb = function (key, cls) {
 		keys.push(key);
 		var dl = function (i) { return (-((hash(key) * 17 + i * 29) % 100) / 100 * 1.4).toFixed(2); };
@@ -2018,6 +2132,14 @@ function buildFlow(gs) {
 			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + esc(nn) + '</text>'));
 		}
 	});
+	/* with Pictures on, as on the Map: the internet terminal over its label, the router over its name, each node over its bar.
+	   Each is drawn with its bottom at 0 and moved into place like the labels. */
+	var pic = function (key, x, size, inner) { return lbl('pic:' + key, '<g transform="translate(' + n1(x - size / 2) + ' ' + (-size) + ')">' + inner + '</g>'); };
+	if (A.pics) {
+		o.push(pic('wan', FX0.src - 8 - textW('Internet', true) / 2, FP().wan, wanPic(FP().wan)));
+		o.push(pic('rt', FX0.rt + 6, FP().rt, routerPic(model, FP().rt)));
+		gs.forEach(function (g) { if (g.node) o.push(pic('n:' + g.id, FX0.mesh + FBW.mesh / 2, FP().node, nodePic(g.node.model, FP().node, g.node.online))); });
+	}
 	var hs = 'font-size:10px;font-weight:700;letter-spacing:.12em;fill:#93a9b1';
 	var heads = '<text data-t="srchead" x="' + (FX0.src - 22) + '" y="68" style="' + hs + ';text-anchor:middle">SOURCE</text>' +
 		[[FX0.rt + 6, 'ROUTER'], [FX0.link + 5, 'LINK']].map(function (h) { return '<text x="' + h[0] + '" y="68" style="' + hs + ';text-anchor:middle">' + h[1] + '</text>'; }).join('') +
@@ -2064,6 +2186,10 @@ function flowLayout(gs, net, mode) {
 			if (aggH) Hh = aggH;
 			/* a node's backhaul can carry more than its listed clients (the node itself, rounding) */
 			if (g.node && !flowAgg(g) && gv * k > Hh) Hh = Math.min(gv * k, y - y0);
+			if (g.node && A.pics) {   /* room for the node's picture above its name: move the group down if it doesn't fit */
+				var ly = Hh > 0 ? (y0 + y) / 2 - Hh / 2 - 7 : (y0 + y) / 2 + 4, room = ly - 16 - FP().node - (gi ? y0 - FGGAP : FTOP) - 2;
+				if (room < 0) { g.rows.forEach(function (r) { slot[r.id].top -= room; slot[r.id].bar -= room; }); y0 -= room; y -= room; }
+			}
 			grp[g.id] = { y0: y0, y1: y, H: Hh, top: (y0 + y) / 2 - Hh / 2 };
 		});
 		return { slot: slot, grp: grp, bottom: y };
@@ -2079,6 +2205,8 @@ function flowLayout(gs, net, mode) {
 	if (!LIM) rc = Math.min(rc, Math.max(G.flow.top + Hr / 2 + FSGAP, G.SH / 2));   /* scrolling: the router stays on the first screen */
 	var wv = Math.max(net.wan[f], 0), lv = Math.max(net.local[f], 0);
 	var hi = wv + lv > 0 ? Hr * Math.min(wv / (wv + lv), 1) : Hr;
+	/* with pictures, the router's picture and name, and the internet's picture and label, fit under the column titles */
+	if (A.pics) rc = Math.max(rc, FTOP + FP().rt + 27 + Hr / 2, FTOP + FP().wan + 19 + (Hr + FSGAP) / 2 - hi / 2);
 	var stop = rc - (Hr + FSGAP) / 2;
 	return { k: k, slot: Lf.slot, grp: grp, bottom: Lf.bottom, Hr: Hr, rtop: rc - Hr / 2,
 		src: { wan: { top: stop, h: hi }, loc: { top: stop + hi + FSGAP, h: Hr - hi } },
@@ -2097,16 +2225,16 @@ function flowRowInfo(g, r) {
 			x.c2 = wired ? (dv.count > 1 ? dv.count + ' devices' : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
 		}
 	} else if (r.more) { x.name = '+' + r.more.length + ' more'; x.icon = 'more'; x.sub = r.more.slice(0, 3).map(function (dv) { return dv.name; }).join(', '); }
-	else { x.name = r.nodeOnly.name; x.icon = FORM_ICON[formOf(r.nodeOnly.model, 'tower').form] || 'mesh'; x.sub = 'No clients right now'; }
+	else { x.name = r.nodeOnly.name; x.icon = 'node'; x.node = r.nodeOnly; x.sub = 'No clients right now'; }
 	if (g.node && flowAgg(g)) { x.st = g.node.online ? 'nodata' : 'off'; if (r.dev) x.sub = g.node.online ? 'Not reported' : 'Offline'; }
 	return x;
 }
 /* The Flow view, every poll: the layout above, painted onto the scene (rebuilt only when the rows change). */
 function renderFlow(net) {
-	var gs = flowGroups(net), sig = flowSignature(gs);
+	var gs = flowGroups(net), sig = flowSignature(gs) + '|' + (net.router.model || '') + (A.pics ? '|pics' : '');
 	A.flowGs = gs;
 	if (sig !== A.flowSig) {
-		var b = buildFlow(gs);
+		var b = buildFlow(gs, net);
 		$('arFlowScene').innerHTML = b.svg;
 		$('arFlowRows').innerHTML = b.rows;
 		A.flowSig = sig;
@@ -2202,13 +2330,21 @@ function renderFlow(net) {
 	B('src:wan', src.wan.top, src.wan.h); B('src:loc', src.loc.top, src.loc.h);
 	R.br.rt.setAttribute('y', n1(rtop)); R.br.rt.setAttribute('height', n1(Math.max(Hr, 0.01)));
 	T('src:wan', src.wan.top + src.wan.h / 2); T('src:loc', src.loc.top + src.loc.h / 2); T('rt', rtop - 10); T('rtb', rtop + Hr + 17);
+	T('pic:wan', src.wan.top + src.wan.h / 2 - 17); T('pic:rt', rtop - 25);
 	R.t['agg:wan'].textContent = full(net.wan[f]); R.t['agg:loc'].textContent = full(net.local[f]);
 	R.t.rtname.textContent = net.router.model || 'Router';
 	R.t['agg:rt'].textContent = full(gs.reduce(function (a, g) { return a + gVal(g, f); }, 0));
 	gs.forEach(function (g) {
 		var Gr = grp[g.id];
 		T('g:' + g.id, Gr.H > 0 ? Gr.top - 7 : (Gr.y0 + Gr.y1) / 2 + 4);
-		if (g.node) T('n:' + g.id, Gr.H > 0 ? Gr.top - 7 : (Gr.y0 + Gr.y1) / 2 + 4);
+		if (g.node) {
+			var ly = Gr.H > 0 ? Gr.top - 7 : (Gr.y0 + Gr.y1) / 2 + 4, pe = R.tx['pic:n:' + g.id];
+			T('n:' + g.id, ly); T('pic:n:' + g.id, ly - 16);
+			if (pe && pe._on !== !!g.node.online) {   /* the ring turns red while the node is offline */
+				pe._on = !!g.node.online;
+				pe.firstChild.innerHTML = nodePic(g.node.model, FP().node, g.node.online);
+			}
+		}
 		if (R.t['gv:' + g.id]) R.t['gv:' + g.id].textContent = g.node && !g.node.online ? 'offline' : full(gVal(g, f));
 	});
 	/* the device rows */
@@ -2219,11 +2355,12 @@ function renderFlow(net) {
 		var x = flowRowInfo(g, r), name = x.name, sub = x.sub, icon = x.icon, st = x.st, c1 = x.c1, c2 = x.c2;
 		var v = st === 'ok' ? rowVal(r, f) : null, fm = fmt(v);
 		var isOn = rowSel(r);
-		var key = [name, sub, icon, fm.n, fm.u, st, upm, c1, c2].join('|');
+		var key = [name, sub, icon, fm.n, fm.u, st, upm, c1, c2, x.node ? !!x.node.online : '', !!A.pics].join('|');
 		if (r.more) el.setAttribute('aria-expanded', isOn ? 'true' : 'false');
 		if (el._k !== key) {
 			el._k = key;
-			el.querySelector('.ic').innerHTML = iconSvg(icon, 16, INK2);
+			el.querySelector('.ic').innerHTML = !A.pics ? iconSvg(x.node ? FORM_ICON[formOf(x.node.model, 'tower').form] || 'mesh' : icon, 16, INK2)
+				: x.node ? nodePic(x.node.model, FP().row, x.node.online) : devicePic(icon, FP().row);
 			el.querySelector('.nm').textContent = name;
 			el.querySelector('.sb').textContent = sub;
 			var nEl = el.querySelector('.vl .n');
@@ -2238,7 +2375,7 @@ function renderFlow(net) {
 	$('arScaleSw').style.background = upm ? UP : DN;
 	$('arDn').className = upm ? '' : 'on-dn'; $('arUp').className = upm ? 'on-up' : '';
 	$('arDn').setAttribute('aria-pressed', upm ? 'false' : 'true'); $('arUp').setAttribute('aria-pressed', upm ? 'true' : 'false');
-	var nt = noticeFor(net) || ['Ribbon width follows throughput. Tap a device to trace it.', MUTED];
+	var nt = noticeFor(net) || ['Tap a device to trace it.', MUTED];
 	setNotice(nt[0], nt[1]);
 }
 /* The big view's third label line: how it's connected (band and signal, or port and speed). Link rates
@@ -2468,6 +2605,13 @@ function setUnit(u) {
 	$('arUnitMb').setAttribute('aria-pressed', A.unit === 'Mb' ? 'true' : 'false'); $('arUnitMB').setAttribute('aria-pressed', A.unit === 'MB' ? 'true' : 'false');
 	render();
 }
+/* The Flow shows outline icons (the default, the lightest look) or the Map's drawings; kept per browser. */
+function setPics(on) {
+	A.pics = !!on; store('flowpics', A.pics ? '1' : '0');
+	$('arPicsOff').className = A.pics ? '' : 'on'; $('arPicsOn').className = A.pics ? 'on' : '';
+	$('arPicsOff').setAttribute('aria-pressed', A.pics ? 'false' : 'true'); $('arPicsOn').setAttribute('aria-pressed', A.pics ? 'true' : 'false');
+	render();
+}
 /* ---------------------------------------------------------------- the expanded view
    Same DOM, same state, same render(): only the geometry changes. #ar moves to <body> while expanded so
    no ancestor of the router's page can clip it; a comment marks its place to go back to. */
@@ -2549,6 +2693,7 @@ function togglePause() {
 }
 function boot() {
 	$('arPackets').textContent = packetCss();
+	$('arDefs').innerHTML = sceneDefs();
 	A.tab = store('tab') === 'flow' ? 'flow' : 'map';
 	A.mode = store('mode') === 'up' ? 'up' : 'dn';
 	A.det = store('det') === '1';
@@ -2556,6 +2701,9 @@ function boot() {
 	$('arUnitMb').addEventListener('click', function () { setUnit('Mb'); });
 	$('arUnitMB').addEventListener('click', function () { setUnit('MB'); });
 	setUnit(store('unit'));
+	$('arPicsOff').addEventListener('click', function () { setPics(false); });
+	$('arPicsOn').addEventListener('click', function () { setPics(true); });
+	setPics(store('flowpics') === '1');
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
@@ -2636,6 +2784,7 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 <div class="formfontdesc">Live traffic between the internet, your router, its AiMesh nodes and every client. The router samples only while this page is open.</div>
 
 <div id="ar">
+	<svg id="arDefs" width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden"></svg>
 	<div class="ar-bar">
 		<nav class="ar-tabs" aria-label="Arteria views">
 			<button type="button" id="arTabMap" class="on" aria-selected="true">Map</button>
@@ -2672,6 +2821,7 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 					<button type="button" id="arDn" class="on-dn" aria-pressed="true">↓ Download</button>
 					<button type="button" id="arUp" aria-pressed="false">↑ Upload</button>
 				</div>
+				<div class="ar-unit" role="group" aria-label="Show devices as"><button type="button" id="arPicsOff" class="on" aria-pressed="true" title="Small outline icons: the lightest look">Icons</button><button type="button" id="arPicsOn" aria-pressed="false" title="The Map's drawings for each device, the router, each node and the internet">Pictures</button></div>
 				<div class="ar-notice" id="arNoticeFlow" style="flex:1 1 0;min-width:0"><span class="sw"></span><span class="tx"></span></div>
 				<div class="ar-scale"><span class="sw" id="arScaleSw"></span><span id="arScaleTx"></span></div>
 			</div>

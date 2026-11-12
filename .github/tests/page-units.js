@@ -35,7 +35,7 @@ const CASES = [
 	['Johns-iPhone', 0, 0, 5, 'wifi', '', '', 'phone'],
 	['Galaxy-S24', 0, 9, 1, 'wifi', '', 'android-dhcp-14', 'phone'],
 	['Device …00:11', 0, 0, 1, 'wifi', '', 'android-dhcp-14', 'phone'],
-	['Kitchen Echo', 0, 0, 0, 'wifi', '', '', 'speaker'],
+	['Kitchen Echo', 0, 0, 0, 'wifi', '', '', 'smartspeaker'],
 	['Sonos Arc', 0, 81, 0, 'wifi', '', '', 'soundbar'],
 	['Apple-TV', 0, 11, 5, 'wifi', '', '', 'streamer'],
 	['EPSON123456', 0, 18, 0, 'wifi', '', '', 'printer'],
@@ -54,7 +54,36 @@ const CASES = [
 	['Device …AA:BB', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'iot'],
 	['Device …AA:BB', 0, 0, 0, 'wifi', '', '', 'generic'],
 	['Home Assistant', 0, 22, 3, 'wired', '', '', 'hub'],
-	['raspberrypi', 0, 22, 3, 'wired', '', '', 'generic']
+	['raspberrypi', 0, 22, 3, 'wired', '', '', 'pi'],
+	// the devices in the forum's screenshots, and the Raspberry Pi, Echo Studio and Fire TV Stick
+	['raspberry02', 0, 34, 3, 'wifi', '', '', 'pi'],
+	['rp5-util02', 0, 0, 3, 'wifi', '', '', 'pi'],
+	['Device', 0, 0, 0, 'wired', 'Raspberry Pi Trading Ltd', '', 'pi'],
+	['RP-AX56', 0, 0, 4, 'wifi', 'ASUSTek COMPUTER INC.', '', 'generic'],      // an ASUS repeater, not a Pi
+	['Echo Studio', 0, 45, 0, 'wifi', 'Amazon Technologies Inc.', '', 'smartspeaker'],
+	['Alexa Kitchen', 0, 0, 0, 'wifi', '', '', 'smartspeaker'],
+	["Alexa's iPhone", 0, 0, 5, 'wifi', 'Apple', '', 'phone'],
+	['Fire TV Bedroom', 0, 0, 0, 'wifi', 'Amazon Technologies Inc.', '', 'stick'],
+	['Fire TV Cube', 0, 0, 0, 'wifi', '', '', 'streamer'],
+	['ring-minicam', 0, 0, 0, 'wifi', '', '', 'camera'],
+	['ring-floodlightcam', 0, 0, 0, 'wifi', '', '', 'camera'],
+	['ring-chime', 0, 0, 0, 'wifi', '', '', 'plug'],
+	['ring-bridge', 0, 0, 0, 'wifi', '', '', 'hub'],
+	['myqdoor-left', 0, 0, 0, 'wifi', '', '', 'hub'],
+	['tstat-up', 0, 0, 0, 'wifi', '', '', 'thermostat'],
+	['kd-43x85j', 0, 0, 0, 'wifi', '', '', 'tv'],
+	['hpenvy-7640', 0, 0, 0, 'wifi', '', '', 'printer'],
+	['office-subw', 0, 0, 0, 'wifi', '', '', 'speaker'],
+	['Xiaomi-Pad-7', 0, 0, 1, 'wifi', '', 'android-dhcp-14', 'tablet'],
+	['Redmi-Pad-SE', 0, 0, 1, 'wifi', '', '', 'tablet'],
+	['Redmi Note 13', 0, 0, 1, 'wifi', '', '', 'phone'],
+	['Kamera Warsztat', 0, 0, 0, 'wifi', '', '', 'camera'],
+	['Lennox iComfort S40', 0, 0, 0, 'wifi', '', '', 'thermostat'],
+	['Rav4 ChargePoint', 0, 0, 0, 'wifi', '', '', 'plug'],
+	['SP111 nr4', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'plug'],
+	['wled-WLED', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],
+	['Lampa Salon', 0, 0, 0, 'wifi', '', '', 'light'],
+	['Firestick', 0, 0, 0, 'wifi', '', '', 'stick'],
 ];
 A.names = AR.parseNames({});
 const bad = [];
@@ -169,7 +198,7 @@ const html = [];
 [T.geomSmall(), T.geomBig(1184, 790, 0)].forEach(g => {
 	const keepG = T.G(); A.gotAny = true; T.useGeom(g);
 	try {
-		const L = T.mapLayout(hnet), m = T.buildMap(hnet, L), f = T.buildFlow(T.flowGroups(hnet));
+		const L = T.mapLayout(hnet), m = T.buildMap(hnet, L), f = T.buildFlow(T.flowGroups(hnet), hnet);
 		html.push(m.svg, m.labels, f.svg, f.rows);
 	} catch (e) { html.push('ERROR ' + e.message); }
 	T.useGeom(keepG);
@@ -187,7 +216,7 @@ let hn = AR.buildNet(smp({ ports: ['eth1', EVIL], links: [['eth0', 1, 1000], ['e
 	nodes: [{ mac: NODE, ip: '192.168.50.10', model: 'RP-AX56', alias: 'Hall', sta: '02:10:00:00:00:81 ' + EVIL, state: 'nokey', up: null, c: [] }, { mac: EVIL, model: 'x', state: 'ok', c: [] }, null] }));
 const ids = hn.devs.map(d => d.id).concat(hn.nodes.map(n => n.id)).sort().join(' ');
 let hm = '';
-try { A.gotAny = true; const L = T.mapLayout(hn), m = T.buildMap(hn, L), f = T.buildFlow(T.flowGroups(hn)); hm = m.svg + m.labels + f.svg + f.rows; } catch (e) { hm = 'ERROR ' + e.message; }
+try { A.gotAny = true; const L = T.mapLayout(hn), m = T.buildMap(hn, L), f = T.buildFlow(T.flowGroups(hn), hn); hm = m.svg + m.labels + f.svg + f.rows; } catch (e) { hm = 'ERROR ' + e.message; }
 ok(ids === '00:00:5E:00:53:44 node:' + NODE + ' port:eth1' && !/<img|ERROR/i.test(hm) && (hn.byId['00:00:5E:00:53:44'] || {}).rssi === -61, 'addresses and ports that aren\'t one are dropped (sample, node list, AiMesh client list)', ids + ' ' + (hm.match(/<img|ERROR.*/i) || ''));
 
 // ---- 9. one odd value never stops a sample: names of the wrong type, an empty network
