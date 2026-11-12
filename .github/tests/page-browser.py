@@ -6,7 +6,9 @@
   2. the expanded view: Escape closes the report, then the list, then the view; Tab never leaves it;
      closing puts the stage back where it was, 728 x 518, inside the router's page;
   3. the "hostile" scenario: names and AiMesh client-list keys that look like HTML stay text and run nothing;
-  4. two Arteria tabs: closing one doesn't tell the router to stop sampling while the other is open.
+  4. two Arteria tabs: closing one doesn't tell the router to stop sampling while the other is open;
+  5. Settings: Fingerbank is optional and off; the page says what a key shares and to keep the key private; a key
+     goes to the router with every other addon's settings, a refused one changes nothing, and it turns off again.
 
 Needs Python 3 with Playwright (pip install playwright; the browser is the system's Chrome or Chromium).
 Usage: python3 .github/tests/page-browser.py [path to chrome]
@@ -138,13 +140,55 @@ async def two_tabs(b, port):
         srv.terminate()
 
 
+async def settings(b, port):
+    srv = await serve('home', port)
+    try:
+        ctx = await b.new_context(viewport={'width': 1600, 'height': 900})
+        pg = await ctx.new_page()
+        errs = []
+        pg.on('pageerror', lambda e: errs.append(str(e)))
+        await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
+        await ready(pg)
+        await pg.click('#arSetBtn')
+        txt = await pg.inner_text('#arSet')
+        need = ['optional', 'works fully without this', 'Adding a key shares information with Fingerbank', 'Never a MAC address',
+                'public IP address', 'Login or Signup', 'API key', 'Keep your key to yourself', '300 lookups an hour']
+        check(await pg.is_visible('#arSet') and all(x in txt for x in need) and txt.find('Off') >= 0
+              and await pg.get_attribute('#arFbKey', 'type') == 'password' and await pg.get_attribute('#arSetBtn', 'aria-expanded') == 'true',
+              'settings: Fingerbank is optional and off; the page says what a key shares, how to get one, and to keep it private')
+        await pg.fill('#arFbKey', 'not a key'); await pg.click('#arFbSave')
+        check("doesn't look like" in await pg.inner_text('#arFbMsg') and not await pg.evaluate("fetch('/_posted').then(r => r.json()).then(p => p.length)"),
+              "settings: a key that can't be one never leaves the page")
+        await pg.fill('#arFbKey', 'BADKEY0123456789BADKEY0123456789abcdef01'); await pg.click('#arFbSave')
+        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('turned this key down') >= 0", timeout=15000)
+        check('Off' in await pg.inner_text('#arFbSt'), 'settings: a key Fingerbank turns down leaves it off, and says why')
+        await pg.fill('#arFbKey', 'abcdef0123456789abcdef0123456789abcd1f2e'); await pg.press('#arFbKey', 'Enter')
+        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('Saved') === 0", timeout=15000)
+        posted = await pg.evaluate("fetch('/_posted').then(r => r.json())")
+        check('key …1f2e' in await pg.inner_text('#arFbSt') and await pg.input_value('#arFbKey') == '' and await pg.is_visible('#arFbOff')
+              and posted[-1] == {'otheraddon_path': '/opt/share/otheraddon', 'otheraddon_mode': 'on', 'arteria_fbkey': 'abcdef0123456789abcdef0123456789abcd1f2e'},
+              "settings: a good key goes to the router with every other addon's settings; the page shows only its last 4 characters")
+        await pg.click('#arFbOff')
+        sure = await pg.inner_text('#arFbOff')
+        await pg.click('#arFbOff')
+        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('Fingerbank is off') === 0", timeout=15000)
+        check(sure.startswith('Sure') and 'Off' in await pg.inner_text('#arFbSt') and not await pg.is_visible('#arFbOff'),
+              'settings: turning it off takes a second click, then it is off')
+        await pg.press('#arFbKey', 'Escape')
+        check(not await pg.is_visible('#arSet') and await pg.get_attribute('#arSetBtn', 'aria-expanded') == 'false' and not errs,
+              'settings: Escape closes it; no page errors' + (': ' + '; '.join(errs) if errs else ''))
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def main():
     if not CHROME:
         sys.exit('page-browser.py needs Chrome or Chromium (or its path as the argument)')
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), settings(b, 8791))
         await b.close()
 
 

@@ -283,4 +283,85 @@ const flbad = [];
 });
 ok(!flbad.length, 'Flow layout: rows apart and tap-sized, ribbons in their rows, internet + local = router, fits or scrolls', flbad.slice(0, 5).join('; '));
 
+
+// ---- 13. Fingerbank: its device paths (as its API returns them) -> kinds; an answer that names only a system or a
+// maker, or one it isn't confident about, leaves the decision to the names; your icon still comes first
+const FB = [
+	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick', 'stick'],
+	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV', 'stick'],
+	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Cube', 'streamer'],
+	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Google Chromecast', 'stick'],
+	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Apple TV', 'streamer'],
+	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Roku', 'streamer'],
+	['Phone, Tablet or Wearable/Generic Android/Google Android/Google TV Streamer', 'streamer'],
+	['Phone, Tablet or Wearable/Generic Android/NVidia Android/NVIDIA SHIELD', 'streamer'],
+	['Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo', 'smartspeaker'],
+	['Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo Show', 'smartspeaker'],
+	['Internet of Things (IoT)/Home Assistant/Amazon Alexa', 'smartspeaker'],
+	['Internet of Things (IoT)/Home Assistant/Google Home Device/Google Nest', 'smartspeaker'],
+	['Audio, Imaging or Video Equipment/Speaker and Soundbar/Apple HomePod', 'smartspeaker'],
+	['Audio, Imaging or Video Equipment/Audio Player/Sonos Player/Sonos One', 'speaker'],
+	['Audio, Imaging or Video Equipment/Audio Player/Sonos Player/Sonos Beam', 'soundbar'],
+	['Audio, Imaging or Video Equipment/Television/LG TV/LG TV - WebOS', 'tv'],
+	['Audio, Imaging or Video Equipment/Television/Roku TV', 'tv'],
+	['Audio, Imaging or Video Equipment/Television/LG TV/LG TV - Google TV OS/Android TV', 'tv'],
+	['Audio, Imaging or Video Equipment/Camera/Surveillance Camera/Wyze Camera', 'camera'],
+	['Audio, Imaging or Video Equipment/Camera/Surveillance Camera/Nest Camera', 'camera'],
+	['Internet of Things (IoT)/Locks/Nest Lock/Nest Doorbell', 'doorbell'],
+	['Internet of Things (IoT)/Locks/Ring', 'doorbell'],
+	['Gaming Console/Sony Gaming Console/Playstation/PlayStation 5', 'console'],
+	['Gaming Console/Nintendo Gaming Console/Nintendo Switch', 'console'],
+	['Storage Device/Ugreen NAS', 'nas'],
+	['Internet of Things (IoT)/Generic IoT/Raspberry Pi/Raspberry Pi 4', 'pi'],
+	['Internet of Things (IoT)/Generic IoT/Raspberry Pi', 'pi'],
+	['Internet of Things (IoT)/Lighting/Philips Lighting/Philips Hue Smart Lighting', 'light'],
+	['Internet of Things (IoT)/Lighting/Philips Lighting/Philips Hue Bridge', 'hub'],
+	['Internet of Things (IoT)/Plugs/TP-Link Smart Plugs/TP-Link Tapo Smart Plug', 'plug'],
+	['Internet of Things (IoT)/Thermostat/Nest Thermostat', 'thermostat'],
+	['Internet of Things (IoT)/Appliance/iRobot/iRobot Roomba', 'vacuum'],
+	['Internet of Things (IoT)/Generic IoT/Espressif', 'iot'],
+	['Phone, Tablet or Wearable/Generic Android/Google Android/Google Pixel', 'phone'],
+	['Phone, Tablet or Wearable/Generic Android/Samsung Android/Galaxy S6', 'phone'],
+	['Phone, Tablet or Wearable/Apple Mobile Device/Apple iPhone', 'phone'],
+	['Phone, Tablet or Wearable/Apple Mobile Device/Apple iPad', 'tablet'],
+	['Phone, Tablet or Wearable/Apple Mobile Device/Apple Watch', 'watch'],
+	['Phone, Tablet or Wearable/Generic Android/Amazon Android/Amazon Kindle Fire', 'tablet'],
+	['Phone, Tablet or Wearable/Amazon Kindle', 'tablet'],
+	['Operating System/Apple OS/Mac OS X or macOS/Mac OS X/Apple MacBook Pro', 'laptop'],
+	['Router, Access Point or Femtocell/Wi-Fi Repeater', 'switch'],
+	// a system, a maker or a brand of Android: nothing
+	['Operating System/Windows OS/Microsoft Windows Kernel 10.0/11', ''],
+	['Operating System/Apple OS/iOS', ''],
+	['Operating System/Apple OS/Mac OS X or macOS', ''],
+	['Phone, Tablet or Wearable/Generic Android', ''],
+	['Phone, Tablet or Wearable/Generic Android/Samsung Android', ''],
+	['Phone, Tablet or Wearable/Generic Android/Amazon Android', ''],
+	['Generic PC/Windows based PC', ''],
+	['Hardware Manufacturer/Espressif', ''],
+	['Phone, Tablet or Wearable', ''],
+];
+const fbBad = FB.filter(f => T.fbKind(f[0]) !== f[1]).map(f => f[0].split('/').pop() + ' -> ' + (T.fbKind(f[0]) || 'none') + ', expected ' + (f[1] || 'none'));
+ok(!fbBad.length, 'Fingerbank paths -> kinds: ' + FB.length + ' paths', fbBad.join('; '));
+FB.forEach(f => { if (f[1]) kinds.add(f[1]); });
+ok([...kinds].every(k => T.ICON[k] && T.KIND_LABEL[k]), 'every kind Fingerbank can give has an icon and a label');
+
+const FM = '00:00:5E:00:53:F1', fbNames = (fb, custom) => AR.parseNames({ custom: custom || '', fb: fb,
+	nmp: { [FM]: { name: 'Kitchen Echo', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
+const kOf = (fb, custom) => { A.names = fbNames(fb, custom); return T.classify(FM, 'Kitchen Echo', 'wifi'); };
+let fr = kOf(FM + '>87>Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick>1,3,6,15|');
+ok(fr.kind === 'stick' && fr.rule === 'fingerbank' && fr.tok === 'Amazon Fire TV Stick, 87', 'Fingerbank comes before the name ("Kitchen Echo" that Fingerbank knows as a Fire TV Stick)', JSON.stringify(fr));
+fr = kOf(FM + '>87>Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick>1,3,6,15|', '<Kitchen>' + FM + '>0>23>>');
+ok(fr.kind === 'tv' && fr.rule === 'your icon', 'your icon comes before Fingerbank', JSON.stringify(fr));
+fr = kOf(FM + '>50>Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick>1,3,6,15|');
+ok(fr.kind === 'smartspeaker' && fr.rule === 'name', 'a score of 50 or less leaves it to the name', JSON.stringify(fr));
+fr = kOf(FM + '>92>Phone, Tablet or Wearable/Generic Android/Amazon Android>1,3,6,15|');
+ok(fr.kind === 'smartspeaker' && fr.rule === 'name', 'an answer that names only a system leaves it to the name', JSON.stringify(fr));
+fr = kOf(FM + '>>>1,3,6,15|' + 'junk|02:XX>1>2>3|');
+ok(fr.kind === 'smartspeaker' && A.names.fb[FM].o === '1,3,6,15' && Object.keys(A.names.fb).length === 1, 'no answer yet: the fingerprint is kept, the name decides; malformed entries are dropped', JSON.stringify(A.names.fb));
+A.names = fbNames(FM + '>87>Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo>1,3,6,15|');
+const fdv = { id: FM, mac: FM, name: 'Kitchen Echo', link: 'wifi', band: '5' }; fdv.why = T.classify(FM, fdv.name, 'wifi'); fdv.kind = fdv.why.kind;
+const frep = T.buildReport({ router: { model: 'RT-AX86U' }, devs: [fdv] }), fcells = T.detailsFor({ epoch: 0 }, fdv);
+ok(/smartspeaker +fingerbank .* Amazon Echo 87/.test(frep) && frep.indexOf('Kitchen') < 0 && frep.indexOf('00:00:5E') < 0, 'the device report shows what Fingerbank named and its score, still no names or MACs', frep);
+ok(fcells.some(c => c[0] === 'Shown as' && /recognised by Fingerbank \(Amazon Echo, 87\)/.test(c[2])), 'Details say Fingerbank recognised it', JSON.stringify(fcells.filter(c => c[0] === 'Shown as')));
+
 process.exit(fails ? 1 : 0);

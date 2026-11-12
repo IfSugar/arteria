@@ -53,11 +53,21 @@ Arteria draws each device as one of these kinds, with a drawing on the map and a
 **How a kind is chosen**, first match wins:
 
 1. **The icon you chose** for the device in the router's client list (*Network Map → Clients*), when it's a specific one.
-2. **Its name**: the nickname you gave it, or its own host name (`DESKTOP-…` is a Windows PC, `Mac-Studio` a Mac desktop, `wiz_…` a bulb, `LGwebOSTV` a TV...).
-3. **What the router detected**, and whether a Windows device is wired (a desktop) or on Wi-Fi (a laptop).
-4. **Its maker** (from the MAC address) and the DHCP vendor class it sent.
+2. **Fingerbank**, if you turned it on (see below): when it's confident (a score above 50) and names a kind of device, not just an operating system.
+3. **Its name**: the nickname you gave it, or its own host name (`DESKTOP-…` is a Windows PC, `Mac-Studio` a Mac desktop, `wiz_…` a bulb, `LGwebOSTV` a TV...).
+4. **What the router detected**, and whether a Windows device is wired (a desktop) or on Wi-Fi (a laptop).
+5. **Its maker** (from the MAC address) and the DHCP vendor class it sent.
 
 **If a device is drawn as the wrong thing**, open the router's client list, pick the device and choose the icon that fits: Arteria follows your choice on the next refresh. Or give it a nickname that says what it is (*Study iMac*, *Garage camera*). If it's still wrong, the **Device report** link at the bottom of the page shows how each device was recognised, using only kinds, rule names and numbers (no names, MAC or IP addresses); paste it into an issue.
+
+**Better recognition with Fingerbank (optional, off by default).** Arteria works fully without it; nothing asks for a key at install. [Fingerbank](https://www.fingerbank.org) recognises devices by the DHCP options they ask for when they get an address: the list and its order differ between an iPhone, an Echo, a Fire TV Stick and a smart plug, even when the MAC address is a private one and the device has no name. To turn it on, open **Settings** at the bottom of the Arteria page (or run `arteria.sh fingerbank`, or menu option *f*) and paste your own free API key: sign up at [api.fingerbank.org](https://api.fingerbank.org) (*Login or Signup*), then copy the key from your account page. Then:
+
+- **Adding a key shares information with Fingerbank:** each kind of device's DHCP option list and its DHCP vendor class (such as `android-dhcp-14` or `MSFT 5.0`). Never a MAC address, a device name or an IP address on your network; Fingerbank sees your public IP address, as any website does. Combinations Fingerbank doesn't know yet are added to its database. Read its terms when you sign up.
+- **Keep your key to yourself:** don't post it in forums, issues or screenshots. The free key allows 300 lookups an hour, anyone using your key uses them up, and Fingerbank can block a key that's misused. Arteria uses at most 100 an hour.
+- **One lookup per kind of device, not per device:** Arteria keeps Fingerbank's answers per fingerprint, so 15 bulbs of the same make and firmware are one lookup and one saved line. A home network needs a few dozen lookups, once; then only new kinds of device are looked up. Lookups happen only while the page is open.
+- **How:** dnsmasq (the router's DHCP server) hands each DHCP request to a small script of Arteria's first, which notes the device's option list in RAM and then runs the router's own lease script (`/sbin/dhcpc_lease`) with the same arguments, exactly as before. To see devices that stay connected, dnsmasq also runs it when a lease is renewed (`script-on-renewal`), if your dnsmasq supports that. Each device shows up the next time it connects or renews its address, within about 12 hours.
+- **The key** is kept in `/jffs/addons/arteria/fingerbank_key`, readable by root only, and sent only to Fingerbank, in a header (never in a command line). Like the node key, it's in JFFS backups. From the page, it reaches the router the only way a page can hand the router a value, through the Addons API's shared settings file (`/jffs/addons/custom_settings.txt`): Arteria takes it out of that file at once and puts the file back exactly as it was a moment before, so no other addon's setting changes. The page only ever shows the key's last 4 characters.
+- **To stop:** *Turn off* in Settings, or `arteria.sh fingerbank off`, deletes the key and the saved answers and gives dnsmasq back its own lease script. `uninstall` does the same.
 
 **Private Wi-Fi addresses.** Phones, tablets and computers (Apple's, Android's and Windows') can use a made-up MAC address per network, and some change it from time to time. Arteria marks these as *private* in Details (a private address says nothing about the maker). When a device turns up with a new private address and no name, Arteria looks for a named device that isn't connected right now and has the same distinctive host name (*Toms-iPad*, not a factory name like *iPhone*), and if exactly one matches, shows it under that name and icon (Details says *Matched by host name*). For the steadiest names, set Apple devices' **Private Wi-Fi Address** to **Fixed** for your home network (*Settings → Wi-Fi → ⓘ* on iPhone and iPad, *System Settings → Wi-Fi → Details* on a Mac); a fixed private address stays the same on that network.
 
@@ -103,7 +113,7 @@ Open **Traffic Analyzer → Arteria**, the tab after *Statistic*. Routers withou
 
 **Trying unreleased changes:** `arteria.sh update dev` installs the newest code on `main`, and `update dev <branch>` the newest code on another branch of this repository, such as a fix waiting for release (menu option 8 does the same). Only branches here can be installed: pull requests from other people's forks and bare commit hashes are refused. Plain `update` (and amtm) takes you back to the latest release.
 
-**Menu and amtm:** run `/jffs/addons/arteria/arteria.sh` with no arguments for a menu (status, test or set up node access, update, reinstall, development version, debug report, amtm updates, uninstall). Arteria supports amtm's script updates (`amtmupdate`), see [amtm](#amtm).
+**Menu and amtm:** run `/jffs/addons/arteria/arteria.sh` with no arguments for a menu (status, test or set up node access, update, reinstall, development version, debug report, amtm updates, uninstall, Fingerbank on or off). Arteria supports amtm's script updates (`amtmupdate`), see [amtm](#amtm).
 
 ## AiMesh nodes
 
@@ -134,8 +144,8 @@ Reading these counters doesn't disturb Wi-Fi or change any setting.
 
 | Path | Contents |
 |---|---|
-| `/jffs/addons/arteria/` | script, page, config, the node key (`node_key`), pinned node host keys (`.ssh/`), and `build` while a development version is installed |
-| `/tmp/arteria/` | the sampler's working files: the heartbeat, the node sessions' output (RAM only) |
+| `/jffs/addons/arteria/` | script, page, config, the node key (`node_key`), pinned node host keys (`.ssh/`), and `build` while a development version is installed; with Fingerbank on, your key (`fingerbank_key`) and its answers (`fingerbank`, one line per kind of device, at most 200) |
+| `/tmp/arteria/` | the sampler's working files: the heartbeat, the node sessions' output; with Fingerbank on, the lease script dnsmasq runs and each device's DHCP fingerprint (RAM only) |
 | `/tmp/var/wwwext/arteria/` | `live.htm` (the latest sample) and `names.htm` (device names), which the page reads (RAM only) |
 
 ## Commands
@@ -148,6 +158,8 @@ Reading these counters doesn't disturb Wi-Fi or change any setting.
 /jffs/addons/arteria/arteria.sh nodekey       # give the nodes the router's key (asks each node's password once)
 /jffs/addons/arteria/arteria.sh nodekey 192.168.50.2   # only that node
 /jffs/addons/arteria/arteria.sh nodekey print # the line to paste on a node yourself, to add the key there
+/jffs/addons/arteria/arteria.sh fingerbank    # turn on device recognition with Fingerbank (asks for your own free key)
+/jffs/addons/arteria/arteria.sh fingerbank off # turn it off: deletes the key and the answers
 /jffs/addons/arteria/arteria.sh sample        # print one sample as JSON (it has your devices' MAC and IP addresses: not for issues)
 /jffs/addons/arteria/arteria.sh debug         # router, firmware and driver details for issues (no names or addresses)
 /jffs/addons/arteria/arteria.sh startup       # re-apply the web page and menu entry
@@ -191,11 +203,11 @@ Arteria follows amtm's conventions for third-party scripts:
 ## What it changes on your router
 
 - **Nothing until the checks pass.** `install` first verifies the firmware, the Addons API, the Broadcom driver's per-client counters, the shell tools it needs, JFFS space and a free page slot. If anything fails it stops without changing anything. Run `arteria.sh check` to see the checklist on its own.
-- **JFFS (flash):** about 265 KB of addon files and the node key, written at install (JFFS2 compresses them, so they take roughly half that on flash). One tagged line is added to each of `/jffs/scripts/services-start` and `service-event`. Nothing is written to flash while sampling.
-- **Settings:** *JFFS custom scripts and configs* is switched on if it's off. When you run `nodekey`, Arteria's key line is added to the router's own *Administration → System → Authorized Keys*, so AiMesh keeps it on the nodes (see [AiMesh nodes](#aimesh-nodes)); `uninstall` takes it out again. Nothing else is changed.
+- **JFFS (flash):** about 300 KB of addon files and the node key, written at install (JFFS2 compresses them, so they take roughly half that on flash). One tagged line is added to each of `/jffs/scripts/services-start` and `service-event`. Nothing is written to flash while sampling, except, with Fingerbank on, one short line for each new kind of device it answers about.
+- **Settings:** *JFFS custom scripts and configs* is switched on if it's off. When you run `nodekey`, Arteria's key line is added to the router's own *Administration → System → Authorized Keys*, so AiMesh keeps it on the nodes (see [AiMesh nodes](#aimesh-nodes)); `uninstall` takes it out again. With Fingerbank on, one tagged line in `/jffs/scripts/dnsmasq.postconf` (and `dnsmasq-sdn.postconf` on 3006 firmware) points dnsmasq's lease script at Arteria's, which hands on to the router's own, and turns on `script-on-renewal`; `fingerbank off` and `uninstall` take it out and restart dnsmasq. Nothing else is changed.
 - **AiMesh nodes:** when you run `nodekey` (or say yes at install), one line is added to each node's authorized keys (*Administration → System → Authorized Keys*, stored in the node's nvram), and AiMesh keeps it there from the router's list. Nothing else on a node is changed.
 - **RAM only (gone after a reboot, recreated at boot):** the web page, the menu entry and the sample files (a few KB). The menu is edited on a copy and swapped in only if the result is exactly one new line in a tab list (after *Statistic*, or last in *Network Tools*); otherwise it's left alone and the installer prints the page's direct link.
-- **Load:** nothing at all while the page is closed. While it's open: one sample every 2 seconds at the lowest CPU priority (`nice 19`), plus one SSH session per node, each reading its own counters. The page's footer shows how long the last sample took and the router's load.
+- **Load:** nothing at all while the page is closed (with Fingerbank on, dnsmasq's lease script also notes a device's DHCP options, a few milliseconds per DHCP request). While it's open: one sample every 2 seconds at the lowest CPU priority (`nice 19`), plus one SSH session per node, each reading its own counters. The page's footer shows how long the last sample took and the router's load.
 - **In your browser:** the page remembers its view, units, the Details switch, which Arteria tabs are open (so closing one doesn't stop the sampling another one shows) and, for re-recognising devices whose private address changed, which host name each device you named last used (up to 300, in the browser's local storage for the router's address; nothing is sent anywhere). Clear the site's data in the browser to remove it.
 - **Login:** while the page is open and visible it polls the router every 2 seconds, so the router's automatic logout doesn't happen during that time. It does once you close the page or switch to another tab.
 

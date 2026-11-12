@@ -8,8 +8,8 @@
 #
 #  Usage: arteria.sh                    (a menu, when run in a terminal: amtm opens this)
 #         arteria.sh install | update [force | dev [branch]] | uninstall | status | check |
-#                    nodes [test] | nodekey [node-ip | print] | debug | sample | amtmupdate [check] |
-#                    startup | version
+#                    nodes [test] | nodekey [node-ip | print] | fingerbank [off] | debug | sample |
+#                    amtmupdate [check] | startup | version
 #
 #  Install:  d=/tmp/arteria-install; rm -rf "$d" && mkdir -m 700 "$d" && curl -fsL --retry 3 \
 #              https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh -o "$d/arteria.sh" && sh "$d/arteria.sh" install
@@ -37,6 +37,11 @@ MENUTREE="$ROOT/www/require/modules/menuTree.js"
 TMP_MENUTREE="$ROOT/tmp/menuTree.js"
 WEBUI_LOCK="$ROOT/tmp/addonwebui.lock"
 TMPD="$ROOT/tmp/$NAME"
+FB_KEY="$ADDON_DIR/fingerbank_key"   # your own Fingerbank API key, when you turned device recognition on
+FB_CACHE="$ADDON_DIR/fingerbank"     # Fingerbank's answers, one line per DHCP fingerprint
+FB_URL="https://api.fingerbank.org/api/v2/combinations/interrogate"
+DHCP_FP="$TMPD/dhcp_fp"              # each device's DHCP fingerprint, in RAM: "MAC options vendor-class"
+DNSMASQ_CONF="$ROOT/etc/dnsmasq.conf"
 REPO="IfSugar/arteria"
 RAW_BASE="https://raw.githubusercontent.com/$REPO"
 RAW_URL="${AR_RAW_URL:-$RAW_BASE/main}"   # AR_RAW_URL: test hook only
@@ -438,8 +443,11 @@ export_names() {
 		if have ip; then
 			ip -6 neigh show dev br0 2>/dev/null | awk '$1 ~ /^[0-9A-Fa-f:]+$/ && $NF != "FAILED" && $NF != "INCOMPLETE" { for (i = 2; i < NF; i++) if ($i == "lladdr" && $(i + 1) ~ /^[0-9A-Fa-f:]+$/) printf "%s %s|", $(i + 1), $1 }'
 		fi
+		printf '","fb":"'
+		fb_on && fb_export
 		printf '"}'
 	} | write_atomic "$(web_dir)/names.htm"
+	fb_status
 }
 
 uptime_cs() { awk '{ printf "%d", ($1 % 1000000) * 100 }' "$PROC/uptime"; }   # centiseconds (mod 11.5 days: 32-bit safe), for timing a sample
@@ -472,7 +480,8 @@ sampler() {
 		if [ $((seq % 5)) -eq 0 ]; then
 			links_json > "$TMPD/links.json"; macs_json > "$TMPD/macs.json"
 		fi
-		[ $((seq % 15)) -eq 14 ] && export_names
+		if [ $((seq % 15)) -eq 14 ] || [ -f "$TMPD/fb_new" ]; then rm -f "$TMPD/fb_new"; export_names; fi   # a new answer from Fingerbank: at once
+		{ [ $seq -eq 1 ] || [ $((seq % 15)) -eq 7 ]; } && fb_tick
 		[ $((seq % 30)) -eq 29 ] && sample_init      # nodes and radios can change while the page is open
 		[ "$NODES" = on ] && nodes_tick
 		sample_json "$seq" "$ms" | write_atomic "$WD/live.htm"
@@ -493,6 +502,9 @@ service_event() {   # action service
 			sampler_running || (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>&1 &) ;;
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat" ;;
+		"${NAME}fbprep") tmpd; fb_ui_prep ;;    # the page's Settings (Fingerbank), see fb_ui_save
+		"${NAME}fb") tmpd; fb_ui_save ;;
+		"${NAME}fboff") tmpd; fb_ui_off ;;
 	esac
 }
 
@@ -501,6 +513,283 @@ stop_all() {   # sampler and node sessions, e.g. before an update or uninstall
 	pid_ours "$p" "$NAME.sh sampler" && kill "$p" 2>/dev/null
 	node_stop_all
 	rm -f "$TMPD/sampler.pid" "$TMPD/heartbeat"
+}
+
+# ---- device recognition with Fingerbank (your own free API key) -------------------------------------
+# Off until you run "fingerbank" with your own key. Then dnsmasq hands each DHCP request to a small script
+# of Arteria's first (dnsmasq.postconf points dhcp-script at it): it notes which options the device asked
+# for, in order (its DHCP fingerprint), and its vendor class, in RAM, then runs the lease script dnsmasq
+# had before (ASUS's /sbin/dhcpc_lease) with the same arguments. While the page is open, the sampler asks
+# Fingerbank about each fingerprint it hasn't seen yet, one at a time. Only the option list and the vendor
+# class go to Fingerbank: no MAC, name or address. The answers stay on JFFS, one short line each.
+fb_on() { [ -s "$FB_KEY" ]; }
+fb_devices() { if [ -f "$DHCP_FP" ]; then wc -l < "$DHCP_FP" | tr -d ' '; else echo 0; fi; }   # devices with a fingerprint
+fw_major() { v=$(fw_version); v=${v%%.*}; case "$v" in ''|*[!0-9]*) echo 0 ;; *) echo "$v" ;; esac; }
+
+# dnsmasq.postconf (and dnsmasq-sdn.postconf on 3006, one per network) runs this with dnsmasq's config file as it starts.
+dnsmasq_conf() {   # config-file
+	fb_on || return 0
+	cf=$1; [ -f "$cf" ] || return 0
+	[ -d "$TMPD" ] || mkdir -m 700 "$TMPD" 2>/dev/null
+	{ [ -d "$TMPD" ] && [ ! -L "$TMPD" ] && [ -O "$TMPD" ]; } || return 0
+	# a lease script that runs as another user couldn't open our folder: leave dnsmasq alone
+	u=$(sed -n 's/^dhcp-scriptuser=//p' "$cf" | tail -n 1); [ -z "$u" ] || [ "$u" = root ] || return 0
+	cur=$(sed -n 's/^dhcp-script=//p' "$cf" | tail -n 1)
+	case "$cur" in
+		"$TMPD"/dhcp_hook.*) return 0 ;;   # ours already
+		*[!A-Za-z0-9/._-]*) log "dnsmasq's lease script has an unusual name: leaving it alone"; return 0 ;;
+	esac
+	h="$TMPD/dhcp_hook.$(printf '%s' "$cur" | md5sum | cut -c1-8).sh"
+	write_dhcp_hook "$h" "$cur" || return 0
+	if [ -n "$cur" ]; then sed -i "s|^dhcp-script=.*|dhcp-script=$h|" "$cf"; else echo "dhcp-script=$h" >> "$cf"; fi
+	# By default dnsmasq runs the script for new leases only: a device that stays connected and renews would never be seen.
+	grep -q '^script-on-renewal' "$cf" || { dnsmasq --help 2>/dev/null | grep -q 'script-on-renewal' && echo 'script-on-renewal' >> "$cf"; }
+	return 0
+}
+
+write_dhcp_hook() {   # file next-script (empty: none)
+	nx="exit 0"; [ -n "$2" ] && nx="exec $2 \"\$@\""
+	cat > "$1.new" <<EOF || return 1
+#!/bin/sh
+# Arteria (Fingerbank device recognition): note which DHCP options a device asked for, in order (its fingerprint),
+# and its vendor class, then run the lease script dnsmasq had before, with the same arguments and environment.
+PATH="\${PATH:-/sbin:/bin:/usr/sbin:/usr/bin}"
+case "\$1" in add|old)
+	m=\$(printf '%s' "\$2" | tr 'a-f' 'A-F')
+	o=\$(printf '%s' "\$DNSMASQ_REQUESTED_OPTIONS" | tr -cd '0-9,' | cut -c1-160)
+	case "\$m" in ??:??:??:??:??:??) ;; *) o="" ;; esac
+	case "\$m" in *[!0-9A-F:]*) o="" ;; esac
+	if [ -n "\$o" ] && [ -z "\$DNSMASQ_IAID" ]; then
+		v=\$(printf '%s' "\$DNSMASQ_VENDOR_CLASS" | tr -cd 'A-Za-z0-9 ._:/+-' | cut -c1-80)
+		{ grep -v "^\$m " "$DHCP_FP" 2>/dev/null | tail -n 299; printf '%s %s %s\n' "\$m" "\$o" "\$v"; } > "$DHCP_FP.new" && mv -f "$DHCP_FP.new" "$DHCP_FP"
+	fi ;;
+esac
+$nx
+EOF
+	chmod 700 "$1.new" && mv -f "$1.new" "$1"
+}
+
+fb_hooks() {   # add | del
+	if [ "$1" = add ]; then
+		hook_add dnsmasq.postconf "$SCRIPT dnsmasq_conf \"\$1\""
+		[ "$(fw_major)" -ge 3006 ] && hook_add dnsmasq-sdn.postconf "$SCRIPT dnsmasq_conf \"\$1\""
+		return 0
+	fi
+	for p in dnsmasq.postconf dnsmasq-sdn.postconf; do
+		hook_del "$p"; f="$SCRIPTS_DIR/$p"
+		# a file that was only there for Arteria's line goes with it
+		[ -f "$f" ] && [ -z "$(grep -v '^#!' "$f" | grep -v '^[[:space:]]*$')" ] && rm -f "$f"
+	done
+	return 0
+}
+fb_hooked() { grep -q "^dhcp-script=$TMPD/dhcp_hook\." "$DNSMASQ_CONF" 2>/dev/null; }
+
+# One question to Fingerbank. The key goes in a header read from a here-document, so it never shows in a command line.
+fb_query() {   # key options vendor -> "HTTP-code body"
+	if [ -n "$3" ]; then b="{\"dhcp_fingerprint\":\"$2\",\"dhcp_vendor\":\"$3\"}"; else b="{\"dhcp_fingerprint\":\"$2\"}"; fi
+	out=$(curl -s --proto =https --connect-timeout 10 --max-time 20 -K - -X POST -H 'Content-Type: application/json' -d "$b" -w '\n%{http_code}' "$FB_URL" 2>/dev/null <<EOF
+header = "Authorization: Bearer $1"
+EOF
+)
+	printf '%s %s' "$(printf '%s\n' "$out" | tail -n 1)" "$(printf '%s\n' "$out" | sed '$d' | tr -d '\r\n')"
+}
+
+fb_cache_add() {   # fingerprint-key code score name
+	n=$(printf '%s' "$4" | tr -d '"\\|<>\t' | tr -cd '\040-\176' | cut -c1-150)
+	{ [ -f "$FB_CACHE" ] && awk -F'\t' -v k="$1" '$1 != k' "$FB_CACHE" | tail -n 199; printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "${3:-0}" "$n" "$(now)"; } > "$FB_CACHE.new" \
+		&& mv -f "$FB_CACHE.new" "$FB_CACHE"
+}
+
+# The first fingerprint Fingerbank hasn't answered: never asked, or not known to it more than 30 days ago.
+# Its key is "options;vendor class" (the vendor class with single spaces).
+fb_next() {
+	[ -s "$DHCP_FP" ] || return 0
+	awk -v c="$FB_CACHE" -v now="$(now)" 'BEGIN { while ((getline l < c) > 0) { split(l, f, "\t"); if (f[2] == 200 || now - f[5] < 2592000) done[f[1]] = 1 } }
+		$1 ~ /^[0-9A-F:]+$/ && $2 ~ /^[0-9,]+$/ { v = ""; for (i = 3; i <= NF; i++) v = v (i > 3 ? " " : "") $i; if (!(($2 ";" v) in done)) { print $2 ";" v; exit } }' "$DHCP_FP"
+}
+
+fb_lookup() {   # up to 10 lookups, while there's anything to ask and Fingerbank answers
+	k=$(head -n 1 "$FB_KEY" 2>/dev/null | tr -cd 'A-Za-z0-9'); [ -n "$k" ] || return 0
+	i=0
+	while [ $i -lt 10 ]; do
+		pick=$(fb_next); [ -n "$pick" ] || return 0
+		# at most 100 an hour, a third of Fingerbank's free limit (a home network needs a few dozen, once)
+		t=$(now); set -- $(cat "$TMPD/fb_hour" 2>/dev/null); h=${1:-0}; c=${2:-0}
+		[ $((t - h)) -ge 3600 ] 2>/dev/null || [ "$h" = 0 ] && { h=$t; c=0; }
+		[ "$c" -lt 100 ] || { echo "wait $((h + 3600))" > "$TMPD/fb_state"; return 0; }
+		echo "$h $((c + 1))" > "$TMPD/fb_hour"
+		r=$(fb_query "$k" "${pick%%;*}" "${pick#*;}"); code=${r%% *}; body=${r#* }
+		echo "${code:-000} $t" > "$TMPD/fb_last"
+		case "$code" in
+			200) fb_cache_add "$pick" 200 "$(printf '%s' "$body" | sed -n 's/.*"score":\([0-9][0-9]*\).*/\1/p' | head -n 1)" \
+					"$(printf '%s' "$body" | sed -n 's/.*"device_name":"\([^"]*\)".*/\1/p' | head -n 1)" ;;
+			404) fb_cache_add "$pick" 404 0 "" ;;
+			401|403) echo badkey > "$TMPD/fb_state"; log "Fingerbank turned the API key down (HTTP $code): run '$SCRIPT fingerbank' to enter it again"; return 0 ;;
+			429) echo "wait $((t + 3600))" > "$TMPD/fb_state"; return 0 ;;    # over the free hourly limit: an hour's pause
+			*) echo "wait $((t + 300))" > "$TMPD/fb_state"; return 0 ;;       # no answer: try again in five minutes
+		esac
+		rm -f "$TMPD/fb_state"; touch "$TMPD/fb_new"
+		i=$((i + 1))
+	done
+}
+
+# From the sampler: one round of lookups at a time, in the background, so a slow answer never holds up a sample.
+fb_tick() {
+	fb_on && [ -s "$DHCP_FP" ] && have curl || return 0
+	st=$(cat "$TMPD/fb_state" 2>/dev/null)
+	case "$st" in badkey) return 0 ;; "wait "*) [ "$(now)" -ge "${st#wait }" ] 2>/dev/null || return 0 ;; esac
+	( exec 8>&- 7>"$TMPD/fb.lock"; flock -n 7 || exit 0; fb_lookup ) < /dev/null > /dev/null 2>&1 &
+}
+
+# For the page: "MAC>score>Fingerbank's device path>options|" for each device with a fingerprint
+# (score and path empty until Fingerbank has answered).
+fb_export() {
+	[ -s "$DHCP_FP" ] || return 0
+	awk -v c="$FB_CACHE" 'BEGIN { while ((getline l < c) > 0) { split(l, f, "\t"); if (f[2] == 200) { s[f[1]] = f[3]; n[f[1]] = f[4] } } }
+		$1 ~ /^[0-9A-F:]+$/ && $2 ~ /^[0-9,]+$/ { v = ""; for (i = 3; i <= NF; i++) v = v (i > 3 ? " " : "") $i; k = $2 ";" v
+			printf "%s>%s>%s>%s|", $1, (k in s ? s[k] : ""), (k in n ? n[k] : ""), $2 }' "$DHCP_FP" | tr -d '"\\'
+}
+
+fb_restart_dnsmasq() {   # want: on | off -> 0 once dnsmasq runs with (or without) our lease script
+	service restart_dnsmasq > /dev/null 2>&1
+	i=0; while [ $i -lt 15 ]; do
+		if [ "$1" = on ]; then fb_hooked && return 0; else fb_hooked || return 0; fi
+		sleep 1; i=$((i + 1))
+	done
+	return 1
+}
+
+fb_off() {   # [quiet]
+	was=0; fb_hooked && was=1
+	rm -f "$FB_KEY" "$FB_CACHE" "$TMPD/fb_state" "$TMPD/fb_last"
+	fb_hooks del
+	if [ $was = 1 ]; then
+		[ "$1" = quiet ] || say "Restarting dnsmasq (DNS and DHCP pause for a second)..."
+		fb_restart_dnsmasq off || [ "$1" = quiet ] || say "dnsmasq hasn't restarted yet; it drops Arteria's script at its next restart."
+	fi
+	fb_hooked || rm -f "$TMPD"/dhcp_hook.*.sh "$DHCP_FP"
+	return 0
+}
+
+# Turn Fingerbank on with this key: check it with Fingerbank, keep it for root only, hook dnsmasq in.
+# The key is only ever passed to commands through here-documents, never as an argument (ps would show it).
+fb_enable() {   # key -> 0 when Fingerbank is on; FB_MSG says what happened
+	k=$(tr -d ' \r\n\t' <<EOF
+$1
+EOF
+)
+	case "$k" in '') FB_MSG="No key given. Nothing changed."; return 1 ;; esac   # case, not [: on the router [ is a program
+	case "$k" in *[!A-Za-z0-9]*) FB_MSG="That doesn't look like a Fingerbank API key (letters and digits only). Nothing changed."; return 1 ;; esac
+	[ ${#k} -ge 20 ] && [ ${#k} -le 128 ] || { FB_MSG="That doesn't look like a Fingerbank API key (it's ${#k} characters long). Nothing changed."; return 1; }
+	have curl || { FB_MSG="This router has no curl, which Fingerbank lookups need. Nothing changed."; return 1; }
+	tmpd
+	r=$(fb_query "$k" "1,3,6,15,119,252" ""); code=${r%% *}; note=""
+	case "$code" in
+		200|404) ;;
+		401|403) FB_MSG="Fingerbank turned this key down (HTTP $code). Check it on your account page at api.fingerbank.org. Nothing changed."; return 1 ;;
+		429) note=" Fingerbank says the key is over its hourly limit right now: Arteria waits an hour before its first lookups." ;;
+		000|'') FB_MSG="Couldn't reach api.fingerbank.org. Check the router's internet connection, then try again. Nothing changed."; return 1 ;;
+		*) FB_MSG="Fingerbank answered HTTP $code. Try again later. Nothing changed."; return 1 ;;
+	esac
+	( umask 077; cat > "$FB_KEY.new" <<EOF
+$k
+EOF
+	) && chmod 600 "$FB_KEY.new" && mv -f "$FB_KEY.new" "$FB_KEY" || { FB_MSG="Couldn't save the key. Nothing changed."; return 1; }
+	rm -f "$TMPD/fb_state"; [ "$code" = 429 ] && echo "wait $(( $(now) + 3600 ))" > "$TMPD/fb_state"
+	fb_hooks add
+	log "Fingerbank turned on"
+	if fb_restart_dnsmasq on; then
+		FB_MSG="Saved. Each device is looked up the next time it connects or renews its address (within about 12 hours), while the Arteria page is open.$note"
+	else
+		FB_MSG="Saved, but dnsmasq hasn't picked up the change yet. It will at its next restart (a reboot, or saving a LAN setting).$note"
+	fi
+	return 0
+}
+
+fingerbank_cmd() {   # [off]
+	if [ "$1" = off ]; then
+		fb_off
+		say "Fingerbank is off: the key and Fingerbank's answers are deleted, and dnsmasq runs the router's own lease script directly again."
+		log "Fingerbank turned off"
+		return 0
+	fi
+	say "Device recognition with Fingerbank is optional: Arteria works fully without it."
+	say "Turned on, Arteria asks Fingerbank (fingerbank.org) what each device is from the DHCP options it asks for."
+	say "What is shared with Fingerbank: for each kind of device, that option list and its DHCP vendor class. Never a MAC"
+	say "address, device name or IP address on your network. Fingerbank sees your public IP address, as any website does,"
+	say "and adds combinations it doesn't know yet to its database. Its terms: https://www.fingerbank.org/"
+	say ""
+	say "Get a free key: open https://api.fingerbank.org , choose Login or Signup, then copy the API key from your account."
+	say "Keep the key to yourself: the free key allows 300 lookups an hour, and anyone using it uses up yours."
+	say "Saving restarts dnsmasq (DNS and DHCP pause for about a second)."
+	say ""
+	if [ -t 0 ]; then
+		printf 'Paste your Fingerbank API key (it is not shown; Enter alone cancels): '
+		trap 'stty echo 2>/dev/null; echo; exit 1' INT TERM
+		stty -echo 2>/dev/null; read -r k || k=""; stty echo 2>/dev/null; echo
+		trap - INT TERM
+	else
+		read -r k || k=""
+	fi
+	k2=$(tr -d ' \t\r' <<EOF
+$k
+EOF
+)
+	case "$k2" in '') say "Nothing changed."; return 1 ;; esac
+	say "Checking the key with Fingerbank..."
+	fb_enable "$k" || die "$FB_MSG"
+	say "$FB_MSG"
+	say "To stop and delete the key and the answers: $SCRIPT fingerbank off (or the page's Settings)."
+}
+
+# ---- Fingerbank from the page's Settings ---------------------------------------------------------------
+# The page can only hand the router a value through the Addons API's shared settings file
+# (/jffs/addons/custom_settings.txt), and the router's web server rewrites that whole file with what the page
+# sends: the page has to send every addon's settings back, as each addon page does, and the firmware cuts
+# values at their first space on the way to the page. So, just before saving, the page asks for an exact
+# copy of the file (fbprep); the save (fb) takes the key out and puts that copy back, so no other addon's
+# setting changes, then turns Fingerbank on. The page follows it all in fb.htm.
+CUSTOM_SETTINGS="$ROOT/jffs/addons/custom_settings.txt"
+
+fb_msg() {   # ok(1|0|"") message: the result the page shows, numbered so it can tell a new one from the last
+	n=$(cat "$TMPD/fb_seq" 2>/dev/null); n=$(( ${n:-0} + 1 )); echo "$n" > "$TMPD/fb_seq"
+	printf '%s\n%s\n' "$1" "$2" > "$TMPD/fb_msg"
+}
+fb_status() {   # -> fb.htm, for the page's Settings: never the key, only its last 4 characters
+	d=$(web_dir); mkdir -p "$d" 2>/dev/null || return 0
+	on=false; tl=""; fb_on && { on=true; tl=$(head -n 1 "$FB_KEY" | tr -cd 'A-Za-z0-9' | tail -c 4); }
+	hk=false; fb_hooked && hk=true
+	bz=false; [ -f "$TMPD/fb_busy" ] && bz=true
+	dv=$(fb_devices); kn=$(awk -F'\t' '$2 == 200 { n++ } END { print n + 0 }' "$FB_CACHE" 2>/dev/null)
+	ok=$(sed -n 1p "$TMPD/fb_msg" 2>/dev/null); case "$ok" in 1) ok=true ;; 0) ok=false ;; *) ok=null ;; esac
+	printf '{"on":%s,"tail":"%s","hooked":%s,"busy":%s,"devices":%s,"known":%s,"last":"%s","state":"%s","seq":%s,"ok":%s,"msg":"%s","prep":"%s"}' \
+		"$on" "$tl" "$hk" "$bz" "${dv:-0}" "${kn:-0}" "$(cut -d' ' -f1 "$TMPD/fb_last" 2>/dev/null | tr -cd '0-9')" \
+		"$(cut -d' ' -f1 "$TMPD/fb_state" 2>/dev/null | tr -cd 'a-z')" "$(cat "$TMPD/fb_seq" 2>/dev/null || echo 0)" "$ok" \
+		"$(js "$(sed -n '2,$p' "$TMPD/fb_msg" 2>/dev/null)")" "$(cat "$TMPD/fb_prep" 2>/dev/null)" | write_atomic "$d/fb.htm"
+}
+fb_ui_prep() {
+	if [ -f "$CUSTOM_SETTINGS" ]; then cp -f "$CUSTOM_SETTINGS" "$TMPD/cs.saved"; else rm -f "$TMPD/cs.saved"; fi
+	echo "$(now).$$" > "$TMPD/fb_prep"
+	fb_status
+}
+fb_ui_save() {
+	k=$(sed -n 's/^arteria_fbkey //p' "$CUSTOM_SETTINGS" 2>/dev/null | head -n 1 | tr -cd 'A-Za-z0-9')
+	# put the shared file back as it was a moment ago (a copy older than a minute could undo another addon's save)
+	if [ -f "$TMPD/cs.saved" ] && [ $(( $(now) - $(date -r "$TMPD/cs.saved" +%s) )) -le 60 ]; then
+		grep -v '^arteria_fbkey ' "$TMPD/cs.saved" > "$TMPD/cs.new"; cat "$TMPD/cs.new" > "$CUSTOM_SETTINGS"
+	else
+		sed -i '/^arteria_fbkey /d' "$CUSTOM_SETTINGS" 2>/dev/null
+	fi
+	rm -f "$TMPD/cs.saved" "$TMPD/cs.new"
+	touch "$TMPD/fb_busy"; fb_msg "" "Checking the key with Fingerbank..."; fb_status
+	if fb_enable "$k"; then fb_msg 1 "$FB_MSG"; else fb_msg 0 "$FB_MSG"; fi
+	rm -f "$TMPD/fb_busy"; fb_status
+}
+fb_ui_off() {
+	touch "$TMPD/fb_busy"; fb_msg "" "Turning Fingerbank off..."; fb_status
+	fb_off quiet; log "Fingerbank turned off"
+	fb_msg 1 "Fingerbank is off. The key and its answers are deleted, and dnsmasq runs the router's own lease script directly again."
+	rm -f "$TMPD/fb_busy"; fb_status
 }
 
 # ---- web UI (Merlin Addons API) ------------------------------------------------
@@ -1074,6 +1363,7 @@ install() {
 	[ -f "$CONF" ] || write_conf
 	hook_add services-start "$SCRIPT startup &"
 	hook_add service-event "$SCRIPT service_event \"\$@\" &"
+	fb_on && fb_hooks add
 	startup
 
 	# AiMesh nodes: per-device counters need the router's key on each node
@@ -1191,6 +1481,7 @@ uninstall() {
 	unmount_webui
 	hook_del services-start
 	hook_del service-event
+	fb_off quiet
 	b64=$([ -s "$KEY" ] && pub_key | cut -d' ' -f2)
 	[ -n "$b64" ] && router_key_del "$b64"
 	rm -rf "$(web_dir)" "$TMPD" "$ADDON_DIR"
@@ -1211,7 +1502,19 @@ status() {
 	say "Node access: $NODES$( [ "$NODES" = on ] && { [ -s "$KEY" ] && printf ', key present' || printf ", no key yet ('nodekey' creates it)"; })"
 	nl=$(node_list)
 	[ -n "$nl" ] && say "Nodes:       $(node_models "$nl") (details: '$SCRIPT nodes test')"
+	if fb_on; then
+		say "Fingerbank:  on, $(fb_counts)$(fb_hooked || printf ' (dnsmasq not using it yet)')"
+	else
+		say "Fingerbank:  off ('$SCRIPT fingerbank' turns device recognition on, with your own free key)"
+	fi
 	say "amtm updates: $AMTM_UPDATE"
+}
+fb_counts() {   # "5 devices fingerprinted, 3 kinds of device known to Fingerbank, last reply 200"
+	d=$(fb_devices); a=$(awk -F'\t' '$2 == 200 { n++ } END { print n + 0 }' "$FB_CACHE" 2>/dev/null)
+	printf '%s devices fingerprinted, %s kinds of device known to Fingerbank' "${d:-0}" "${a:-0}"
+	l=$(cut -d' ' -f1 "$TMPD/fb_last" 2>/dev/null); [ -n "$l" ] && printf ', last reply %s' "$l"
+	case "$(cat "$TMPD/fb_state" 2>/dev/null)" in badkey) printf ', KEY TURNED DOWN: run fingerbank again' ;; "wait "*) printf ', waiting before the next lookup' ;; esac
+	return 0
 }
 
 # Everything a bug report needs, and nothing personal: no device names, no MAC or IP addresses.
@@ -1259,6 +1562,16 @@ debug() {
 		say "Vendor classes: $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"vendorclass": *"\([A-Za-z]*\).*/\1/p' | cut -c1-12 | sort | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
 	fi
 	say "Private MACs:   $(for p in $(radio_list); do wl -i "${p%%:*}" assoclist 2>/dev/null; done | awk '$2 ~ /^.[26AEae]/ { n++ } END { print n + 0, "of", NR }')"
+	if fb_on; then
+		cur=$(sed -n 's/^dhcp-script=//p' "$DNSMASQ_CONF" 2>/dev/null | tail -n 1)
+		case "$cur" in
+			"$TMPD"/dhcp_hook.*) ls="Arteria's, then $(sed -n 's/^exec \([^ ]*\).*/\1/p' "$cur" 2>/dev/null | grep . || echo none)" ;;
+			'') ls="none" ;; *) ls="$cur, not Arteria's" ;;
+		esac
+		say "Fingerbank:     on; lease script: $ls; renewals: $(grep -q '^script-on-renewal' "$DNSMASQ_CONF" 2>/dev/null && echo yes || echo no); $(fb_counts)"
+	else
+		say "Fingerbank:     off"
+	fi
 	live="$(web_dir)/live.htm"
 	[ -f "$live" ] && say "Last sample: $(sed -n 's/.*"ms":\([0-9]*\).*/\1/p' "$live" | head -1) ms, $(( $(now) - $(date -r "$live" +%s) )) s ago"
 }
@@ -1290,7 +1603,7 @@ amtm_update() {   # [check]
 
 usage() {
 	say "Usage: $0 [menu] | install | check | update [force | dev [branch]] | uninstall | status |"
-	say "       nodes [test] | nodekey [node-ip | print] | debug | sample | amtmupdate [check] | startup | version"
+	say "       nodes [test] | nodekey [node-ip | print] | fingerbank [off] | debug | sample | amtmupdate [check] | startup | version"
 }
 menu_pause() { printf '\n Press Enter to go back to the menu '; read -r dummy || exit 0; }
 menu_uninstall() {   # true once removed
@@ -1311,6 +1624,7 @@ menu() {
 		b=$(build_text); [ -n "$b" ] && say " This is a $b"
 		say " Sampling:     $(sampler_running && echo 'now (the page is open)' || echo 'only while the page is open')"
 		say " Node access:  $NODES"
+		say " Fingerbank:   $(fb_on && echo on || echo off)"
 		say " amtm updates: $AMTM_UPDATE"
 		say ""
 		say "  1  Status"
@@ -1322,6 +1636,7 @@ menu() {
 		say "  7  Turn amtm updates $( [ "$AMTM_UPDATE" = on ] && printf off || printf on)"
 		say "  8  Development version from GitHub, for testing unreleased changes"
 		say "  9  Uninstall"
+		say "  f  Device recognition with Fingerbank: turn $(fb_on && printf off || printf 'on (your own free key)')"
 		say "  e  Exit"
 		printf '\n Choose an option: '
 		read -r opt || { say ""; return 0; }
@@ -1346,6 +1661,12 @@ menu() {
 				if [ "$AMTM_UPDATE" = on ]; then AMTM_UPDATE=off; else AMTM_UPDATE=on; fi
 				write_conf; log "amtm updates turned $AMTM_UPDATE" ;;
 			9) menu_uninstall && return 0 ;;
+			f|F)
+				if fb_on; then
+					printf ' Turn Fingerbank off and delete its key and answers? (y/n) '; read -r a || a=n
+					case "$a" in [yY]*) ( fingerbank_cmd off ) ;; *) say " Nothing changed." ;; esac
+				else ( fingerbank_cmd ); fi
+				menu_pause ;;
 			e|E|q|Q) return 0 ;;
 			'') ;;
 			*) say " $opt isn't an option."; menu_pause ;;
@@ -1367,6 +1688,8 @@ case "$1" in
 	service_event) service_event "$2" "$3" ;;
 	nodes)         nodes_cmd "$2" ;;
 	nodekey)       nodekey "$2"; exit $? ;;
+	fingerbank)    fingerbank_cmd "$2"; exit $? ;;
+	dnsmasq_conf)  dnsmasq_conf "$2" ;;
 	status)        status ;;
 	debug)         debug ;;
 	version)       say "$VERSION" ;;

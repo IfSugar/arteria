@@ -519,6 +519,151 @@ if [ -z "$(ls -A "$t/planted")" ] && ! pgrep -f "$script sampler" > /dev/null; t
 else bad "planted /tmp/arteria:"; ls -la "$t/planted"; cat "$t/planted.out"; fi
 rm -f "$R/tmp/arteria"
 
+# ---- 3b: Fingerbank (off unless you give your own key) --------------------------------------------
+# dnsmasq's config as the router writes it, then its postconf scripts, at every dnsmasq restart (a stand-in service);
+# a stand-in dnsmasq that knows script-on-renewal; ASUS's lease script, which records how it was called;
+# a stand-in curl for api.fingerbank.org, which reads its config (the key) from stdin and logs its arguments.
+mkdir -p "$R/etc"
+printf 'domain-needed\ndhcp-script=%s/dhcpc_lease\n' "$t" > "$t/dnsmasq.base"; cp "$t/dnsmasq.base" "$R/etc/dnsmasq.conf"
+printf '#!%s sh\necho "$* opts=$DNSMASQ_REQUESTED_OPTIONS" >> "%s/lease.log"\n' "$bb" "$t" > "$t/dhcpc_lease"
+printf '#!/bin/sh\n# another addon\nCONFIG=$1\n' > "$R/jffs/scripts/dnsmasq.postconf"; chmod 755 "$R/jffs/scripts/dnsmasq.postconf"
+cp "$R/jffs/scripts/dnsmasq.postconf" "$t/postconf.before"
+cat > "$B/service" <<EOF
+#!$bb sh
+echo "\$*" >> "$t/service.log"
+[ "\$1" = restart_dnsmasq ] || exit 0
+cp "$t/dnsmasq.base" "$R/etc/dnsmasq.conf"
+[ -f "$R/jffs/scripts/dnsmasq.postconf" ] && AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" sh "$R/jffs/scripts/dnsmasq.postconf" "$R/etc/dnsmasq.conf"
+exit 0
+EOF
+printf '#!%s sh\n[ "$1" = --help ] && echo "    --script-on-renewal        Call DHCP script on lease renewal."\nexit 0\n' "$bb" > "$B/dnsmasq"
+cat > "$B/curl" <<EOF
+#!$bb sh
+echo "\$*" >> "$t/fbcurl.args"
+cfg=\$(cat); printf '%s\n' "\$cfg" >> "$t/fbcurl.cfg"
+d=""; while [ \$# -gt 0 ]; do [ "\$1" = -d ] && d=\$2; shift; done
+case "\$cfg" in *BADKEY*) printf '{"errors":"Unauthorized"}\n401'; exit 0 ;; esac
+case "\$d" in
+	*'"dhcp_fingerprint":"1,3,6,15,31,33,43,44,46,47,119,121,249,252","dhcp_vendor":"dhcpcd-9.4.1:Linux:armv7l x"'*)
+		printf '{"device":{"id":15666,"name":"Amazon Echo","parents":[]},"device_name":"Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo","score":87,"version":"","request_id":"x"}\n200' ;;
+	*) printf '{"errors":{"details":"No profiling result"}}\n404' ;;
+esac
+EOF
+chmod +x "$t/dhcpc_lease" "$B/service" "$B/dnsmasq" "$B/curl"
+FBK=abcdef0123456789abcdef0123456789abcdef01
+fbk="$R/jffs/addons/arteria/fingerbank_key"
+
+# A key Fingerbank turns down changes nothing
+printf 'BADKEY0123456789BADKEY01\n' | runi fingerbank > "$t/fb.out" 2>&1 && bad "fingerbank accepted a refused key" || true
+if grep -q 'turned this key down' "$t/fb.out" && [ ! -f "$fbk" ] && cmp -s "$R/jffs/scripts/dnsmasq.postconf" "$t/postconf.before"; then
+	ok "fingerbank: a key Fingerbank turns down changes nothing"
+else bad "fingerbank, refused key:"; cat "$t/fb.out"; fi
+
+# A good key: saved for root only, one line in dnsmasq.postconf after the other addon's, dnsmasq restarted with our
+# lease script (which hands on to ASUS's) and with script-on-renewal; the key never in a command line
+: > "$t/fbcurl.args"; : > "$t/fbcurl.cfg"
+printf '%s\n' "$FBK" | runi fingerbank > "$t/fb.out" 2>&1 || { bad "fingerbank failed:"; cat "$t/fb.out"; }
+hook=$(sed -n 's/^dhcp-script=//p' "$R/etc/dnsmasq.conf")
+if [ "$(cat "$fbk" 2>/dev/null)" = "$FBK" ] && [ "$(stat -c %a "$fbk")" = 600 ] \
+	&& [ "$(grep -c '# arteria$' "$R/jffs/scripts/dnsmasq.postconf")" = 1 ] && head -n 3 "$R/jffs/scripts/dnsmasq.postconf" | cmp -s - "$t/postconf.before" \
+	&& case "$hook" in "$R/tmp/arteria/dhcp_hook."*.sh) true ;; *) false ;; esac && grep -q "^exec $t/dhcpc_lease \"\$@\"$" "$hook" \
+	&& grep -q '^script-on-renewal$' "$R/etc/dnsmasq.conf" && grep -q restart_dnsmasq "$t/service.log"; then
+	ok "fingerbank: key saved for root only, dnsmasq runs Arteria's lease script first (then ASUS's), and on renewals"
+else bad "fingerbank, good key:"; cat "$t/fb.out"; ls -l "$fbk"; cat "$R/jffs/scripts/dnsmasq.postconf" "$R/etc/dnsmasq.conf"; fi
+grep -q "$FBK" "$t/fbcurl.args" && bad "the key was in curl's command line" || ok "the key never appears in a command line"
+grep -q "^header = \"Authorization: Bearer $FBK\"$" "$t/fbcurl.cfg" && ok "the key goes to Fingerbank as a Bearer header" || { bad "curl config:"; cat "$t/fbcurl.cfg"; }
+# restarting again: still one line, still ours (the postconf runs at every dnsmasq start)
+PATH="$B" service restart_dnsmasq
+[ "$(grep -c '^dhcp-script=' "$R/etc/dnsmasq.conf")" = 1 ] && [ "$(sed -n 's/^dhcp-script=//p' "$R/etc/dnsmasq.conf")" = "$hook" ] \
+	&& [ "$(grep -c '^script-on-renewal' "$R/etc/dnsmasq.conf")" = 1 ] && ok "a dnsmasq restart keeps one lease script line, ours" || { bad "after a restart:"; cat "$R/etc/dnsmasq.conf"; }
+
+# The lease script, called as dnsmasq calls it: it notes the fingerprint (and the vendor class, cleaned), always hands
+# on to ASUS's script with the same arguments and environment, and ignores a MAC or option list that isn't one
+: > "$t/lease.log"
+lease() { env -i PATH="$B" DNSMASQ_REQUESTED_OPTIONS="$1" DNSMASQ_VENDOR_CLASS="$2" "$hook" "$3" "$4" 192.168.50.99 host; }
+lease '1,3,6,15,31,33,43,44,46,47,119,121,249,252' 'dhcpcd-9.4.1:Linux:armv7l "x"<b>' add 02:cc:00:00:00:05
+lease '1,3,6,15,119,252' '' old 02:cc:00:00:00:12
+lease '1,3,6;reboot' '' add '02:cc:00:00:00:0Z'
+lease '1,3,6' '' del 02:cc:00:00:00:07
+lease '1,3,6,15,119,252,95' '' add 02:cc:00:00:00:12    # the same device again: one line, the latest
+fp="$R/tmp/arteria/dhcp_fp"
+if [ "$(cat "$fp")" = "$(printf '02:CC:00:00:00:05 1,3,6,15,31,33,43,44,46,47,119,121,249,252 dhcpcd-9.4.1:Linux:armv7l xb\n02:CC:00:00:00:12 1,3,6,15,119,252,95 ')" ] \
+	&& [ "$(grep -c '' "$t/lease.log")" = 5 ] && grep -q '^add 02:cc:00:00:00:05 192.168.50.99 host opts=1,3,6,15,31' "$t/lease.log" && grep -q '^del 02:cc:00:00:00:07 ' "$t/lease.log"; then
+	ok "lease script: notes each device's fingerprint once, cleaned; ASUS's script still gets every call, unchanged"
+else bad "lease script:"; cat "$fp" "$t/lease.log"; fi
+
+# While the page is open the sampler asks Fingerbank about each new fingerprint (the option list and vendor class only),
+# keeps the answers on JFFS, and the page gets them at once. The Echo's vendor class as dnsmasq gave it, cleaned.
+sed -i 's/armv7l xb$/armv7l x/' "$fp"
+: > "$t/fbcurl.args"; rm -f "$W/names.htm"
+runi service_event start arteria
+fb_answered() { grep -q 'Amazon Echo' "$W/names.htm" 2>/dev/null && [ "$(grep -c . "$R/jffs/addons/arteria/fingerbank" 2>/dev/null)" = 2 ]; }
+waitfor 15 fb_answered
+python3 - "$W/names.htm" "$R/jffs/addons/arteria/fingerbank" "$t/fbcurl.args" <<'EOF' && ok "lookups: each fingerprint asked once, without MAC or name; the answer reaches the page" || fail=1
+import json, sys
+fb = json.load(open(sys.argv[1]))['fb']
+assert fb == '02:CC:00:00:00:05>87>Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo>1,3,6,15,31,33,43,44,46,47,119,121,249,252|02:CC:00:00:00:12>>>1,3,6,15,119,252,95|', fb
+cache = [l.split('\t') for l in open(sys.argv[2]).read().splitlines()]
+assert sorted((c[0], c[1], c[2]) for c in cache) == [('1,3,6,15,119,252,95;', '404', '0'), ('1,3,6,15,31,33,43,44,46,47,119,121,249,252;dhcpcd-9.4.1:Linux:armv7l x', '200', '87')], cache
+args = open(sys.argv[3]).read()
+assert args.count('interrogate') == 2, args
+assert '02:cc:00' not in args.lower() and 'host' not in args and '192.168' not in args, args
+EOF
+runi service_event start arteriastop; waitfor 6 sampler_gone
+
+# status and debug: counts, never the key or a MAC; a key Fingerbank later turns down stops the lookups and says so
+runi status > "$t/st.out" 2>&1; runi debug > "$t/dbg.out" 2>&1 || true
+if grep -q '^Fingerbank:  on, 2 devices fingerprinted, 1 kinds of device known to Fingerbank, last reply 404' "$t/st.out" \
+	&& grep -q "^Fingerbank:     on; lease script: Arteria's, then $t/dhcpc_lease; renewals: yes; 2 devices" "$t/dbg.out" \
+	&& ! grep -qi "$FBK\|02:cc:00" "$t/st.out" "$t/dbg.out"; then ok "status and debug: Fingerbank's state in counts, no key or MAC"
+else bad "status/debug:"; grep -i fingerbank "$t/st.out" "$t/dbg.out"; fi
+printf 'BADKEY0123456789BADKEY01\n' > "$fbk"; lease '1,3,6,15,44' '' add 02:cc:00:00:00:01
+runi service_event start arteria; fb_refused() { grep -q badkey "$R/tmp/arteria/fb_state" 2>/dev/null; }; waitfor 10 fb_refused
+runi service_event start arteriastop; waitfor 6 sampler_gone
+runi status > "$t/st.out" 2>&1
+fb_refused && grep -q 'KEY TURNED DOWN' "$t/st.out" && ok "a key Fingerbank turns down later stops the lookups, and status says so" || { bad "refused later:"; cat "$t/st.out"; }
+
+# The page's Settings: the key arrives through the Addons API's shared settings file, which the router's web server
+# rewrites with what the page sent (values cut at their first space, plus the key). The router takes the key out and
+# puts back the copy it made just before, so every other addon's setting is exactly as it was; fb.htm tells the page.
+cs="$R/jffs/addons/custom_settings.txt"
+printf 'otheraddon_title Cool Addon 1.0\notheraddon_mode on\n' > "$cs"; cp "$cs" "$t/cs.before"
+fbst() { python3 -c "import json,sys; v=json.load(open(sys.argv[1]))[sys.argv[2]]; print(json.dumps(v) if not isinstance(v, str) else v)" "$W/fb.htm" "$1"; }
+# commands that get their arguments on a command line ([, test, printf, echo are programs on the router): they log them
+mkdir -p "$t/argv"; for c in '[' test printf echo expr; do printf '#!%s sh\necho "$*" >> "%s/argv.log"\nexec "%s" "%s" "$@"\n' "$bb" "$t" "$bb" "$c" > "$t/argv/$c"; chmod +x "$t/argv/$c"; done
+runw() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$t/argv:$B" BASH_ENV="$t/no-builtins.sh" "$bash_bin" "$script" "$@"; }
+runi service_event start arteriafboff
+[ "$(fbst on)" = false ] && [ "$(fbst ok)" = true ] && fbst msg | grep -q '^Fingerbank is off' && [ ! -e "$fbk" ] && cmp -s "$cs" "$t/cs.before" \
+	&& ok "settings page: turning Fingerbank off" || { bad "settings page, off:"; cat "$W/fb.htm"; }
+runi service_event start arteriafbprep
+printf 'otheraddon_title Cool\notheraddon_mode on\narteria_fbkey %s\n' "$FBK" > "$cs"   # what httpd writes
+: > "$t/argv.log"; : > "$t/fbcurl.args"
+runw service_event start arteriafb
+if cmp -s "$cs" "$t/cs.before" && [ "$(cat "$fbk" 2>/dev/null)" = "$FBK" ] && [ "$(fbst on)" = true ] && [ "$(fbst tail)" = ef01 ] && [ "$(fbst ok)" = true ] \
+	&& fbst msg | grep -q '^Saved\.' && fb_hooked_t() { grep -q "^dhcp-script=$R/tmp/arteria/dhcp_hook" "$R/etc/dnsmasq.conf"; } && fb_hooked_t; then
+	ok "settings page: the key saved, every other addon's setting exactly as before (spaces too), dnsmasq hooked"
+else bad "settings page, save:"; cat "$cs" "$W/fb.htm"; fi
+grep -q "$FBK" "$W/fb.htm" "$t/argv.log" "$t/fbcurl.args" "$R/tmp/arteria/"* 2>/dev/null && { bad "the key turned up where it mustn't:"; grep -l "$FBK" "$W/fb.htm" "$t/argv.log" "$t/fbcurl.args" "$R/tmp/arteria/"*; } \
+	|| ok "the key never reaches fb.htm, a command line, curl's arguments or a file in RAM"
+runi service_event start arteriafbprep
+printf 'otheraddon_title Cool\narteria_fbkey BADKEY0123456789BADKEY01\n' > "$cs"
+runi service_event start arteriafb
+[ "$(fbst ok)" = false ] && fbst msg | grep -q 'turned this key down' && cmp -s "$cs" "$t/cs.before" && [ "$(cat "$fbk")" = "$FBK" ] \
+	&& ok "settings page: a key Fingerbank turns down changes nothing, and says why" || { bad "settings page, refused key:"; cat "$cs" "$W/fb.htm"; }
+# a copy older than a minute is never put back (it could undo another addon's save): only the key's line goes
+runi service_event start arteriafbprep; touch -d "@$(( $(date +%s) - 120 ))" "$R/tmp/arteria/cs.saved"
+printf 'otheraddon_mode off\narteria_fbkey %s\n' "$FBK" > "$cs"
+runi service_event start arteriafb
+[ "$(cat "$cs")" = "otheraddon_mode off" ] && ok "settings page: an old copy of the settings is never put back, only the key taken out" || { bad "old copy:"; cat "$cs"; }
+
+# off: the key and the answers go, the postconf line goes (the other addon's stay), dnsmasq runs ASUS's script directly again
+runi fingerbank off > "$t/fb.out" 2>&1 || bad "fingerbank off failed"
+if [ ! -e "$fbk" ] && [ ! -e "$R/jffs/addons/arteria/fingerbank" ] && cmp -s "$R/jffs/scripts/dnsmasq.postconf" "$t/postconf.before" \
+	&& cmp -s "$R/etc/dnsmasq.conf" "$t/dnsmasq.base" && ! ls "$R"/tmp/arteria/dhcp_hook.* "$fp" > /dev/null 2>&1; then
+	ok "fingerbank off: key, answers, hook and fingerprints gone; dnsmasq as before; the other addon's lines untouched"
+else bad "fingerbank off:"; cat "$t/fb.out" "$R/jffs/scripts/dnsmasq.postconf" "$R/etc/dnsmasq.conf"; ls "$R/tmp/arteria"; fi
+rm -f "$R/jffs/scripts/dnsmasq.postconf" "$B/curl"
+
 # ---- 4: install and uninstall ----------------------------------------------------------------
 printf '#!/bin/sh\n/some/other/script startup &\n' > "$R/jffs/scripts/services-start"
 cp "$R/jffs/scripts/services-start" "$t/ss.before"
@@ -622,7 +767,12 @@ upd update || true
 if grep -q "Updating" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
 	ok "update: from a development version back to the release, the mark is gone"
 else bad "update after update dev:"; cat "$t/upd.out"; fi
+# with Fingerbank on, uninstall also takes Arteria's line out of dnsmasq.postconf and gives dnsmasq back its own lease script
+printf 'abcdef0123456789abcdef0123456789abcdef01\n' > "$R/jffs/addons/arteria/fingerbank_key"
+printf '#!/bin/sh\n%s dnsmasq_conf "$1" # arteria\n' "$R/jffs/addons/arteria/arteria.sh" > "$R/jffs/scripts/dnsmasq.postconf"; chmod 755 "$R/jffs/scripts/dnsmasq.postconf"
+PATH="$B" service restart_dnsmasq; grep -q "^dhcp-script=$R/tmp/arteria/dhcp_hook" "$R/etc/dnsmasq.conf" || bad "the Fingerbank hook didn't take before uninstall"
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
+[ ! -e "$R/jffs/scripts/dnsmasq.postconf" ] && cmp -s "$R/etc/dnsmasq.conf" "$t/dnsmasq.base" && ok "uninstall with Fingerbank on: dnsmasq gets its own lease script back" || { bad "uninstall, Fingerbank:"; cat "$R/etc/dnsmasq.conf"; }
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
 grep -q 'arteria' "$t/router-authkeys" 2>/dev/null && { bad "uninstall left the key in the router's list:"; cat "$t/router-authkeys"; } || ok "uninstall takes the key out of the router's own list"
 cmp -s "$R/jffs/scripts/services-start" "$t/ss.before" && ok "other scripts' hook lines untouched" || { bad "services-start changed:"; cat "$R/jffs/scripts/services-start"; }

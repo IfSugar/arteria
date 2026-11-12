@@ -8,6 +8,7 @@ Counters grow with the clock at each device's rate, so the page computes live ra
 does on a router. All names and addresses are made up.
 """
 import json, math, os, random, sys, time, re
+from urllib.parse import parse_qs
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -168,6 +169,29 @@ def names():
     return {'custom': custom, 'leases': leases, 'nmp': nmp, 'cl': cl, 'fixed': fixed, 'arp': arp, 'n6': n6}
 
 
+# Settings: what the router does with the page's Fingerbank requests (arteria.sh fb_ui_prep / fb_ui_save / fb_ui_off),
+# and the addons' shared settings the router puts in the page (one other addon's, made up).
+CUSTOM = {'otheraddon_path': '/opt/share/otheraddon', 'otheraddon_mode': 'on'}
+FB = {'on': False, 'tail': '', 'hooked': False, 'busy': False, 'devices': 0, 'known': 0, 'last': '', 'state': '', 'seq': 0, 'ok': None, 'msg': '', 'prep': ''}
+POSTED = []
+
+
+def router_action(f):
+    act = (f.get('action_script') or [''])[0]
+    if act == 'start_arteriafbprep':
+        FB['prep'] = '%.3f' % time.time()
+    elif act == 'start_arteriafb':
+        cs = json.loads((f.get('amng_custom') or ['{}'])[0]); POSTED.append(cs); k = cs.get('arteria_fbkey', '')
+        if k.startswith('BAD'):
+            FB.update(seq=FB['seq'] + 2, ok=False, msg="Fingerbank turned this key down (HTTP 401). Check it on your account page at api.fingerbank.org. Nothing changed.")
+        else:
+            FB.update(on=True, tail=k[-4:], hooked=True, devices=14, known=9, last='200', seq=FB['seq'] + 2, ok=True,
+                      msg='Saved. Each device is looked up the next time it connects or renews its address (within about 12 hours), while the Arteria page is open.')
+    elif act == 'start_arteriafboff':
+        FB.update(on=False, tail='', hooked=False, devices=0, known=0, last='', seq=FB['seq'] + 2, ok=True,
+                  msg="Fingerbank is off. The key and its answers are deleted, and dnsmasq runs the router's own lease script directly again.")
+
+
 class H(BaseHTTPRequestHandler):
     seq = 0
 
@@ -187,6 +211,7 @@ class H(BaseHTTPRequestHandler):
         if path in ('/', '/user1.asp'):
             page = open(ASP, encoding='utf-8').read()
             page = page.replace('<% nvram_get("productid"); %>', 'RT-AX86U')   # what the router fills in
+            page = page.replace('<% get_custom_settings(); %>', json.dumps(CUSTOM))
             page = re.sub(r'<%.*?%>', '', page)
             return self.send(page)
         if path == '/ext/arteria/live.htm':
@@ -194,6 +219,10 @@ class H(BaseHTTPRequestHandler):
             return self.send(json.dumps(sample(H.seq)), 'text/html')
         if path == '/ext/arteria/names.htm':
             return self.send(json.dumps(names()), 'text/html')
+        if path == '/ext/arteria/fb.htm':
+            return self.send(json.dumps(FB), 'text/html')
+        if path == '/_posted':   # for page-browser.py: the settings the page sent with the key
+            return self.send(json.dumps(POSTED), 'application/json')
         if path.endswith('.js'):
             return self.send('', 'application/javascript')
         if path.endswith('.css'):
@@ -202,7 +231,7 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get('Content-Length') or 0)
-        self.rfile.read(n)
+        router_action(parse_qs(self.rfile.read(n).decode('utf-8', 'replace')))
         return self.send('<html></html>')
 
 
