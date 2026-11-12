@@ -164,6 +164,18 @@ node_list() {
 	nvram get cfg_device_list | tr '<' '\n' | awk -F'>' -v me="$me" '
 		NF >= 3 && $2 != me && $2 ~ /^[0-9.]+$/ && $3 ~ /^[0-9A-Fa-f:]+$/ { m = $1; gsub(/[^ -~]/, "", m); print toupper($3), $2, m }'   # the model as printable text only: it reaches the terminal
 }
+# How many nodes have joined AiMesh (cfg_relist), whether or not they're in the list above right now: saving
+# almost any setting empties that list for several minutes while the nodes stay online. Only for messages.
+nodes_joined() { nvram get cfg_relist | tr '<' '\n' | grep -c '^[0-9A-Fa-f:]\{17\}>'; }
+nodes_none_why() {   # why node_list is empty, for the terminal
+	k=$(nodes_joined)
+	if [ "${k:-0}" -gt 0 ]; then
+		say "AiMesh lists $k node(s), but none is in the router's current AiMesh list. That list stays empty for several"
+		say "minutes after you save a setting, then the nodes come back by themselves: if a node is on, try again shortly."
+	else
+		say "No AiMesh nodes found."
+	fi
+}
 node_alias() { ours_file "$ROOT/tmp/$1.json" && sed -n 's/.*"cfg_alias":"\([^"]*\)".*/\1/p' "$ROOT/tmp/$1.json" 2>/dev/null | head -1 | tr -cd '\040-\176'; }
 # A node's backhaul stations: the addresses it uses to connect to the router over Wi-Fi.
 node_stas() {
@@ -660,15 +672,24 @@ router_key_del() {   # base64: take Arteria's line out of the router's list (uni
 	case "$c" in *"$1"*) ;; *) return 0 ;; esac
 	nvram set sshd_authkeys="$(printf '%s\n' "$c" | grep -vF "$1")" && nvram commit
 }
+# The key works, but perhaps only from the node SSH server's current list: AiMesh writes the node's own list (in
+# its nvram) from the router's at the next sync, and a node that restarts before then rebuilds its list from its own.
+# So the key goes into the node's own list now too, logging in with the key: no password, nothing restarted.
+node_keep_key() {   # ip   (uses $pub and $b64 from nodekey)
+	node_try "$1" "" "k='$pub'; c=\$(nvram get sshd_authkeys); case \"\$c\" in *'$b64'*) ;; *) nvram set sshd_authkeys=\"\${c:+\$c
+}\$k\" && nvram commit && echo arteria-added-key ;; esac; echo arteria-ok" || return 0
+	case "$TRY_OUT" in *arteria-added-key*) say "  Added it to the node's own key list too, so it stays if the node restarts before the next sync." ;; esac
+}
 
 # Try the key on a node: key only, never a password (see ssh_batch). Gives up after 8 s.
 # Returns 0 if the key works, 1 if not, 2 if it can't be tried without risking a password prompt
 # (an older dbclient, run from a terminal).
-node_try() {   # ip [pin]   pin: also trust and pin the identity that answers (only after the person said yes)
-	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0; TRY_NEW=0; TRY_FP=""; y=""; [ "$2" = pin ] && y=-y
+node_try() {   # ip [pin] [command]   pin: also trust and pin the identity that answers (only after the person said yes)
+	# command: run on the node, ending with "echo arteria-ok"; its output is left in TRY_OUT
+	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0; TRY_NEW=0; TRY_FP=""; TRY_OUT=""; y=""; [ "$2" = pin ] && y=-y
 	b=$(ssh_batch)
 	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
-	(HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
+	(HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" "${3:-echo arteria-ok}") \
 		< /dev/null > "$o" 2>&1 &
 	p=$!; i=0
 	while kill -0 "$p" 2>/dev/null; do
@@ -680,6 +701,7 @@ node_try() {   # ip [pin]   pin: also trust and pin the identity that answers (o
 	grep -qi 'not in the trusted hosts' "$o" 2>/dev/null && TRY_NEW=1   # first contact: nothing pinned for this address yet
 	TRY_FP=$(grep -o '[A-Za-z0-9-]* fingerprint [A-Za-z0-9:+/=]*' "$o" 2>/dev/null | head -1)
 	TRY_ERR=$(grep -v '^arteria-ok' "$o" 2>/dev/null | tail -1 | tr -cd '\040-\176' | cut -c1-120)
+	TRY_OUT=$(head -c 512 "$o" 2>/dev/null | tr -cd '\012\040-\176')
 	rm -f "$o"
 	return $rc
 }
@@ -687,7 +709,7 @@ node_try() {   # ip [pin]   pin: also trust and pin the identity that answers (o
 nodes_cmd() {   # [test]
 	if [ "$NODES" != on ]; then say "Reading AiMesh nodes is off (NODES=off in $CONF): the page shows backhaul totals only."; fi
 	list=$(node_list)
-	if [ -z "$list" ]; then say "No AiMesh nodes found."; return 0; fi
+	if [ -z "$list" ]; then nodes_none_why; return 0; fi
 	say "AiMesh nodes (SSH port $(ssh_port), user $(ssh_user)):"
 	printf '%s\n' "$list" | while read -r mac ip model; do
 		al=$(node_alias "$mac")
@@ -771,7 +793,7 @@ nodekey() {   # [node-ip | print]
 	fi
 	list=$(node_list)
 	[ -n "$1" ] && list=$(printf '%s\n' "$list" | awk -v ip="$1" '$2 == ip')
-	[ -n "$list" ] || die "No AiMesh node${1:+ at $1} found."
+	if [ -z "$list" ]; then [ -n "$1" ] && die "No AiMesh node at $1 found."; nodes_none_why; exit 1; fi
 	fails=0
 	# the remote side: add the key unless it's there, then restart its SSH server (after we've disconnected)
 	cmd="k='$pub'; c=\$(nvram get sshd_authkeys); case \"\$c\" in *'$b64'*) echo arteria-had-key ;; *) nvram set sshd_authkeys=\"\${c:+\$c
@@ -782,11 +804,11 @@ nodekey() {   # [node-ip | print]
 		say ""
 		say "${al:-$model} ($model, $ip)"
 		node_try "$ip"; rc=$?
-		if [ $rc -eq 0 ]; then say "  Already has the key."; continue; fi
+		if [ $rc -eq 0 ]; then say "  Already has the key."; node_keep_key "$ip"; continue; fi
 		if [ "$TRY_HOSTKEY" = 1 ] && ! trust_new_identity "$ip"; then fails=$((fails + 1)); continue; fi
 		if [ "$TRY_NEW" = 1 ] && ! trust_first_contact "$ip"; then fails=$((fails + 1)); continue; fi
 		if [ "$TRY_HOSTKEY" = 1 ] || [ "$TRY_NEW" = 1 ]; then   # trusted now: the key may already be there (an AiMesh sync)
-			node_try "$ip" pin && { say "  Key login works."; continue; }
+			node_try "$ip" pin && { say "  Key login works."; node_keep_key "$ip"; continue; }
 		fi
 		say "  Enter the node's password (your router's admin password). It goes to the node only and isn't stored."
 		out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1)
@@ -885,7 +907,9 @@ check_support() {
 
 	# AiMesh nodes (optional)
 	nl=$(node_list)
-	if [ -z "$nl" ]; then
+	if [ -z "$nl" ] && [ "$(nodes_joined)" -gt 0 ]; then
+		ck_warn "AiMesh lists $(nodes_joined) node(s), but none is in the router's current AiMesh list (empty for a few minutes after a settings save). Run check again shortly."
+	elif [ -z "$nl" ]; then
 		ck_ok "No AiMesh nodes (the map shows the router and its clients)"
 	elif ! have dbclient || ! have dropbearkey; then
 		ck_warn "AiMesh nodes found, but no SSH client: the map shows their backhaul totals only."

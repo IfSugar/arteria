@@ -58,7 +58,10 @@ case "\$2" in
 	lan_ifnames) echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7" ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
 	lan_ipaddr) echo 192.168.50.1 ;; http_username) echo admin ;; sshd_port) echo 2222 ;; sshd_enable) echo 1 ;;
 	jffs2_scripts) echo 1 ;; rc_support) echo "mssid 2.4G 5G usbX1 bwdpi wl6 amas" ;;
-	cfg_device_list) echo "<RP-AX56>192.168.50.10>$NODE>0" ;;
+	# AiMesh's list of the nodes it's in touch with: saving a setting empties it for minutes (a test sets no-device-list)
+	cfg_device_list) [ -f "$t/no-device-list" ] || echo "<RP-AX56>192.168.50.10>$NODE>0" ;;
+	# every node that has joined (node, its 2.4 and 5 GHz backhaul addresses, when): kept across saves
+	cfg_relist) echo "<$NODE>$S2>$S5>1761147712" ;;
 	dhcp_staticlist) echo "<02:CC:00:00:00:04>192.168.50.20>>" ;;
 	custom_clientlist) echo "<Living room TV>02:CC:00:00:00:05>0>23>><Kids \"tablet\"\\\\>02:CC:00:00:00:13>0>21>>" ;;
 esac
@@ -374,6 +377,17 @@ runi service_event start arteriastop
 waitfor 6 sampler_gone; waitfor 6 no_session
 rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 
+# Which nodes: the router's AiMesh list, never the router itself. Saving a setting empties that list for minutes while
+# the nodes stay online: nodes then says so, rather than "no nodes".
+run nodes > "$t/nodes.out" 2>&1
+[ "$(grep -c 'Hall (RP-AX56, 192.168.50.10)' "$t/nodes.out")" = 1 ] && ! grep -q '192.168.50.1)' "$t/nodes.out" \
+	&& ok "nodes: the AiMesh node once, with its name, model and address; not the router" || { bad "nodes:"; cat "$t/nodes.out"; }
+touch "$t/no-device-list"; run nodes > "$t/nodes.out" 2>&1
+grep -q "AiMesh lists 1 node(s), but none is in the router's current AiMesh list" "$t/nodes.out" \
+	&& ok "nodes: while a settings save has emptied the AiMesh list, says the node will come back, not 'no nodes'" \
+	|| { bad "nodes with the AiMesh list emptied:"; cat "$t/nodes.out"; }
+rm -f "$t/no-device-list"
+
 # nodekey print: one line to paste on a node, which adds the key once and keeps the keys already there
 line=$(run nodekey print 2>&1 | grep "^k='ssh-")
 mkdir -p "$t/nk"; printf 'ssh-ed25519 AAAAown me@laptop' > "$t/nk/store"
@@ -435,6 +449,13 @@ if "$py" -c 'import pty' 2>/dev/null; then
 	else bad "nodekey, node already has the key:"; cat "$t/nk-synced.out"; fi
 	[ "$(grep -c 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' "$t/router-authkeys" 2>/dev/null)" = 1 ] \
 		&& ok "nodekey keeps the key in the router's own list too, once (AiMesh copies that list to the nodes)" || { bad "router's key list:"; cat "$t/router-authkeys"; }
+	# the key works, but the node's own list (nvram) doesn't have it: nodekey adds it there with the key, no password
+	rm -f "$t/node-identity" "$t/dbclient.pw"; : > "$t/node-authkeys"
+	nk y > "$t/nk-keep.out"; nk y > "$t/nk-keep2.out"
+	if grep -q "Already has the key" "$t/nk-keep.out" && grep -q "node's own key list too" "$t/nk-keep.out" && ! grep -q "own key list" "$t/nk-keep2.out" \
+		&& [ "$(grep -c 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' "$t/node-authkeys")" = 1 ] && [ ! -f "$t/dbclient.pw" ]; then
+		ok "nodekey: a node that takes the key but doesn't list it gets it in its own list, once, with no password"
+	else bad "nodekey, key works but the node doesn't list it:"; cat "$t/nk-keep.out" "$t/nk-keep2.out"; cat "$t/node-authkeys"; fi
 else echo "skip  nodekey at a terminal (python3 has no pty module here)"; fi
 # The sampler never pins a node itself: one seen for the first time is "nokey" (run nodekey) and stays unpinned
 rm -rf "$R/jffs/addons/arteria/.ssh" "$R/tmp/arteria"; echo FIRSTKEY > "$t/node-identity"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
