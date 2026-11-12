@@ -169,7 +169,7 @@ const html = [];
 [T.geomSmall(), T.geomBig(1184, 790, 0)].forEach(g => {
 	const keepG = T.G(); A.gotAny = true; T.useGeom(g);
 	try {
-		const L = T.mapLayout(hnet), m = T.buildMap(hnet, L), f = T.buildFlow(T.flowGroups(hnet));
+		const L = T.mapLayout(hnet), m = T.buildMap(hnet, L), f = T.buildFlow(T.flowGroups(hnet), hnet);
 		html.push(m.svg, m.labels, f.svg, f.rows);
 	} catch (e) { html.push('ERROR ' + e.message); }
 	T.useGeom(keepG);
@@ -187,7 +187,7 @@ let hn = AR.buildNet(smp({ ports: ['eth1', EVIL], links: [['eth0', 1, 1000], ['e
 	nodes: [{ mac: NODE, ip: '192.168.50.10', model: 'RP-AX56', alias: 'Hall', sta: '02:10:00:00:00:81 ' + EVIL, state: 'nokey', up: null, c: [] }, { mac: EVIL, model: 'x', state: 'ok', c: [] }, null] }));
 const ids = hn.devs.map(d => d.id).concat(hn.nodes.map(n => n.id)).sort().join(' ');
 let hm = '';
-try { A.gotAny = true; const L = T.mapLayout(hn), m = T.buildMap(hn, L), f = T.buildFlow(T.flowGroups(hn)); hm = m.svg + m.labels + f.svg + f.rows; } catch (e) { hm = 'ERROR ' + e.message; }
+try { A.gotAny = true; const L = T.mapLayout(hn), m = T.buildMap(hn, L), f = T.buildFlow(T.flowGroups(hn), hn); hm = m.svg + m.labels + f.svg + f.rows; } catch (e) { hm = 'ERROR ' + e.message; }
 ok(ids === '00:00:5E:00:53:44 node:' + NODE + ' port:eth1' && !/<img|ERROR/i.test(hm) && (hn.byId['00:00:5E:00:53:44'] || {}).rssi === -61, 'addresses and ports that aren\'t one are dropped (sample, node list, AiMesh client list)', ids + ' ' + (hm.match(/<img|ERROR.*/i) || ''));
 
 // ---- 9. one odd value never stops a sample: names of the wrong type, an empty network
