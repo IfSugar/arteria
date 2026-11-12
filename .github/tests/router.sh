@@ -11,7 +11,8 @@
 #     clients over the session, writes live.htm and names.htm, and stops when the page says so.
 #  3. Without the node key, the node is reported as "nokey" and never retried in a loop.
 #  4. A stale pid file never makes Arteria signal another process, or keeps the sampler from starting.
-#  5. install hooks itself in and adds its menu line before Traffic Monitor (Merlin has it in two menus); uninstall
+#  5. install hooks itself in and adds its menu line right after Statistic in Traffic Analyzer (last in
+#     Network Tools on routers without it); uninstall
 #     removes everything it added and nothing else.
 #
 # Usage: .github/tests/router.sh [path/to/arteria.sh]   (needs busybox, python3)
@@ -111,10 +112,14 @@ printf '{"%s":{"2G":{"02:CC:00:00:00:11":{"ip":"192.168.50.4","rssi":"-49"}}}}' 
 printf '{"02:CC:00:00:00:03":{"mac":"02:CC:00:00:00:03","name":"Client","vendor":"Apple","type":0}}' > "$R/jffs/nmp_cl_json.js"
 printf '1794400000 02:cc:00:00:00:04 192.168.50.20 Pixel-8 *\n' > "$R/var/lib/misc/dnsmasq.leases"
 printf 'am_settings_get() { :; }\n' > "$R/usr/sbin/helper.sh"
-# Laid out like Merlin 3004.388's menuTree.js: Traffic Monitor is in two menus (Traffic Manager for
-# models without Trend Micro's engine, Traffic Analyzer for those with it; only one is shown), plus Tools.
+# Laid out like the RT-AX86U's menuTree.js in Merlin 3004.388.13 (menuTree_bwdpi_traffic_analyzer.js):
+# Traffic Monitor is a tab in two menus (Traffic Manager, hidden on this model, and Traffic Analyzer,
+# where Statistic follows Traffic Monitor's hidden sub-pages), code elsewhere also builds Traffic
+# Monitor tabs (never to be touched), and Network Tools ends with its "NULL" entry.
 cat > "$R/www/require/modules/menuTree.js" <<'EOF'
-var menuTree = { list: [
+define(function(){
+	var menuTree = {
+		list: [
 			{
 				menuName: "<#Menu_TrafficManager#>",
 				index: "menu_QoS",
@@ -122,27 +127,55 @@ var menuTree = { list: [
 					{url: "QoS_EZQoS.asp", tabName: "<#menu5_3_2#>"},
 					{url: "Main_TrafficMonitor_realtime.asp", tabName: "<#traffic_monitor#>"},
 					{url: "Main_TrafficMonitor_last24.asp", tabName: "__INHERIT__"},
+					{url: "Main_TrafficMonitor_daily.asp", tabName: "__INHERIT__"},
+					{url: "AdaptiveQoS_InternetSpeed.asp", tabName: "<#InternetSpeed#>"},
 				]
 			},
 			{
 				menuName: "<#Traffic_Analyzer#>",
 				index: "menu_TrafficAnalyzer",
 				tab: [
-					{url: "TrafficAnalyzer_Statistic.asp", tabName: "<#Statistic#>"},
 					{url: "Main_TrafficMonitor_realtime.asp", tabName: "<#traffic_monitor#>"},
 					{url: "Main_TrafficMonitor_last24.asp", tabName: "__INHERIT__"},
+					{url: "Main_TrafficMonitor_daily.asp", tabName: "__INHERIT__"},
+					{url: "Main_TrafficMonitor_monthly.asp", tabName: "__INHERIT__"},
+					{url: "Main_TrafficMonitor_settings.asp", tabName: "__INHERIT__"},
+					{url: "TrafficAnalyzer_Statistic.asp", tabName: "<#Statistic#>"},
+					{url: "AdaptiveQoS_TrafficLimiter.asp", tabName: "Traffic Limiter"},
+                                        {url: "NULL", tabName: "__INHERIT__"}
 				]
 			},
 			{
-				menuName: "<#Menu_usb_application#>",
-				index: "menu_Tools",
+				menuName: "<#menu5#>",
+				index: "menu_Setting",
 				tab: [
-					{url: "Tools_OtherSettings.asp", tabName: "Other Settings"},
+					{url: "Advanced_Privacy.asp", tabName: "<#menu_privacy#>"},
+					{url: "Tools_OtherSettings.asp", tabName: "Tweaks"},
+					{url: "NULL", tabName: "__INHERIT__"}
+				]
+			},
+			{
+				menuName: "<#Network_Tools#>",
+				index: "menu_NekworkTool",
+				tab: [
+					{url: "Main_Analysis_Content.asp", tabName: "<#Network_Analysis#>"},
+					{url: "Main_Netstat_Content.asp", tabName: "Netstat"},
+					{url: "Advanced_Wireless_Survey.asp", tabName: "Site Survey"},
+					{url: "NULL", tabName: "__INHERIT__"}
 				]
 			}
 		],
-		exclude: { menus: function () { var retArray = []; retArray.push("Main_TrafficMonitor_realtime.asp"); return retArray; } }
-};
+		exclude: {
+			menus: function(){ var retArray = []; return retArray; },
+			tabs: function(){ var retArray = []; return retArray; }
+		}
+	};
+	var fix = function(i, index){
+		if(i == 2) menuTree.list[i].tab[index] = {url: "Main_TrafficMonitor_realtime.asp", tabName: "<#traffic_monitor#>"};
+		else menuTree.list[i].tab[index] = {url: "Main_TrafficMonitor_realtime.asp", tabName: "<#traffic_monitor#>"};
+	};
+	return menuTree;
+});
 EOF
 
 # ---- the node: its own nvram and wl, reached through a stand-in dbclient ----------------------------
@@ -296,12 +329,22 @@ page=$(cat "$R/jffs/addons/arteria/webui_page" 2>/dev/null || echo none)
 [ "$page" = user1.asp ] && [ -f "$R/www/user/user1.asp" ] && ok "install mounts the page in the first free slot" || bad "page slot: $page"
 grep -q 'arteria-version: ' "$R/www/user/user1.asp" && ok "mounted page is Arteria's" || bad "mounted page isn't arteria.asp"
 m="$R/tmp/menuTree.js"
-# exactly two new lines, each right before a Traffic Monitor tab (in the menu that's shown, and the other)
-if [ "$(grep -c 'tabName: "Arteria"' "$m")" = 2 ] && [ "$(wc -l < "$m")" -eq $(( $(wc -l < "$t/menu.before") + 2 )) ] \
-	&& awk '/tabName: "Arteria"/ { a = 1; next } a { if ($0 !~ /url: "Main_TrafficMonitor_realtime.asp"/) bad = 1; a = 0 } END { exit bad }' "$m"; then
-	ok "menu: Arteria right before Traffic Monitor, in both menus that have it"
+# exactly one new line, right after Statistic in Traffic Analyzer; the code lines untouched
+if [ "$(grep -c 'tabName: "Arteria"' "$m")" = 1 ] && [ "$(wc -l < "$m")" -eq $(( $(wc -l < "$t/menu.before") + 1 )) ] \
+	&& grep -A1 'url: "TrafficAnalyzer_Statistic.asp"' "$m" | tail -n 1 | grep -q 'tabName: "Arteria"' \
+	&& [ "$(grep -c 'tab\[index\] = {url: "Main_TrafficMonitor_realtime.asp"' "$m")" = 2 ]; then
+	ok "menu: Arteria right after Statistic in Traffic Analyzer, nothing else touched"
 else bad "menu:"; cat "$m"; fi
 grep -q 'Traffic Analyzer -> Arteria' "$t/install.out" && ok "install points to Traffic Analyzer" || { bad "install output:"; cat "$t/install.out"; }
+# A router without Traffic Analyzer (no Trend Micro engine, or not in router mode): last in Network Tools
+{ echo 'nvram() { case "$2" in rc_support) echo "mssid 2.4G 5G wl6 amas" ;; esac; }'; sed -n '/^after_tab() {/,/^}/p;/^tab_count() {/p;/^menu_insert() {/,/^}/p' "$script"; } > "$t/menu_fns.sh"
+cp "$t/menu.before" "$t/nt.js"
+r=$(PATH="$B" "$bb" sh -c ". '$t/menu_fns.sh'; menu_insert '$t/nt.js' '{url: \"user4.asp\", tabName: \"Arteria\"},'; echo \"\$where|\$added\"")
+if [ "$r" = "Network Tools|1" ] && [ "$(wc -l < "$t/nt.js")" -eq $(( $(wc -l < "$t/menu.before") + 1 )) ] \
+	&& grep -A1 'tabName: "Arteria"' "$t/nt.js" | tail -n 1 | grep -q 'url: "NULL"' \
+	&& [ "$(grep -B1 'tabName: "Arteria"' "$t/nt.js" | head -n 1 | grep -c 'Advanced_Wireless_Survey.asp')" = 1 ]; then
+	ok "menu without Traffic Analyzer: last in Network Tools"
+else bad "Network Tools menu ($r):"; grep -n -B2 -A2 Arteria "$t/nt.js"; fi
 grep -q "arteria.sh startup & # arteria" "$R/jffs/scripts/services-start" && grep -q 'service_event "$@" & # arteria' "$R/jffs/scripts/service-event" && ok "hooks added" || bad "hooks missing"
 grep -qi "key login works\|Node(s) without the key" "$t/install.out" && ok "install checks node access" || { bad "install didn't check the nodes:"; cat "$t/install.out"; }
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
