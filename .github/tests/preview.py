@@ -60,7 +60,8 @@ if SCN == 'hostile':   # names that look like HTML (host names, makers): the pag
 ZOO = [('Garage desktop', 'desktop'), ('Mac mini', 'mac'), ('Work laptop', 'laptop'), ('Pixel 9', 'phone'), ('Kindle', 'tablet'), ('Sport watch', 'watch'), ('Office printer', 'printer'), ('Lounge TV', 'tv'),
        ('Apple TV', 'streamer'), ('Kitchen speaker', 'speaker'), ('Lounge soundbar', 'soundbar'), ('PlayStation 5', 'console'), ('Attic NAS', 'nas'), ('Garden camera', 'camera'), ('Front doorbell', 'doorbell'), ('Porch lock', 'lock'),
        ('Hall thermostat', 'thermostat'), ('Desk lamp', 'light'), ('Zigbee hub', 'hub'), ('Bedroom AC', 'air'), ('Robot vacuum', 'vacuum'), ('Washing machine', 'appliance'), ('Heater plug', 'plug'), ('Leak sensor', 'sensor'),
-       ('Tasmota relay', 'iot'), ('Mystery box', 'generic'), ('Fire TV Stick', 'stick'), ('Echo Studio', 'smartspeaker'), ('Raspberry Pi', 'pi')]
+       ('Tasmota relay', 'iot'), ('Mystery box', 'generic'), ('Fire TV Stick', 'stick'), ('Echo Studio', 'smartspeaker'), ('Raspberry Pi', 'pi'),
+       ('Air purifier', 'purifier'), ('Hall light switch', 'wallswitch'), ('Front door sensor', 'contact')]
 if SCN.startswith('kinds'):   # kinds1..kinds4: every kind of device on a stand, nine at a time
     n = int(SCN[5:] or 1) - 1
     DEVICES = []
