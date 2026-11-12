@@ -48,7 +48,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Open Traffic Analyzer → Arteria → Flow
+        1. Open Arteria (Traffic Analyzer or Network Tools) → Flow
         2. Tap a device on the node
         3. See …
     validations:
