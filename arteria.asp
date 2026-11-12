@@ -437,7 +437,7 @@ function renderFb() {
 	$('arFbHow').className = on ? 'hide' : '';
 	$('arFbNowRow').className = on ? 'ar-set-row' : 'ar-set-row hide';
 	$('arFbNowTx').innerHTML = st && st.socat === false ? 'To recognise more, install Entware\'s socat (<code>opkg install socat</code>): Recognise now then asks devices what they are.'
-		: 'New devices are recognised a minute after they join, page open or not.';
+		: 'New devices are recognised a minute after they join. Recognise now asks every device again.';
 	var busy = A.fbBusy || !!(st && st.busy);
 	$('arFbSave').disabled = busy; $('arFbOff').disabled = busy; $('arFbKey').disabled = busy; $('arFbNow').disabled = busy;
 }
@@ -2964,8 +2964,8 @@ window.Arteria = { _t: { fbKind: fbKind, announcedKind: announcedKind, appleKind
 					<button type="button" class="ar-btn ar-btn-2 hide" id="arFbOff" title="Deletes the key, Fingerbank's answers and what devices said">Turn off</button>
 				</div>
 				<div class="ar-set-row hide" id="arFbNowRow">
-					<span class="ar-set-now" id="arFbNowTx">New devices are recognised a minute after they join, page open or not.</span>
-					<button type="button" class="ar-btn ar-btn-2" id="arFbNow" title="Asks the devices on the network what they are, the way phones find printers and speakers (mDNS and UPnP, with Entware's socat), then looks them up with Fingerbank. Nothing is disconnected.">Recognise now</button>
+					<span class="ar-set-now" id="arFbNowTx">New devices are recognised a minute after they join. Recognise now asks every device again.</span>
+					<button type="button" class="ar-btn ar-btn-2" id="arFbNow" title="Asks every device on the network what it is again, also those already recognised, the way phones find printers and speakers (mDNS and UPnP, with Entware's socat), then looks each one up with Fingerbank again. Nothing is disconnected.">Recognise now</button>
 				</div>
 				<p class="ar-set-msg" id="arFbMsg" role="status" aria-live="polite"></p>
 			</div>

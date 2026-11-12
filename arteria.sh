@@ -782,7 +782,7 @@ fingerbank_cmd() {   # [off | now | compare]
 	[ "$1" = compare ] && { fb_compare; return 0; }
 	if [ "$1" = now ]; then
 		tmpd
-		if [ -n "$(socat_bin)" ]; then say "Asking the devices on the network what they are (about 15 seconds), then Fingerbank..."
+		if [ -n "$(socat_bin)" ]; then say "Asking the devices on the network what they are (15 to 20 seconds), then Fingerbank..."
 		else say "Looking up every device with Fingerbank..."; fi
 		fb_recognise || die "$FB_MSG"; say "$FB_MSG"; return 0
 	fi
@@ -893,10 +893,11 @@ disc_packets() {
 	}
 	END { flush() }'
 }
-# Ask from an ordinary port ("legacy unicast"): devices answer straight back to it, and socat -x dumps each answer apart
+# Ask from an ordinary port ("legacy unicast"): devices answer straight back to it, and socat -x dumps each answer apart.
+# -t: how long socat listens once the question is sent (its default, half a second, misses devices that answer late)
 disc_ask() {   # qtype < hex names
 	disc_packets "$1" | while read -r f; do
-		printf "$f" | "$DS" -x -T2 - "UDP4-DATAGRAM:224.0.0.251:5353,bind=$DLAN:0" 2>> "$DT/x" > /dev/null
+		printf "$f" | "$DS" -x -t2 -T2 - "UDP4-DATAGRAM:224.0.0.251:5353,bind=$DLAN:0" 2>> "$DT/x" > /dev/null
 	done
 }
 # The answers so far, decoded: "PTR owner target", "SRV owner host", "TXT owner k=v;k=v" (model fields only), "A host ip"
@@ -958,9 +959,10 @@ disc_run() {   # socat -> DISC updated; DISC_N: how many devices answered
 	disc_records > "$DT/r"
 	awk -F'\t' '$1 == "SRV" { t[$3] = 1 } $1 == "A" { a[$2] = 1 } END { for (h in t) if (!(h in a)) print h }' "$DT/r" | disc_ask 1
 	disc_records > "$DT/r"
-	# UPnP: who's there (each reply's SERVER string), then each device's description (LOCATION holds its address)
+	# UPnP: who's there (each reply's SERVER string), then each device's description (LOCATION holds its address).
+	# Devices wait up to MX (2) seconds before they answer, so socat listens for 3.
 	printf 'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 2\r\nST: ssdp:all\r\n\r\n' \
-		| "$DS" -T3 - "UDP4-DATAGRAM:239.255.255.250:1900,bind=$DLAN:0" 2>/dev/null | tr -d '\r' > "$DT/ssdp"
+		| "$DS" -t3 -T3 - "UDP4-DATAGRAM:239.255.255.250:1900,bind=$DLAN:0" 2>/dev/null | tr -d '\r' > "$DT/ssdp"
 	awk 'function out() { if (ip != "" && sv != "") print "USRV\t" ip "\t" sv; ip = sv = "" }
 		/^HTTP\// { out() } { l = tolower($0) }
 		l ~ /^location:/ && match($0, /:\/\/[0-9.]+[:\/]/) { ip = substr($0, RSTART + 3, RLENGTH - 4) }

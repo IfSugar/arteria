@@ -718,6 +718,10 @@ grep -qi "Jo\|Kitchen\|Speaker\|192\.168\|ab12\|friendly" "$disc" && bad "a name
 [ "$(cat "$t/upnp.args")" = "-s --proto =http --max-redirs 0 -m 3 --max-filesize 65536 http://192.168.50.131:8099/desc.xml" ] \
 	&& ok "recognise now: UPnP descriptions only from devices on the LAN, never the router itself or 127.0.0.1" || { bad "UPnP fetches:"; cat "$t/upnp.args"; }
 [ ! -s "$t/deauth.log" ] && ok "recognise now disconnects nothing" || { bad "something was disconnected:"; cat "$t/deauth.log"; }
+# socat listens long enough for devices that answer late (UPnP devices wait up to 2 s on purpose)
+if grep -q '^-x -t2 -T2 - UDP4-DATAGRAM:224.0.0.251:5353,bind=192.168.50.1:0$' "$t/socat.log" && grep -q '^-t3 -T3 - UDP4-DATAGRAM:239.255.255.250:1900,bind=192.168.50.1:0$' "$t/socat.log" \
+	&& ! grep -v '^-x -t2 -T2 \|^-t3 -T3 ' "$t/socat.log" | grep -q .; then ok "recognise now waits for late answers: 2 s for mDNS, 3 s for UPnP"
+else bad "socat's waits:"; sort -u "$t/socat.log"; fi
 if grep -q '^1,3,6,15,31,33,43,44,46,47,119,121,249,252;dhcpcd-9.4.1:Linux:armv7l x;_companion-link._tcp.local,_http._tcp.local;Linux/5.10 UPnP/1.0 MadeUp/1.0	200	80	Computer/Apple Mac/MacBook Pro	' "$R/jffs/addons/arteria/fingerbank" \
 	&& grep -q '^;;_meshcop._udp.local,_spotify-connect._tcp.local;	200	73	' "$R/jffs/addons/arteria/fingerbank" \
 	&& [ "$(fbst ok)" = true ] && fbst msg | grep -q '^2 device(s) answered\. Fingerbank has an answer for 2 of 3 device(s)\.$' && [ "$(fbst asked)" = 2 ] && [ "$(fbst socat)" = true ]; then
