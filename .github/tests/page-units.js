@@ -42,7 +42,17 @@ const CASES = [
 	['Front doorbell', 0, 0, 0, 'wifi', '', '', 'doorbell'],
 	['Garden camera', 0, 0, 0, 'wifi', '', '', 'camera'],
 	['Roborock-S8', 0, 0, 0, 'wifi', '', '', 'vacuum'],
-	['Washing machine', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Washing machine', 0, 0, 0, 'wifi', '', '', 'washer'],
+	['BOSCH-WAX32EH0EU-00005E0053A1', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'washer'],
+	['BOSCH-WTX87EH0EU-00005E0053A2', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'dryer'],
+	['SIEMENS-SN85TX00CE-00005E0053A3', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'dishwasher'],
+	['BOSCH-SMV4HVX31E-00005E0053A4', 0, 0, 0, 'wifi', '', '', 'dishwasher'],
+	['BOSCH-KGN39AIAT-00005E0053A5', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Kitchen dishwasher', 0, 0, 0, 'wifi', '', '', 'dishwasher'],
+	['Tumble dryer', 0, 0, 0, 'wifi', '', '', 'dryer'],
+	['Electrolux_Appliance', 0, 0, 0, 'wifi', 'Electrolux Appliances AB', '', 'appliance'],
+	['Device …00:A6', 0, 0, 0, 'wifi', 'Electrolux Appliances AB', '', 'appliance'],
+	['ems-esp', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'thermostat'],
 	['Hall thermostat', 0, 0, 0, 'wifi', '', '', 'thermostat'],
 	['Smart plug', 0, 0, 0, 'wifi', '', '', 'plug'],
 	['Door sensor', 0, 0, 0, 'wifi', '', '', 'contact'],
@@ -306,92 +316,10 @@ const flbad = [];
 ok(!flbad.length, 'Flow layout: rows apart and tap-sized, ribbons in their rows, internet + local = router, fits or scrolls', flbad.slice(0, 5).join('; '));
 
 
-// ---- 13. Fingerbank: its device paths (as its API returns them) -> kinds; an answer that names only a system or a
-// maker, or one it isn't confident about, leaves the decision to the names; your icon still comes first
-const FB = [
-	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick', 'stick'],
-	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV', 'stick'],
-	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Cube', 'streamer'],
-	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Google Chromecast', 'stick'],
-	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Apple TV', 'streamer'],
-	['Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Roku', 'streamer'],
-	['Phone, Tablet or Wearable/Generic Android/Google Android/Google TV Streamer', 'streamer'],
-	['Phone, Tablet or Wearable/Generic Android/NVidia Android/NVIDIA SHIELD', 'streamer'],
-	['Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo', 'smartspeaker'],
-	['Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo Show', 'smartspeaker'],
-	['Internet of Things (IoT)/Home Assistant/Amazon Alexa', 'smartspeaker'],
-	['Internet of Things (IoT)/Home Assistant/Google Home Device/Google Nest', 'smartspeaker'],
-	['Audio, Imaging or Video Equipment/Speaker and Soundbar/Apple HomePod', 'smartspeaker'],
-	['Audio, Imaging or Video Equipment/Audio Player/Sonos Player/Sonos One', 'speaker'],
-	['Audio, Imaging or Video Equipment/Audio Player/Sonos Player/Sonos Beam', 'soundbar'],
-	['Audio, Imaging or Video Equipment/Television/LG TV/LG TV - WebOS', 'tv'],
-	['Audio, Imaging or Video Equipment/Television/Roku TV', 'tv'],
-	['Audio, Imaging or Video Equipment/Television/LG TV/LG TV - Google TV OS/Android TV', 'tv'],
-	['Audio, Imaging or Video Equipment/Camera/Surveillance Camera/Wyze Camera', 'camera'],
-	['Audio, Imaging or Video Equipment/Camera/Surveillance Camera/Nest Camera', 'camera'],
-	['Internet of Things (IoT)/Locks/Nest Lock/Nest Doorbell', 'doorbell'],
-	['Internet of Things (IoT)/Locks/Ring', 'doorbell'],
-	['Gaming Console/Sony Gaming Console/Playstation/PlayStation 5', 'console'],
-	['Gaming Console/Nintendo Gaming Console/Nintendo Switch', 'console'],
-	['Storage Device/Ugreen NAS', 'nas'],
-	['Internet of Things (IoT)/Generic IoT/Raspberry Pi/Raspberry Pi 4', 'pi'],
-	['Internet of Things (IoT)/Generic IoT/Raspberry Pi', 'pi'],
-	['Internet of Things (IoT)/Lighting/Philips Lighting/Philips Hue Smart Lighting', 'light'],
-	['Internet of Things (IoT)/Lighting/Philips Lighting/Philips Hue Bridge', 'hub'],
-	['Internet of Things (IoT)/Plugs/TP-Link Smart Plugs/TP-Link Tapo Smart Plug', 'plug'],
-	['Internet of Things (IoT)/Thermostat/Nest Thermostat', 'thermostat'],
-	['Internet of Things (IoT)/Appliance/iRobot/iRobot Roomba', 'vacuum'],
-	['Internet of Things (IoT)/Generic IoT/Espressif', 'iot'],
-	['Phone, Tablet or Wearable/Generic Android/Google Android/Google Pixel', 'phone'],
-	['Phone, Tablet or Wearable/Generic Android/Samsung Android/Galaxy S6', 'phone'],
-	['Phone, Tablet or Wearable/Apple Mobile Device/Apple iPhone', 'phone'],
-	['Phone, Tablet or Wearable/Apple Mobile Device/Apple iPad', 'tablet'],
-	['Phone, Tablet or Wearable/Apple Mobile Device/Apple Watch', 'watch'],
-	['Phone, Tablet or Wearable/Generic Android/Amazon Android/Amazon Kindle Fire', 'tablet'],
-	['Phone, Tablet or Wearable/Amazon Kindle', 'tablet'],
-	['Operating System/Apple OS/Mac OS X or macOS/Mac OS X/Apple MacBook Pro', 'laptop'],
-	['Router, Access Point or Femtocell/Wi-Fi Repeater', 'switch'],
-	// a system, a maker or a brand of Android: nothing
-	['Operating System/Windows OS/Microsoft Windows Kernel 10.0/11', ''],
-	['Operating System/Apple OS/iOS', ''],
-	['Operating System/Apple OS/Mac OS X or macOS', ''],
-	['Phone, Tablet or Wearable/Generic Android', ''],
-	['Phone, Tablet or Wearable/Generic Android/Samsung Android', ''],
-	['Phone, Tablet or Wearable/Generic Android/Amazon Android', ''],
-	['Generic PC/Windows based PC', ''],
-	['Hardware Manufacturer/Espressif', ''],
-	['Phone, Tablet or Wearable', ''],
-];
-const fbBad = FB.filter(f => T.fbKind(f[0]) !== f[1]).map(f => f[0].split('/').pop() + ' -> ' + (T.fbKind(f[0]) || 'none') + ', expected ' + (f[1] || 'none'));
-ok(!fbBad.length, 'Fingerbank paths -> kinds: ' + FB.length + ' paths', fbBad.join('; '));
-FB.forEach(f => { if (f[1]) kinds.add(f[1]); });
-ok([...kinds].every(k => T.ICON[k] && T.KIND_LABEL[k]), 'every kind Fingerbank can give has an icon and a label');
+const FM = '00:00:5E:00:53:F1';
+let fr;
 
-const FM = '00:00:5E:00:53:F1', fbNames = (fb, custom) => AR.parseNames({ custom: custom || '', fb: fb,
-	nmp: { [FM]: { name: 'Kitchen Echo', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
-const kOf = (fb, custom) => { A.names = fbNames(fb, custom); return T.classify(FM, 'Kitchen Echo', 'wifi'); };
-let fr = kOf(FM + '>87>Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick>1,3,6,15|');
-ok(fr.kind === 'stick' && fr.rule === 'fingerbank' && fr.tok === 'Amazon Fire TV Stick, 87', 'Fingerbank comes before the name ("Kitchen Echo" that Fingerbank knows as a Fire TV Stick)', JSON.stringify(fr));
-fr = kOf(FM + '>87>Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick>1,3,6,15|', '<Kitchen>' + FM + '>0>23>>');
-ok(fr.kind === 'tv' && fr.rule === 'your icon', 'your icon comes before Fingerbank', JSON.stringify(fr));
-fr = kOf(FM + '>50>Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick>1,3,6,15|');
-ok(fr.kind === 'smartspeaker' && fr.rule === 'name', 'a score of 50 or less leaves it to the name', JSON.stringify(fr));
-fr = kOf(FM + '>92>Phone, Tablet or Wearable/Generic Android/Amazon Android>1,3,6,15|');
-ok(fr.kind === 'smartspeaker' && fr.rule === 'name', 'an answer that names only a system leaves it to the name', JSON.stringify(fr));
-fr = kOf(FM + '>57>Internet of Things (IoT)/Generic IoT/Espressif>1,3,6,15|');
-ok(fr.kind === 'smartspeaker' && fr.rule === 'name', 'a Fingerbank answer that only says "smart device" comes after the name', JSON.stringify(fr));
-A.names = AR.parseNames({ fb: FM + '>57>Internet of Things (IoT)/Generic IoT/Espressif>1,3,6,15|', nmp: { [FM]: { name: '', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
-fr = T.classify(FM, '', 'wifi');
-ok(fr.kind === 'iot' && fr.rule === 'fingerbank', '... and still decides when nothing else says what it is', JSON.stringify(fr));
-fr = kOf(FM + '>>>1,3,6,15|' + 'junk|02:XX>1>2>3|');
-ok(fr.kind === 'smartspeaker' && A.names.fb[FM].o === '1,3,6,15' && Object.keys(A.names.fb).length === 1, 'no answer yet: the fingerprint is kept, the name decides; malformed entries are dropped', JSON.stringify(A.names.fb));
-A.names = fbNames(FM + '>87>Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo>1,3,6,15|');
-const fdv = { id: FM, mac: FM, name: 'Kitchen Echo', link: 'wifi', band: '5' }; fdv.why = T.classify(FM, fdv.name, 'wifi'); fdv.kind = fdv.why.kind;
-const frep = T.buildReport({ router: { model: 'RT-AX86U' }, devs: [fdv] }), fcells = T.detailsFor({ epoch: 0 }, fdv);
-ok(/smartspeaker +fingerbank .* Amazon Echo 87/.test(frep) && frep.indexOf('Kitchen') < 0 && frep.indexOf('00:00:5E') < 0, 'the device report shows what Fingerbank named and its score, still no names or MACs', frep);
-ok(fcells.some(c => c[0] === 'Shown as' && /recognised by Fingerbank \(Amazon Echo, 87\)/.test(c[2])), 'Details say Fingerbank recognised it', JSON.stringify(fcells.filter(c => c[0] === 'Shown as')));
-
-// ---- 13b. a nickname the router's client editor saved by itself (its DHCP software, the maker) isn't a name
+// ---- 13. a nickname the router's client editor saved by itself (its DHCP software, the maker) isn't a name
 const NM = '00:00:5E:00:53:F2', nk = (nick, host, vendor) => { A.names = AR.parseNames({ custom: '<' + nick + '>' + NM + '>0>0>>', leases: '1999999999 ' + NM.toLowerCase() + ' 192.168.50.88 ' + host + ' *',
 	nmp: { [NM]: { name: '', vendor: vendor, vendorclass: '', type: 0, os_type: 0 } } }); return T.nameInfo(NM); };
 let ni = nk('dhcpcd-6 8 2 Linux-5 4 1', 'roborock-vacuum-s5e', 'Beijing Xiaomi Mobile Software Co.,Ltd');
@@ -404,7 +332,7 @@ A.names = AR.parseNames({ custom: '<dhcpcd-6 8 2 Linux-5 4 1>' + NM + '>0>61>>',
 ok(T.classify(NM, '', 'wifi').kind === 'vacuum', '... and the icon saved with it still counts');
 
 // ---- 14. What a device announced when asked (Recognise now): Apple model identifiers, models in mDNS records and UPnP
-// descriptions (read with the name rules), telling services. It comes after your icon and before Fingerbank and names.
+// descriptions (read with the name rules), telling services. It comes after your icon and before names.
 const AN = [   // [services, model fields, UPnP description, expected kind]
 	['_companion-link._tcp.local', 'rpMd=MacBookPro18,1', '', 'laptop'],
 	['_device-info._tcp.local', 'model=Mac14,2', '', 'laptop'],
@@ -437,10 +365,10 @@ const AN = [   // [services, model fields, UPnP description, expected kind]
 const anOf = r => AR.parseNames({ dc: FM + '>' + r[0] + '>' + r[1] + '>' + r[2] + '|' }).dc[FM];
 const anBad = AN.filter(r => ((T.announcedKind(anOf(r)) || [''])[0]) !== r[3]).map(r => (r[1] || r[2] || r[0]) + ' -> ' + ((T.announcedKind(anOf(r)) || ['none'])[0]) + ', expected ' + (r[3] || 'none'));
 ok(!anBad.length, 'what devices announce -> kinds: ' + AN.length + ' cases', anBad.join('; '));
-const anNames = (dc, custom, fb) => AR.parseNames({ custom: custom || '', dc: dc, fb: fb || '', nmp: { [FM]: { name: 'Kitchen Echo', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
-A.names = anNames(FM + '>_companion-link._tcp.local>rpMd=MacBookPro18,1>|', '', FM + '>87>Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo>1,3,6,15|');
+const anNames = (dc, custom) => AR.parseNames({ custom: custom || '', dc: dc, nmp: { [FM]: { name: 'Kitchen Echo', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
+A.names = anNames(FM + '>_companion-link._tcp.local>rpMd=MacBookPro18,1>|');
 fr = T.classify(FM, 'Kitchen Echo', 'wifi');
-ok(fr.kind === 'laptop' && fr.rule === 'announced' && fr.tok === 'MacBookPro18,1', 'what a device announced comes before Fingerbank and its name', JSON.stringify(fr));
+ok(fr.kind === 'laptop' && fr.rule === 'announced' && fr.tok === 'MacBookPro18,1', 'what a device announced comes before its name', JSON.stringify(fr));
 A.names = anNames(FM + '>_companion-link._tcp.local>rpMd=MacBookPro18,1>|', '<Kitchen>' + FM + '>0>23>>');
 fr = T.classify(FM, 'Kitchen Echo', 'wifi');
 ok(fr.kind === 'tv' && fr.rule === 'your icon', 'your icon comes before what a device announced', JSON.stringify(fr));

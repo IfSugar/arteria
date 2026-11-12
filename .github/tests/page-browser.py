@@ -7,8 +7,7 @@
      closing puts the stage back where it was, 728 x 518, inside the router's page;
   3. the "hostile" scenario: names and AiMesh client-list keys that look like HTML stay text and run nothing;
   4. two Arteria tabs: closing one doesn't tell the router to stop sampling while the other is open;
-  5. Settings: Fingerbank is optional and off; the page says what a key shares and to keep the key private; a key
-     goes to the router with every other addon's settings, a refused one changes nothing, and it turns off again.
+  5. Settings: Recognise now asks the router, says how it went, and says what's needed when socat is missing.
 
 Needs Python 3 with Playwright (pip install playwright; the browser is the system's Chrome or Chromium).
 Usage: python3 .github/tests/page-browser.py [path to chrome]
@@ -173,45 +172,22 @@ async def settings(b, port):
         await ready(pg)
         await pg.click('#arSetBtn')
         txt = await pg.inner_text('#arSet')
-        need = ['optional', 'works fully without it', 'Adding a key shares data with Fingerbank', 'never a MAC address',
-                'public IP', 'Login or Signup', 'API key', 'Keep your key to yourself', '300 lookups an hour']
         fits = "(() => { const b = document.querySelector('#arSet .ar-set-body'); return b.scrollHeight <= b.clientHeight + 1; })()"
-        check(await pg.is_visible('#arSet') and all(x in txt for x in need) and txt.find('Off') >= 0
-              and await pg.get_attribute('#arFbKey', 'type') == 'password' and await pg.get_attribute('#arSetBtn', 'aria-expanded') == 'true',
-              'settings: Fingerbank is optional and off; the page says what a key shares, how to get one, and to keep it private')
-        check(await pg.evaluate(fits), 'settings: all of it fits the page view without scrolling (off)')
-        await pg.fill('#arFbKey', 'not a key'); await pg.click('#arFbSave')
-        check("doesn't look like" in await pg.inner_text('#arFbMsg') and not await pg.evaluate("fetch('/_posted').then(r => r.json()).then(p => p.length)"),
-              "settings: a key that can't be one never leaves the page")
-        await pg.fill('#arFbKey', 'BADKEY0123456789BADKEY0123456789abcdef01'); await pg.click('#arFbSave')
-        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('turned this key down') >= 0", timeout=15000)
-        check('Off' in await pg.inner_text('#arFbSt'), 'settings: a key Fingerbank turns down leaves it off, and says why')
-        await pg.fill('#arFbKey', 'abcdef0123456789abcdef0123456789abcd1f2e'); await pg.press('#arFbKey', 'Enter')
-        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('Saved') === 0", timeout=15000)
-        posted = await pg.evaluate("fetch('/_posted').then(r => r.json())")
-        check('key …1f2e' in await pg.inner_text('#arFbSt') and await pg.input_value('#arFbKey') == '' and await pg.is_visible('#arFbOff')
-              and posted[-1] == {'otheraddon_path': '/opt/share/otheraddon', 'otheraddon_mode': 'on', 'arteria_fbkey': 'abcdef0123456789abcdef0123456789abcd1f2e'},
-              "settings: a good key goes to the router with every other addon's settings; the page shows only its last 4 characters")
-        check(await pg.evaluate(fits) and await pg.is_visible('#arFbNow') and not await pg.is_visible('#arFbHow'),
-              'settings: on, it still fits without scrolling, with Recognise now instead of the sign-up line')
-        await pg.click('#arFbNow')
-        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('9 device(s) answered') === 0", timeout=15000)
-        st = await pg.inner_text('#arFbSt')
-        check('9 answered Recognise now' in st and '2 not seen yet' in st and await pg.evaluate(fits), 'settings: Recognise now reports what it did, and the panel still fits')
+        check(await pg.is_visible('#arSet') and all(x in txt for x in ['Device recognition', 'Recognise now', 'Nothing leaves your network', 'socat'])
+              and 'Fingerbank' not in txt and await pg.get_attribute('#arSetBtn', 'aria-expanded') == 'true',
+              'settings: device recognition says what Recognise now does, and that nothing leaves the network')
+        check(await pg.evaluate(fits), 'settings: all of it fits the page view without scrolling')
+        await pg.click('#arRecNow')
+        await pg.wait_for_function("document.getElementById('arRecMsg').textContent.indexOf('9 device(s) said what they are') === 0", timeout=15000)
+        check('9 devices' in await pg.inner_text('#arRecSt') and await pg.evaluate(fits), 'settings: Recognise now reports what it did, and the panel still fits')
         async def nosocat(route):   # the router without Entware's socat
             r = await route.fetch(); j = json.loads(await r.text()); j['socat'] = False
             await route.fulfill(response=r, body=json.dumps(j))
-        await pg.route('**/fb.htm*', nosocat)
-        await pg.wait_for_function("document.getElementById('arFbNowTx').textContent.indexOf('opkg install socat') > 0", timeout=15000)
-        check(await pg.evaluate(fits), 'settings: without socat, it says how to recognise more, and still fits')
-        await pg.unroute('**/fb.htm*', nosocat)
-        await pg.click('#arFbOff')
-        sure = await pg.inner_text('#arFbOff')
-        await pg.click('#arFbOff')
-        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('Fingerbank is off') === 0", timeout=15000)
-        check(sure.startswith('Sure') and 'Off' in await pg.inner_text('#arFbSt') and not await pg.is_visible('#arFbOff'),
-              'settings: turning it off takes a second click, then it is off')
-        await pg.press('#arFbKey', 'Escape')
+        await pg.route('**/rec.htm*', nosocat)
+        await pg.wait_for_function("document.getElementById('arRecSt').textContent.indexOf('opkg install socat') > 0", timeout=15000)
+        check(await pg.evaluate(fits) and await pg.is_disabled('#arRecNow'), 'settings: without socat, it says how to get it, and the button waits')
+        await pg.unroute('**/rec.htm*', nosocat)
+        await pg.focus('#arSetClose'); await pg.keyboard.press('Escape')
         check(not await pg.is_visible('#arSet') and await pg.get_attribute('#arSetBtn', 'aria-expanded') == 'false' and not errs,
               'settings: Escape closes it; no page errors' + (': ' + '; '.join(errs) if errs else ''))
         await ctx.close()

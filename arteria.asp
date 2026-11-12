@@ -348,6 +348,9 @@ var ICON = {
 	hub: rr(4, 13, 16, 6, 2) + 'M8 16h.01M12 16h.01M16 16h.01M8.5 9.5a5 5 0 0 1 7 0M10.6 11.4a2 2 0 0 1 2.8 0',
 	vacuum: ci(12, 12, 8.5) + ci(12, 9, 2) + 'M9.5 16.5h5',
 	appliance: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5',
+	washer: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5M10 14.5c.7-.6 1.3-.6 2 0s1.3.6 2 0',
+	dryer: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5M10.5 12.5h3M10.5 14.5h3',
+	dishwasher: rr(5, 3, 14, 18, 2) + 'M5 8.5h14M8 6h.01M11 6h5M9 11.5h6',
 	iot: rr(5, 5, 14, 14, 3) + 'M12 9.5v2.5M12 14.5h.01',
 	pi: rr(2.5, 6, 19, 12, 2) + rr(8.5, 10, 5, 5, 1) + 'M5.5 8.5h7' + rr(16, 9.5, 3.5, 6, .8),
 	stick: rr(2.5, 9, 13.5, 6, 2) + 'M16 10.5h3.5v3H16M6 12h.01',
@@ -400,91 +403,44 @@ function getJSON(name) {
 		.then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
 		.then(function (t) { return JSON.parse(t); });
 }
-/* ---------------------------------------------------------------- Settings: Fingerbank (optional, off by default)
-   A page can hand the router a value only through the Addons API's shared settings file, and the router's web
-   server rewrites that whole file with what the page sends: so the page sends every addon's settings back, with
-   the key added. The router keeps an exact copy of the file first (start_arteriafbprep); the save (start_arteriafb)
-   takes the key out, puts that copy back, so no other addon's setting changes, and turns Fingerbank on. fb.htm
-   says how it went, and never holds the key (only its last 4 characters). */
-function customSettings() {
-	var cs = {};
-	try { var el = $('arCs'), o = JSON.parse(el ? el.textContent : ''); if (o && typeof o === 'object' && !Array.isArray(o)) cs = o; } catch (e) { cs = {}; }
-	return cs;
-}
+/* ---------------------------------------------------------------- Settings: Recognise now
+   The router asks the devices on the network what they are (start_arteriarec) and says how it went in rec.htm. */
 function post(action, extra) {
 	return fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: pokeBody(action) + (extra ? '&' + extra : '') });
 }
-function fbLoad() {
-	return getJSON('fb.htm').then(function (st) { A.fb = st && typeof st === 'object' ? st : null; renderFb(); return A.fb; }, function () { renderFb(); return A.fb; });
+function recLoad() {
+	return getJSON('rec.htm').then(function (st) { A.rec = st && typeof st === 'object' ? st : null; renderRec(); return A.rec; }, function () { renderRec(); return A.rec; });
 }
-function fbWait(test, ms) {   /* fb.htm until test(state) holds, for at most ms */
+function recWait(test, ms) {   /* rec.htm until test(state) holds, for at most ms */
 	var end = Date.now() + ms;
 	return new Promise(function (ok, no) {
-		(function next() { fbLoad().then(function (st) { if (st && test(st)) ok(st); else if (Date.now() > end) no(new Error('timeout')); else setTimeout(next, 700); }); })();
+		(function next() { recLoad().then(function (st) { if (st && test(st)) ok(st); else if (Date.now() > end) no(new Error('timeout')); else setTimeout(next, 700); }); })();
 	});
 }
-function fbMsg(text, good) {
-	var m = $('arFbMsg'); m.textContent = text || ''; m.className = 'ar-set-msg' + (good === true ? ' ok' : good === false ? ' bad' : '');
+function recMsg(text, good) {
+	var m = $('arRecMsg'); m.textContent = text || ''; m.className = 'ar-set-msg' + (good === true ? ' ok' : good === false ? ' bad' : '');
 	if (text && m.scrollIntoView) m.scrollIntoView({ block: 'nearest' });
 }
-function renderFb() {
-	var st = A.fb, on = !!(st && st.on), el = $('arFbSt');
-	if (!on) el.innerHTML = '<span>Off</span> · devices are recognised by their names, the router\'s detection and their makers';
-	else el.innerHTML = '<span class="ok">On</span> · key …' + esc(st.tail) + ' · ' + (+st.devices || 0) + ' devices fingerprinted · ' + (+st.known || 0) + ' kinds known' +
-		(+st.asked ? ' · ' + (+st.asked) + ' answered Recognise now' : '') +
-		(+st.waiting ? ' · ' + (+st.waiting) + ' not seen yet' : '') +
-		(st.state === 'badkey' ? ' · <span class="bad">Fingerbank turned the key down: save a new one</span>' : st.state === 'wait' ? ' · waiting before the next lookups' : '') +
-		(st.hooked ? '' : ' · <span class="bad">dnsmasq hasn\'t picked it up yet</span>');
-	$('arFbSave').textContent = on ? 'Replace key' : 'Save';
-	$('arFbOff').className = on ? 'ar-btn ar-btn-2' : 'ar-btn ar-btn-2 hide';
-	$('arFbHow').className = on ? 'hide' : '';
-	$('arFbNowRow').className = on ? 'ar-set-row' : 'ar-set-row hide';
-	$('arFbNowTx').innerHTML = st && st.socat === false ? 'To recognise more, install Entware\'s socat (<code>opkg install socat</code>): Recognise now then asks devices what they are.'
-		: 'New devices are recognised a minute after they join. Recognise now asks every device again.';
-	var busy = A.fbBusy || !!(st && st.busy);
-	$('arFbSave').disabled = busy; $('arFbOff').disabled = busy; $('arFbKey').disabled = busy; $('arFbNow').disabled = busy;
+function renderRec() {
+	var st = A.rec, n = +(st && st.asked) || 0;
+	$('arRecSt').innerHTML = st && st.socat === false ? '<span class="bad">Needs Entware\'s socat</span> · install it over SSH with <code>opkg install socat</code>'
+		: n ? '<span class="ok">' + n + ' device' + (n === 1 ? '' : 's') + '</span> said what they are' : 'No device asked yet';
+	$('arRecNow').disabled = A.recBusy || !!(st && st.busy) || !!(st && st.socat === false);
 }
-function fbBusy(b) { A.fbBusy = b; renderFb(); }
-function fbDone(st) { fbMsg(st.msg, st.ok); }
-function fbLate() { fbMsg('The router didn\'t answer in time. Check the status above in a minute, or run arteria.sh status over SSH.', false); }
-function fbSave() {
-	var k = $('arFbKey').value.replace(/\s+/g, '');
-	if (!/^[A-Za-z0-9]{20,128}$/.test(k)) { fbMsg('That doesn\'t look like a Fingerbank API key: letters and digits only, usually 40 of them.', false); return; }
-	var st0 = A.fb || {}, prep0 = st0.prep || '', seq0 = +st0.seq || 0;
-	fbBusy(true); fbMsg('Getting ready…');
-	post('start_arteriafbprep')
-		.then(function () { return fbWait(function (st) { return st.prep && st.prep !== prep0; }, 15000); })
-		.then(function () { var cs = customSettings(); cs.arteria_fbkey = k; return post('start_arteriafb', 'amng_custom=' + encodeURIComponent(JSON.stringify(cs))); })
-		.then(function () { $('arFbKey').value = ''; fbMsg('Checking the key with Fingerbank…'); return fbWait(function (st) { return +st.seq > seq0 && !st.busy && st.ok !== null; }, 60000); })
-		.then(fbDone, fbLate).then(function () { fbBusy(false); });
-}
-function fbOff() {
-	var b = $('arFbOff');
-	if (!b._sure) {   /* a second click, within 4 s, turns it off */
-		b._sure = true; b.textContent = 'Sure? Turn off';
-		setTimeout(function () { b._sure = false; b.textContent = 'Turn off'; }, 4000);
-		return;
-	}
-	b._sure = false; b.textContent = 'Turn off';
-	var seq0 = +(A.fb || {}).seq || 0;
-	fbBusy(true); fbMsg('Turning Fingerbank off…');
-	post('start_arteriafboff')
-		.then(function () { return fbWait(function (st) { return +st.seq > seq0 && !st.busy && st.ok !== null; }, 30000); })
-		.then(fbDone, fbLate).then(function () { fbBusy(false); });
-}
-function fbNow() {
-	var seq0 = +(A.fb || {}).seq || 0;
-	fbBusy(true); fbMsg((A.fb || {}).socat === false ? 'Looking up every device…' : 'Asking the devices on the network what they are…');
-	post('start_arteriafbnow')
-		.then(function () { return fbWait(function (st) { if (st.busy && st.msg) fbMsg(st.msg); return +st.seq > seq0 && !st.busy && st.ok !== null; }, 300000); })
-		.then(fbDone, fbLate).then(function () { fbBusy(false); });
+function recNow() {
+	var seq0 = +(A.rec || {}).seq || 0;
+	A.recBusy = true; renderRec(); recMsg('Asking the devices on the network what they are…');
+	post('start_arteriarec')
+		.then(function () { return recWait(function (st) { return +st.seq > seq0 && !st.busy && st.ok !== null; }, 120000); })
+		.then(function (st) { recMsg(st.msg, st.ok); A.namesAt = 0; loadNames(); }, function () { recMsg('The router didn\'t answer in time. Try again in a minute, or run arteria.sh recognise over SSH.', false); })
+		.then(function () { A.recBusy = false; renderRec(); });
 }
 function setSettings(on) {
 	A.settings = !!on;
 	$('arSet').className = on ? 'ar-set' : 'ar-set hide';
 	$('arSetBtn').setAttribute('aria-expanded', on ? 'true' : 'false');
-	clearInterval(A.timers.fb);
-	if (on) { fbLoad(); A.timers.fb = setInterval(function () { if (!A.fbBusy) fbLoad(); }, 10000); $('arSet').querySelector('.ar-set-body').scrollTop = 0; $('arSetClose').focus({ preventScroll: true }); }
+	clearInterval(A.timers.rec);
+	if (on) { recLoad(); A.timers.rec = setInterval(function () { if (!A.recBusy) recLoad(); }, 10000); $('arSet').querySelector('.ar-set-body').scrollTop = 0; $('arSetClose').focus({ preventScroll: true }); }
 	else $('arSetBtn').focus();
 }
 function running() { return !A.paused && !document.hidden; }
@@ -536,7 +492,7 @@ function suspend() {
 /* ---------------------------------------------------------------- names and device kinds */
 var JUNK_NAME = /^(dhcpcd|android-dhcp|udhcp|unknown|client|localhost|espressif|esp[_-]|wlan|\*|-)|:|^[0-9a-f]{10,}$/i;
 function parseNames(n) {
-	var out = { custom: {}, nmp: {}, lease: {}, cl: n && n.cl || {}, arp: {}, n6: {}, fixed: {}, fb: {}, dc: {} };
+	var out = { custom: {}, nmp: {}, lease: {}, cl: n && n.cl || {}, arp: {}, n6: {}, fixed: {}, dc: {} };
 	String(n && n.custom || '').split('<').forEach(function (e) {
 		var f = e.split('>');
 		if (f.length >= 2 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) out.custom[f[1].toUpperCase()] = { name: f[0], type: +f[3] || 0 };
@@ -555,11 +511,6 @@ function parseNames(n) {
 	});
 	Object.keys(out.n6).forEach(function (m) { out.n6[m].sort(function (a, b) { return (/^fe80:/i.test(a) ? 1 : 0) - (/^fe80:/i.test(b) ? 1 : 0); }); });
 	String(n && n.fixed || '').split('<').forEach(function (e) { var f = e.split('>'); if (/^[0-9A-Fa-f:]{17}$/.test(f[0])) out.fixed[f[0].toUpperCase()] = f[1] || ''; });
-	/* Fingerbank's answers (when you turned it on): "MAC>score>device path>DHCP options|" */
-	String(n && n.fb || '').split('|').forEach(function (e) {
-		var f = e.split('>');
-		if (f.length === 4 && /^[0-9A-F:]{17}$/.test(f[0])) out.fb[f[0]] = { s: +f[1] || 0, n: f[2], o: f[3] };
-	});
 	/* what devices said about themselves when asked (Recognise now): "MAC>mDNS services>model fields>UPnP description|" */
 	String(n && n.dc || '').split('|').forEach(function (e) {
 		var f = e.split('>'), kv = {};
@@ -635,7 +586,7 @@ var KIND_STRONG = [
 	['doorbell', /doorbell|ring[ _-]?pro|\bring[ _-]?(door|video)/i],
 	['camera', /\bcam\b|[a-z]cam(\b|\d)|camera|kamera|ipcam|reolink|\barlo\b|\bblink|\bwyze|\beufy|hikvision|dahua|\bnvr\b|nest[ _-]?cam|^(tapo[ _-]?)?c[1-5]\d\d(ws?)?$/i],   /* Tapo cameras name themselves by model: C200 */
 	['lock', /\block\b|smart ?lock|\bnuki\b|\byale\b|schlage/i],
-	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning/i],
+	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning|ems[-_]?esp/i],   /* EMS-ESP: a boiler's gateway */
 	['wallswitch', /wall ?switch|light ?switch|smart ?switch|switch ?module|\bdimmer\b|shelly[ _-]?(1|2|plus ?[12]|pro ?[12]|i4|dimmer)\b|sonoff[ _-]?(t[0-4]|tx|mini)\b|^(tapo[ _-]?)?s5\d\d[a-z]?$|^(hs2[0-2]0|ks2\d\d|es20m)\b/i],
 	/* Tapo and Kasa devices name themselves by model (L630, KL130), Govee's by its maker and model (ihoment_H6159_…) */
 	['light', /bulb|\blamp|\bwled\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee|^(tapo[ _-]?)?l[5-9]\d\d[a-z]?$|^(kl|lb)\d{3}\b|ihoment[_-]?h(6|70)/i],
@@ -643,7 +594,12 @@ var KIND_STRONG = [
 	['purifier', /purifier|humidifier|air[ _-]?(cleaner|performer|treatment)|philips[ _-]?air\b|\bblueair|levoit|\bcoway|\bwinix|airmega|ihoment[_-]?h71[24]/i],
 	['air', /\bac\b|a\/c|air ?con|daikin|heat ?pump|climate|mitsubishi|sensibo|midea|\bgree\b/i],
 	['vacuum', /vacuum|roborock|rockrobo|roomba|irobot|deebot|ecovacs|dreame|\bmop\b|^(tapo[ _-]?)?rv\d\d/i],
-	['appliance', /washer|washing|dryer|fridge|refrigerator|freezer|\boven\b|dishwasher|microwave|kettle|coffee|\bfan\b|heater|boiler|cooker|air ?fryer|ihoment[_-]?h7/i],
+	/* Bosch, Siemens and Neff machines name themselves "BOSCH-WAX32EH0EU-…": the model number says what each is
+	   (WA, WG, WM, WU washers; WT, WQ dryers; WN, WD, WV washer-dryers; SM, SN, SB, SP, SX dishwashers) */
+	['dishwasher', /dish ?washer|geschirr|^(bosch|siemens|neff|gaggenau|bsh|constructa|balay|pitsos|profilo)[-_ ]s[mnbpgrx][a-z]{0,2}\d/i],
+	['dryer', /tumble|dryer|trockner|^(bosch|siemens|neff|bsh|constructa|balay|pitsos|profilo)[-_ ]w[tq][a-z]{0,2}\d/i],
+	['washer', /washer|washing|waschmaschine|^(bosch|siemens|neff|bsh|constructa|balay|pitsos|profilo)[-_ ]w[agmnuvdx][a-z]{0,2}\d/i],
+	['appliance', /appliance|fridge|refrigerator|freezer|\boven\b|microwave|kettle|coffee|\bfan\b|heater|boiler|cooker|air ?fryer|ihoment[_-]?h7|^(bosch|siemens|neff|gaggenau|bsh)[-_ ][a-z]{2}/i],
 	['plug', /\bplug|\bchime|\bsp1\d\d\b|chargepoint|ev[ _-]?charger|wallbox|juicebox|\beasee\b|\bzappi\b|wall[ _-]?connector|smart ?plug|\boutlet\b|socket|power ?strip|\bhs1\d\d\b|\bkp\d{3}\b|^(tapo[ _-]?)?p[13]\d\d[a-z]?$|^ep\d\d\b/i],
 	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara|ihoment[_-]?h5/i],
 	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life|ihoment/i]
@@ -661,56 +617,9 @@ var KIND_WEAK = [
 	['console', /nintendo|sony interactive/i],
 	['camera', /hikvision|dahua|reolink|arlo/i],
 	['vacuum', /roborock|irobot|ecovacs/i],
+	['appliance', /electrolux|\baeg\b|bsh hausger|miele|whirlpool|bauknecht|haier|candy|beko|arcelik|liebherr|vorwerk/i],
 	['iot', /espressif|tuya|shelly|itead|texas instruments|murata|azurewave|mxchip|\budhcp/i]
 ];
-/* Fingerbank's answer as one of these kinds. Its device path runs from a category down to a model, e.g.
-   "Audio, Imaging or Video Equipment/Video Player and Recorder/Digital Media Player/Amazon Fire TV/Amazon Fire TV Stick".
-   Models first, then categories. An answer that names only an operating system ("Operating System/Windows OS/…",
-   "…/Generic Android/Samsung Android") or a maker ("Hardware Manufacturer/…") says nothing about the device: none. */
-var FB_KIND = [
-	['tablet', /Alexa Tablet|Kindle Fire|Fire HD|\/Apple iPad|\/Amazon Kindle|e-?Reader|E-Book|\bKobo\b|reMarkable|Galaxy Tab|\bTablet\b(?! or Wearable)/i],
-	['stick', /(Amazon Fire TV(?! Cube)|Chromecast(?! Audio)|Roku (Stick|Express)|Streaming Stick)[^\/]*$/i],
-	['smartspeaker', /HomePod|\/Amazon Alexa(\/|$)|Amazon Echo|\/Google Home Device(\/|$)|Nest (Mini|Audio|Hub)/i],
-	['streamer', /Digital Media Player|Set-top Box|Video Player and Recorder|NVIDIA SHIELD|SHIELD Android TV|Google TV Streamer|Apple TV/i],
-	['tv', /\/Television(\/|$)|^Projector\//i],
-	['soundbar', /\/Receiver(\/|$)|Sonos (Arc|Beam|Ray)|Soundbar$/i],
-	['speaker', /\/(Speaker and Soundbar|Audio Player)(\/|$)/i],
-	['doorbell', /Doorbell|Door ?Station|Intercom|Door ?phone|\/Ring$/i],
-	['camera', /\/Camera(\/|$)|Camera$/i],
-	['console', /^Gaming Console\/|Steam Deck/i],
-	['nas', /^Storage Device\//i],
-	['printer', /^Printer or Scanner\//i],
-	['pi', /Raspberry Pi/i],
-	['vacuum', /Vacuum|Roomba|RoboVac|Roborock|Deebot/i],
-	['purifier', /Air Purifier|Humidifier|Air Treatment/i],
-	['air', /Air ?Condition|Heat Pump/i],
-	['hub', /Hue Bridge|\bBridge$|\bHub$/i],
-	['wallswitch', /Light Switch|Wall Switch|Dimmer/i],
-	['light', /\/Lighting(\/|$)/i],
-	['plug', /\/Plugs(\/|$)|^Automotive, Energy and Tools\/Energy\//i],
-	['thermostat', /\/Thermostat(\/|$)|Thermostat$/i],
-	['lock', /\/Locks(\/|$)/i],
-	['contact', /Door Sensor|Contact Sensor|Window Sensor/i],
-	['sensor', /\/Sensor(\/|$)|^Physical Security\//i],
-	['appliance', /\/Appliance(\/|$)/i],
-	['hub', /\/Home Assistant(\/|$)/i],
-	['iot', /^Internet of Things \(IoT\)\//i],
-	['switch', /^(Router, Access Point or Femtocell|Switch and Wireless Controller|Firewall and Security Appliance)\//i],
-	['desktop', /^Thin Client\//i],
-	['laptop', /MacBook|Chromebook|Surface Laptop/i],
-	['mac', /\biMac|Mac ?mini|Mac Studio|Mac Pro/i],
-	['watch', /Watch\b|Wear OS|Fitbit|Garmin|Amazfit|Suunto/i]
-];
-function fbKind(path) {
-	var p = String(path || ''), seg = p.split('/'), i;
-	if (/^(Operating System|Generic PC|Hardware Manufacturer)\//i.test(p)) {   /* only a computer model under an OS says anything */
-		return /MacBook|Chromebook/i.test(p) ? 'laptop' : (/\biMac|Mac ?mini|Mac Studio|Mac Pro/i.test(p) ? 'mac' : '');
-	}
-	for (i = 0; i < FB_KIND.length; i++) if (FB_KIND[i][1].test(p)) return FB_KIND[i][0];
-	/* a phone: a model under its maker ("…/Generic Android/Samsung Android/Galaxy S6", "…/Apple Mobile Device/Apple iPhone") */
-	if (seg[0] === 'Phone, Tablet or Wearable' && seg.length >= (seg[1] === 'Generic Android' ? 4 : 3)) return 'phone';
-	return '';
-}
 /* What a device announced about itself (Recognise now): Apple's model identifiers ("MacBookPro18,1", "iPhone14,2",
    "AudioAccessory5,1" for a HomePod), a model named in its mDNS records (a Thread device's vendor and model, a Cast
    device's "md", a printer's "ty") or in its UPnP description, read with the same rules as names, or a service that
@@ -755,22 +664,17 @@ function classify(mac, name, link, al) {
 	/* 2. what the device itself announced when asked: its model, or a service that says what it is */
 	var ak = N && N.dc && announcedKind(N.dc[mac]);
 	if (ak) return res(ak[0], 'announced', ak[1]);
-	/* 3. Fingerbank, when you turned it on: a confident answer that names a kind of device (not just a system).
-	   One that only says "a smart device" (Internet of Things, Generic IoT) comes after the name and the router's icon. */
-	var fb = N && N.fb && N.fb[mac], fk = fb && fb.s > 50 ? fbKind(fb.n) : '';
-	if (fk && fk !== 'iot') return res(fk, 'fingerbank', fb.n.split('/').pop() + ', ' + fb.s);
-	/* 4. a name that says what it is: your nickname, then the names the device gave */
+	/* 3. a name that says what it is: your nickname, then the names the device gave */
 	var names = [al ? c.name : nickOf(c, m), name, l && l.host, m && m.name], i, j;
 	for (j = 0; j < names.length; j++) {
 		if (!names[j]) continue;
 		for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(names[j])) return res(KIND_STRONG[i][0], 'name', ['nickname', 'label', 'hostname', 'router name'][j] + ' #' + i);
 	}
-	/* 5. the router's own icon number */
+	/* 4. the router's own icon number */
 	var t = ct || nt;
 	if (t === 30 || (!TYPE_KIND[t] && os === 2)) return res(link === 'wired' ? 'desktop' : 'laptop', 'windows + link');
 	if (TYPE_KIND[t]) return res(TYPE_KIND[t], ct ? 'saved icon' : 'router icon');
-	if (fk) return res(fk, 'fingerbank', fb.n.split('/').pop() + ', ' + fb.s);
-	/* 6. Android says so itself (before the maker: phones carry Wi-Fi chips from module makers), then maker and DHCP vendor class */
+	/* 5. Android says so itself (before the maker: phones carry Wi-Fi chips from module makers), then maker and DHCP vendor class */
 	if (/^android-dhcp/i.test(m && m.vendorclass || '') || os === 1) return res('phone', 'android');
 	var txt = [m && m.vendor, m && m.vendorclass].join(' ');
 	for (i = 0; i < KIND_WEAK.length; i++) if (KIND_WEAK[i][1].test(txt)) return res(KIND_WEAK[i][0], 'maker', '#' + i);
@@ -823,7 +727,7 @@ var OS_NAME = { 1: 'Android', 2: 'Windows', 3: 'Linux', 4: 'ASUS', 5: 'Apple' };
 var WIFI_STD = { n: 'Wi-Fi 4 (802.11n)', ac: 'Wi-Fi 5 (802.11ac)', ax: 'Wi-Fi 6 (802.11ax)', be: 'Wi-Fi 7 (802.11be)' };
 var KIND_LABEL = { desktop: 'Desktop PC', mac: 'Mac desktop', laptop: 'Laptop', phone: 'Phone', tablet: 'Tablet', watch: 'Watch', printer: 'Printer', tv: 'TV', streamer: 'Streaming box',
 	speaker: 'Speaker', soundbar: 'Home cinema', console: 'Game console', nas: 'NAS', camera: 'Camera', doorbell: 'Doorbell', lock: 'Smart lock', thermostat: 'Thermostat', light: 'Light',
-	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
+	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', washer: 'Washing machine', dryer: 'Dryer', dishwasher: 'Dishwasher', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
 	pi: 'Single-board computer', stick: 'Streaming stick', smartspeaker: 'Smart speaker', purifier: 'Air purifier', wallswitch: 'Smart switch', contact: 'Door sensor' };
 function ago(s) {
 	if (s === null || s === undefined || isNaN(s)) return '—';
@@ -849,7 +753,7 @@ function ipOf(dv) {
 	return ip;
 }
 function detailsFor(net, dv) {
-	var N = A.names || { custom: {}, nmp: {}, lease: {}, arp: {}, n6: {}, fixed: {}, fb: {}, dc: {} }, mac = dv.mac, m = N.nmp[mac], l = N.lease[mac], al = dv.alias, w = dv.why || {};
+	var N = A.names || { custom: {}, nmp: {}, lease: {}, arp: {}, n6: {}, fixed: {}, dc: {} }, mac = dv.mac, m = N.nmp[mac], l = N.lease[mac], al = dv.alias, w = dv.why || {};
 	var ip = ipOf(dv);
 	var v6 = (N.n6 && N.n6[mac]) || [], now = (net && net.epoch) || Date.now() / 1000;   /* the router's clock: the browser's can differ */
 	var left = l && +l.exp ? +l.exp - now : 0;
@@ -858,7 +762,7 @@ function detailsFor(net, dv) {
 	var std = WIFI_STD[dv.std] ? WIFI_STD[dv.std].split(' (')[0].slice(6) + (dv.band === '6' && dv.std === 'ax' ? 'E' : '') : '';   /* "6", "6E": the label says Wi-Fi */
 	var kl = KIND_LABEL[dv.kind] || 'Device', why = { 'your icon': 'the icon you chose in the router\'s client list', name: 'its name', 'windows + link': 'Windows, and how it is connected',
 		'saved icon': 'the icon saved in the router\'s client list', 'router icon': 'the type the router detected', maker: 'its maker', android: 'Android',
-		fingerbank: 'Fingerbank (' + w.tok + ')', announced: 'what it announced (' + w.tok + ')' }[w.rule];
+		announced: 'what it announced (' + w.tok + ')' }[w.rule];
 	var wifiTxt = (std || '—') + (dv.nss ? ' · ' + dv.nss + '×' + dv.nss : '') + (dv.bw ? ' · ' + dv.bw + ' MHz' : '');
 	/* four columns; the second is the widest, for the MAC, the Wi-Fi details and IPv6 */
 	var cells = [
@@ -1599,15 +1503,27 @@ function drawVacuum(id, kind, cx, cy, face) {   /* a robot vacuum */
 	o.target = P(cx, cy, 0.3);
 	return o;
 }
-function drawAppliance(id, kind, cx, cy, face) {   /* white goods: washer, dryer, fridge, oven, purifier, fan, heater */
+function drawAppliance(id, kind, cx, cy, face) {   /* white goods: a washing machine, a dryer, a dishwasher, or another appliance */
 	var o;
 	o = new Obj(id, cx, cy, 1.2);
 	o.box(cx - 0.5, cy - 0.5, 0, 1.0, 1.0, 1.15, M_WHITE, { ao: true, shadow: true });
-	o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
-	o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
-	o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
-	o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');
 	[0.3, 0.45, 0.6].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#7f8a8e', 1.1); });
+	if (kind === 'dishwasher') {   /* a plain door: the control strip along its top, a handle under it */
+		o.face('L', 0.04, 0.84, 0.96, 0.96, 'fill:#20282b;stroke:#8f9a9e;stroke-width:.6');
+		o.led('L', 0.84, 0.9, '#3ddc97', 0, 0, 0.9);
+		o.face('L', 0.14, 0.88, 0.5, 0.92, 'fill:url(#ar-scr4);opacity:.7');
+		o.face('L', 0.3, 0.7, 0.7, 0.75, 'fill:#8f9a9e');
+		o.line('L', 0.04, 0.06, 0.96, 0.06, '#aab4b8', 1);
+	} else {
+		o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
+		o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
+		o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
+		if (kind === 'dryer') {   /* an empty drum: no water, a lint filter under the door */
+			o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:#3a4448');
+			[0.36, 0.48].forEach(function (v) { o.line('L', 0.38, v, 0.62, v, '#56646a', 1); });
+			o.face('L', 0.36, 0.04, 0.64, 0.09, 'fill:#8f9a9e');
+		} else o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');   /* water behind the glass */
+	}
 	o.target = P(cx, cy, 1.2);
 	return o;
 }
@@ -1689,7 +1605,7 @@ var DRAW = {
 	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight,
 	air: drawAir, speaker: drawSpeaker, printer: drawPrinter, watch: drawWatch, camera: drawCamera, streamer: drawStreamer, soundbar: drawSoundbar,
 	doorbell: drawDoorbellLock, lock: drawDoorbellLock, sensor: drawSensorThermostat, thermostat: drawSensorThermostat, plug: drawPlug, hub: drawHub,
-	vacuum: drawVacuum, appliance: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
+	vacuum: drawVacuum, appliance: drawAppliance, washer: drawAppliance, dryer: drawAppliance, dishwasher: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
 	pi: drawPi, stick: drawStick, smartspeaker: drawSmartSpeaker, purifier: drawPurifier, wallswitch: drawWallSwitch, contact: drawContact
 };
 /* Devices on the map: one drawing per kind, at (cx, cy) on the floor, facing left (the default) or right.
@@ -2682,17 +2598,15 @@ function buildReport(net) {
 		if (!dv.mac) return;   /* a port with several devices behind it */
 		var w = dv.why || {}, mac = dv.mac, c = N.custom && N.custom[mac], m = N.nmp && N.nmp[mac], l = N.lease && N.lease[mac];
 		var has = [c && c.name ? 'nick' : '', dv.alias ? 'matched' : '', l && l.host ? 'host' : '', m && m.vendor ? 'maker' : '', m && m.vendorclass ? 'vc' : '', N.dc && N.dc[mac] ? 'said' : ''].filter(Boolean).join(',') || '-';
-		var fb = N.fb && N.fb[mac], fbt = !fb ? '-' : (fb.n ? fb.n.split('/').pop() + ' ' + fb.s : 'asked: ' + fb.o);
-		rows.push(pad(dv.kind, 11) + pad((w.rule || '?') + (w.tok && w.rule !== 'fingerbank' ? ': ' + w.tok : ''), 24) + pad((w.ct || 0) + '/' + (w.nt || 0), 8) + pad(w.os || 0, 4)
-			+ pad(dv.link === 'wired' ? 'wired' : (dv.band || '?') + ' GHz', 9) + pad(isPrivate(mac) ? 'yes' : 'no', 8) + pad(has, 22) + fbt);
+		rows.push(pad(dv.kind, 11) + pad((w.rule || '?') + (w.tok ? ': ' + w.tok : ''), 24) + pad((w.ct || 0) + '/' + (w.nt || 0), 8) + pad(w.os || 0, 4)
+			+ pad(dv.link === 'wired' ? 'wired' : (dv.band || '?') + ' GHz', 9) + pad(isPrivate(mac) ? 'yes' : 'no', 8) + has);
 	});
 	rows.sort();
 	return ['Arteria ' + VERSION + ' · ' + ((net && net.router.model) || 'router') + ' · ' + rows.length + ' devices',
-		pad('kind', 11) + pad('rule', 24) + pad('icon', 8) + pad('os', 4) + pad('link', 9) + pad('private', 8) + pad('has', 22) + 'fingerbank'].concat(rows,
+		pad('kind', 11) + pad('rule', 24) + pad('icon', 8) + pad('os', 4) + pad('link', 9) + pad('private', 8) + 'has'].concat(rows,
 		['', 'icon: the ASUS icon number saved in the client list / found by the router.', 'os: 1 Android, 2 Windows, 3 Linux, 4 ASUS, 5 Apple.',
 		'has: which name sources exist (nickname, host name, maker, DHCP vendor class, what it announced when asked), never their text.',
-		'announced: the model a device announced about itself (Recognise now), or the service that says what it is.',
-		'fingerbank: the model Fingerbank named and its score, or the DHCP options a device asked for while Fingerbank had no answer.']).join('\n');
+		'announced: the model a device announced about itself (Recognise now), or the service that says what it is.']).join('\n');
 }
 /* Map: the busiest devices right now. Flow: the internet over the last two minutes. */
 var TOP_BIG = 12;
@@ -2927,10 +2841,7 @@ function boot() {
 	$('arSetBtn').addEventListener('click', function () { setSettings(!A.settings); });
 	$('arSetClose').addEventListener('click', function () { setSettings(false); });
 	$('arSet').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.stopPropagation(); setSettings(false); } });
-	$('arFbSave').addEventListener('click', fbSave);
-	$('arFbKey').addEventListener('keydown', function (e) { if (e.key === 'Enter') fbSave(); });
-	$('arFbOff').addEventListener('click', fbOff);
-	$('arFbNow').addEventListener('click', fbNow);
+	$('arRecNow').addEventListener('click', recNow);
 	/* anything cut short with "…" shows in full on hover: names, makers, paths */
 	$('ar').addEventListener('mouseover', function (e) {
 		for (var el = e.target, i = 0; el && el.nodeType === 1 && el.id !== 'ar' && i < 4; el = el.parentNode, i++) {
@@ -2953,7 +2864,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { fbKind: fbKind, announcedKind: announcedKind, appleKind: appleKind, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { announcedKind: announcedKind, appleKind: appleKind, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
@@ -3034,22 +2945,14 @@ window.Arteria = { _t: { fbKind: fbKind, announcedKind: announcedKind, appleKind
 		<div class="ar-set hide" id="arSet" role="region" aria-labelledby="arSetTitle">
 			<div class="ar-more-head"><div class="eyebrow" id="arSetTitle">Settings</div><button type="button" class="ar-x" id="arSetClose" aria-label="Close settings" title="Close (Esc)">×</button></div>
 			<div class="ar-set-body">
-				<h3>Device recognition with Fingerbank <span class="ar-tag">optional</span></h3>
-				<p class="ar-set-st" id="arFbSt">Off</p>
-				<p><a href="https://www.fingerbank.org" target="_blank" rel="noopener noreferrer">Fingerbank</a> tells devices apart by the DHCP options they ask for, such as an iPhone from an Echo, even without a name. Arteria works fully without it. Its answer comes after the icon you chose and the model a device announces, and before the name.</p>
-				<div class="ar-set-box"><b>Adding a key shares data with Fingerbank:</b> each kind of device's DHCP options and vendor class (e.g. <code>android-dhcp-14</code>) and the services it announces (e.g. <code>_googlecast._tcp</code>), never a MAC address, name or IP address on your network. Fingerbank sees your public IP, like any website, and keeps combinations it doesn't know.</div>
-				<p id="arFbHow"><b>Get a free key:</b> sign up at <a href="https://api.fingerbank.org" target="_blank" rel="noopener noreferrer">api.fingerbank.org</a> (<i>Login or Signup</i>), copy the <b>API key</b> from your account page and paste it here.</p>
-				<div class="ar-set-box ar-warn"><b>Keep your key to yourself.</b> Don't post it anywhere: the free key allows 300 lookups an hour, anyone using it uses yours up, and Fingerbank can block a misused key.</div>
+				<h3>Device recognition</h3>
+				<p class="ar-set-st" id="arRecSt">No device asked yet</p>
+				<p>Most devices say what they are when asked, the way phones find printers and speakers (mDNS and UPnP): their services, and often their model. <b>Recognise now</b> asks them, and the model a device announces decides its icon, right after the one you chose. Nothing leaves your network. It needs Entware's socat.</p>
 				<div class="ar-set-row">
-					<input type="password" id="arFbKey" autocomplete="off" spellcheck="false" maxlength="128" placeholder="Fingerbank API key" aria-label="Fingerbank API key">
-					<button type="button" class="ar-btn" id="arFbSave" title="Checks the key with Fingerbank, then restarts the router's DNS and DHCP service (about a second)">Save</button>
-					<button type="button" class="ar-btn ar-btn-2 hide" id="arFbOff" title="Deletes the key, Fingerbank's answers and what devices said">Turn off</button>
+					<span class="ar-set-now">Asks every device again, also those already recognised. Takes 15 to 20 seconds.</span>
+					<button type="button" class="ar-btn" id="arRecNow" title="Asks every device on the network what it is, over mDNS and UPnP (with Entware's socat). Nothing is disconnected, and nothing leaves your network.">Recognise now</button>
 				</div>
-				<div class="ar-set-row hide" id="arFbNowRow">
-					<span class="ar-set-now" id="arFbNowTx">New devices are recognised a minute after they join. Recognise now asks every device again.</span>
-					<button type="button" class="ar-btn ar-btn-2" id="arFbNow" title="Asks every device on the network what it is again, also those already recognised, the way phones find printers and speakers (mDNS and UPnP, with Entware's socat), then looks each one up with Fingerbank again. Nothing is disconnected.">Recognise now</button>
-				</div>
-				<p class="ar-set-msg" id="arFbMsg" role="status" aria-live="polite"></p>
+				<p class="ar-set-msg" id="arRecMsg" role="status" aria-live="polite"></p>
 			</div>
 		</div>
 	</div>
@@ -3128,7 +3031,7 @@ window.Arteria = { _t: { fbKind: fbKind, announcedKind: announcedKind, appleKind
 <input type="hidden" name="action_script" value=""/>
 <input type="hidden" name="action_wait" value=""/>
 </form>
-<script type="application/json" id="arCs"><% get_custom_settings(); %></script>
+
 <div id="footer"></div>
 </body>
 </html>

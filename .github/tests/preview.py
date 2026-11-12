@@ -59,9 +59,10 @@ if SCN == 'hostile':   # names that look like HTML (host names, makers): the pag
         dev('02:CC:00:00:05:%02X' % (i + 3), '', 'router', '2.4', 0.001, 0.001, -70 - i, nick=False, host='<u>q%d</u>' % i, vendor='<a href=javascript:window.__xss=4>x</a>')
 ZOO = [('Garage desktop', 'desktop'), ('Mac mini', 'mac'), ('Work laptop', 'laptop'), ('Pixel 9', 'phone'), ('Kindle', 'tablet'), ('Sport watch', 'watch'), ('Office printer', 'printer'), ('Lounge TV', 'tv'),
        ('Apple TV', 'streamer'), ('Kitchen speaker', 'speaker'), ('Lounge soundbar', 'soundbar'), ('PlayStation 5', 'console'), ('Attic NAS', 'nas'), ('Garden camera', 'camera'), ('Front doorbell', 'doorbell'), ('Porch lock', 'lock'),
-       ('Hall thermostat', 'thermostat'), ('Desk lamp', 'light'), ('Zigbee hub', 'hub'), ('Bedroom AC', 'air'), ('Robot vacuum', 'vacuum'), ('Washing machine', 'appliance'), ('Heater plug', 'plug'), ('Leak sensor', 'sensor'),
+       ('Hall thermostat', 'thermostat'), ('Desk lamp', 'light'), ('Zigbee hub', 'hub'), ('Bedroom AC', 'air'), ('Robot vacuum', 'vacuum'), ('Washing machine', 'washer'), ('Heater plug', 'plug'), ('Leak sensor', 'sensor'),
        ('Tasmota relay', 'iot'), ('Mystery box', 'generic'), ('Fire TV Stick', 'stick'), ('Echo Studio', 'smartspeaker'), ('Raspberry Pi', 'pi'),
-       ('Air purifier', 'purifier'), ('Hall light switch', 'wallswitch'), ('Front door sensor', 'contact')]
+       ('Air purifier', 'purifier'), ('Hall light switch', 'wallswitch'), ('Front door sensor', 'contact'),
+       ('Tumble dryer', 'dryer'), ('Kitchen dishwasher', 'dishwasher'), ('Kitchen fridge', 'appliance')]
 if SCN.startswith('kinds'):   # kinds1..kinds4: every kind of device on a stand, nine at a time
     n = int(SCN[5:] or 1) - 1
     DEVICES = []
@@ -170,30 +171,14 @@ def names():
     return {'custom': custom, 'leases': leases, 'nmp': nmp, 'cl': cl, 'fixed': fixed, 'arp': arp, 'n6': n6}
 
 
-# Settings: what the router does with the page's Fingerbank requests (arteria.sh fb_ui_prep / fb_ui_save / fb_ui_off),
-# and the addons' shared settings the router puts in the page (one other addon's, made up).
-CUSTOM = {'otheraddon_path': '/opt/share/otheraddon', 'otheraddon_mode': 'on'}
-FB = {'on': False, 'tail': '', 'hooked': False, 'busy': False, 'devices': 0, 'known': 0, 'waiting': 0, 'asked': 0, 'socat': True, 'last': '', 'state': '', 'seq': 0, 'ok': None, 'msg': '', 'prep': ''}
-POSTED = []
+# Settings: what the router does when the page asks it to Recognise now (arteria.sh recognise_ui), and rec.htm.
+REC = {'busy': False, 'asked': 0, 'socat': True, 'seq': 0, 'ok': None, 'msg': ''}
 
 
 def router_action(f):
     act = (f.get('action_script') or [''])[0]
-    if act == 'start_arteriafbprep':
-        FB['prep'] = '%.3f' % time.time()
-    elif act == 'start_arteriafb':
-        cs = json.loads((f.get('amng_custom') or ['{}'])[0]); POSTED.append(cs); k = cs.get('arteria_fbkey', '')
-        if k.startswith('BAD'):
-            FB.update(seq=FB['seq'] + 2, ok=False, msg="Fingerbank turned this key down (HTTP 401). Check it on your account page at api.fingerbank.org. Nothing changed.")
-        else:
-            FB.update(on=True, tail=k[-4:], hooked=True, devices=6, known=4, waiting=7, last='200', seq=FB['seq'] + 2, ok=True,
-                      msg='Saved. Each device is recognised when it connects or renews its address. Recognise now asks the devices on the network what they are right away.')
-    elif act == 'start_arteriafbnow':
-        FB.update(devices=6, known=8, waiting=2, asked=9, seq=FB['seq'] + 2, ok=True,
-                  msg="9 device(s) answered. Fingerbank has an answer for 12 of 14 device(s).")
-    elif act == 'start_arteriafboff':
-        FB.update(on=False, tail='', hooked=False, devices=0, known=0, waiting=0, asked=0, last='', seq=FB['seq'] + 2, ok=True,
-                  msg="Fingerbank is off. The key, its answers and what devices said are deleted, and dnsmasq runs the router's own lease script directly again.")
+    if act == 'start_arteriarec':
+        REC.update(asked=9, seq=REC['seq'] + 2, ok=True, msg='9 device(s) said what they are.')
 
 
 class H(BaseHTTPRequestHandler):
@@ -215,7 +200,6 @@ class H(BaseHTTPRequestHandler):
         if path in ('/', '/user1.asp'):
             page = open(ASP, encoding='utf-8').read()
             page = page.replace('<% nvram_get("productid"); %>', 'RT-AX86U')   # what the router fills in
-            page = page.replace('<% get_custom_settings(); %>', json.dumps(CUSTOM))
             page = re.sub(r'<%.*?%>', '', page)
             return self.send(page)
         if path == '/ext/arteria/live.htm':
@@ -223,10 +207,8 @@ class H(BaseHTTPRequestHandler):
             return self.send(json.dumps(sample(H.seq)), 'text/html')
         if path == '/ext/arteria/names.htm':
             return self.send(json.dumps(names()), 'text/html')
-        if path == '/ext/arteria/fb.htm':
-            return self.send(json.dumps(FB), 'text/html')
-        if path == '/_posted':   # for page-browser.py: the settings the page sent with the key
-            return self.send(json.dumps(POSTED), 'application/json')
+        if path == '/ext/arteria/rec.htm':
+            return self.send(json.dumps(REC), 'text/html')
         if path.endswith('.js'):
             return self.send('', 'application/javascript')
         if path.endswith('.css'):
