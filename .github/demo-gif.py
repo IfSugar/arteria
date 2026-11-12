@@ -39,6 +39,7 @@ async def record():
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         pg = await b.new_page(viewport={'width': 900, 'height': 1000}, device_scale_factor=1)
         await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
+        await pg.evaluate("localStorage.clear()")
         await pg.wait_for_timeout(125000)   # warm up: rates, stand slots, and a full 2-minute chart
         await pg.evaluate(CURSOR)
         box = await pg.evaluate("() => { const r = document.getElementById('ar').getBoundingClientRect(); const c = document.getElementById('arHist').closest('.ar-cards') || document.getElementById('arHist').parentElement; const cb = c.getBoundingClientRect(); return [r.left, r.top, r.width, cb.bottom - r.top]; }")
@@ -57,8 +58,13 @@ async def record():
             await pg.wait_for_timeout(after)
 
         await pg.wait_for_timeout(3500)                                   # the map, flowing
-        await click('.ar-lb[data-id="02:CC:00:00:00:11"]', after=3800)     # trace a TV behind the node
-        await click('.ar-lb[data-id="02:CC:00:00:00:11"]', before=700, after=1200)   # let go
+        await click('.ar-lb[data-id="00:00:5E:00:53:11"]', after=3400)     # trace a TV behind the node
+        await click('#arRoDet', after=3200)                                # its details
+        await click('#arRoDet', before=600, after=500)
+        await click('.ar-lb[data-id="00:00:5E:00:53:11"]', before=700, after=1000)   # let go
+        await click('.ar-lb[data-id="more"]', after=2200)                  # the "+N more" tray opens a list
+        await click('#arMoreList button:nth-child(2)', after=3000)         # trace one of its devices
+        await click('#arMoreClose', before=700, after=1000)
         await click('#arTabFlow', after=3600)                              # Flow: download
         await click('#arUp', after=3200)                                   # Flow: upload
         await click('#arUnitMB', after=2600)                               # MB/s

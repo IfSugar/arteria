@@ -162,12 +162,18 @@ has_tty() { ( exec < /dev/tty ) 2> /dev/null; }
 ssh_port() { p=$(nvram get sshd_port); case "$p" in ''|*[!0-9]*) p=22 ;; esac; printf '%s' "$p"; }
 ssh_user() { if [ -n "$NODE_USER" ]; then printf '%s' "$NODE_USER"; else u=$(nvram get http_username); printf '%s' "${u:-admin}"; fi; }
 
-# One line per Wi-Fi client: "S ifname band MAC tx-bytes rx-bytes rssi tx-kbps rx-kbps connected-s idle-s".
-# The input is "@ ifname band MAC" followed by that client's `wl sta_info`. tx is what the access point
-# sent to the client (its download), rx what it received (its upload). The same program runs on the nodes,
-# so it must not contain single quotes.
-STA_AWK='function out() { if (m != "") print "S", x, b, m, tx, rx, r, tr, rr, cn, id }
-$1 == "@" { out(); x = $2; b = $3; m = $4; tx = "-"; rx = "-"; r = "-"; tr = "-"; rr = "-"; cn = "-"; id = "-"; next }
+# One line per Wi-Fi client: "S ifname band MAC tx-bytes rx-bytes rssi tx-kbps rx-kbps connected-s idle-s
+# standard streams width". The input is "@ ifname band MAC" followed by that client's `wl sta_info`. tx is
+# what the access point sent to the client (its download), rx what it received (its upload). The standard
+# comes from the client's capability flags (EHT_CAP = Wi-Fi 7, HE_CAP = 6, VHT_CAP = 5, N_CAP = 4), streams
+# and width from its last data rates ("he mcs 11 Nss 2 ... bw80") or "link bandwidth = 80 MHZ"; drivers
+# that print none of these leave "-". The same program runs on the nodes, so it must not contain single quotes.
+STA_AWK='function out() { if (m != "") print "S", x, b, m, tx, rx, r, tr, rr, cn, id, cap, ss, bw }
+$1 == "@" { out(); x = $2; b = $3; m = $4; tx = "-"; rx = "-"; r = "-"; tr = "-"; rr = "-"; cn = "-"; id = "-"; cap = "-"; ss = "-"; bw = "-"; next }
+/^[ \t]*flags 0x/ { if ($0 ~ /EHT_CAP/) cap = "be"; else if ($0 ~ /HE_CAP/) cap = "ax"; else if ($0 ~ /VHT_CAP/) cap = "ac"; else if ($0 ~ /N_CAP/) cap = "n"; next }
+/Nss [0-9]/ { for (i = 1; i < NF; i++) if ($i == "Nss" && $(i + 1) + 0 > ss + 0) ss = $(i + 1) + 0 }
+/ bw[0-9]+/ { if (match($0, / bw[0-9]+/)) bw = substr($0, RSTART + 3, RLENGTH - 3) }
+/link bandwidth = [0-9]/ { bw = $4; next }
 /tx total bytes:/ { tx = $NF; next }
 /rx data bytes:/ { rx = $NF; next }
 /^smoothed rssi:/ { r = $NF; next }
@@ -177,12 +183,13 @@ $1 == "@" { out(); x = $2; b = $3; m = $4; tx = "-"; rx = "-"; r = "-"; tr = "-"
 /^[ \t]*idle / { id = $2; next }
 END { out() }'
 
-# "S ..." lines -> JSON rows: ["ifname","band","MAC","tx","rx",rssi,txMbps,rxMbps,connected,idle].
+# "S ..." lines -> JSON rows: ["ifname","band","MAC","tx","rx",rssi,txMbps,rxMbps,connected,idle,standard,streams,width].
 # Byte counters stay strings: shell arithmetic is 32-bit, and awk would print big numbers as 9.5e+09.
 ROWS_AWK='function q(s) { return (s ~ /^[0-9]+$/) ? "\"" s "\"" : "null" }
 function n(s) { return (s ~ /^-?[0-9]+$/) ? s : "null" }
 function k(s) { return (s ~ /^[0-9]+$/) ? int(s / 1000) : "null" }
-function row(s) { return "[\"" $2 "\",\"" $3 "\",\"" toupper($4) "\"," q($5) "," q($6) "," n($7) "," k($8) "," k($9) "," n($10) "," n($11) "]" }'
+function cp(v) { return (v ~ /^(n|ac|ax|be)$/) ? "\"" v "\"" : "null" }
+function row() { return "[\"" $2 "\",\"" $3 "\",\"" toupper($4) "\"," q($5) "," q($6) "," n($7) "," k($8) "," k($9) "," n($10) "," n($11) "," cp($12) "," n($13) "," n($14) "]" }'
 
 sta_lines() {   # the router's own Wi-Fi clients (incl. the nodes' backhaul stations)
 	for p in $RADIOS; do
@@ -374,7 +381,16 @@ export_names() {
 		if head -c 1 "$ROOT/jffs/nmp_cl_json.js" 2>/dev/null | grep -q '{'; then tr -d '\000-\037' < "$ROOT/jffs/nmp_cl_json.js"; else printf '{}'; fi
 		printf ',"cl":'
 		if head -c 1 "$ROOT/tmp/clientlist.json" 2>/dev/null | grep -q '{'; then tr -d '\000-\037' < "$ROOT/tmp/clientlist.json"; else printf '{}'; fi
-		printf '}'
+		# For the page's Details: DHCP reservations, addresses seen without a lease (static ones), and IPv6
+		# neighbours on the LAN bridge. Only hex, dots and colons get through the two awks, so nothing can
+		# break out of the JSON strings.
+		printf ',"fixed":"%s","arp":"' "$(js "$(nvram get dhcp_staticlist)")"
+		awk 'NR > 1 && $3 != "0x0" && $4 ~ /^[0-9A-Fa-f:]+$/ && $1 ~ /^[0-9.]+$/ { printf "%s %s|", $4, $1 }' "$PROC/net/arp" 2>/dev/null
+		printf '","n6":"'
+		if have ip; then
+			ip -6 neigh show dev br0 2>/dev/null | awk '$1 ~ /^[0-9A-Fa-f:]+$/ && $NF != "FAILED" && $NF != "INCOMPLETE" { for (i = 2; i < NF; i++) if ($i == "lladdr" && $(i + 1) ~ /^[0-9A-Fa-f:]+$/) printf "%s %s|", $(i + 1), $1 }'
+		fi
+		printf '"}'
 	} | write_atomic "$(web_dir)/names.htm"
 }
 
@@ -1037,9 +1053,20 @@ debug() {
 		x=${p%%:*}; m=$(wl -i "$x" assoclist 2>/dev/null | cut -d' ' -f2 | head -1)
 		[ -n "$m" ] || continue
 		say "sta_info fields ($x):"
-		wl -i "$x" sta_info "$m" 2>/dev/null | sed 's/[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f:]*/xx:xx/g; s/^/  /' | head -40
+		wl -i "$x" sta_info "$m" 2>/dev/null | sed 's/[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f:]*/xx:xx/g; s/^/  /' | head -80
 		break
 	done
+	# How the router classifies devices, as numbers only (no names, addresses or MACs): the icon numbers
+	# saved in the client list, the types and systems networkmap detected, the DHCP vendor classes cut to
+	# their leading letters (the rest can name a phone model), and how many Wi-Fi clients use a private address.
+	say "Saved icons:    $(nvram get custom_clientlist | tr '<' '\n' | awk -F'>' 'NF >= 4 && $4 ~ /^[0-9]+$/ { n[$4 + 0]++ } END { for (t in n) printf "%sx%d ", t, n[t] }')"
+	f="$ROOT/jffs/nmp_cl_json.js"
+	if [ -f "$f" ]; then
+		say "Detected types: $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"type": *"\{0,1\}\([0-9][0-9]*\).*/\1/p' | sort -n | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
+		say "Detected OS:    $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"os_type": *"\{0,1\}\([0-9][0-9]*\).*/\1/p' | sort -n | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
+		say "Vendor classes: $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"vendorclass": *"\([A-Za-z]*\).*/\1/p' | sort | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
+	fi
+	say "Private MACs:   $(for p in $(radio_list); do wl -i "${p%%:*}" assoclist 2>/dev/null; done | awk '$2 ~ /^.[26AEae]/ { n++ } END { print n + 0, "of", NR }')"
 	live="$(web_dir)/live.htm"
 	[ -f "$live" ] && say "Last sample: $(sed -n 's/.*"ms":\([0-9]*\).*/\1/p' "$live" | head -1) ms, $(( $(now) - $(date -r "$live" +%s) )) s ago"
 }

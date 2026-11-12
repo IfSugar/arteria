@@ -55,6 +55,7 @@ case "\$2" in
 	lan_ipaddr) echo 192.168.50.1 ;; http_username) echo admin ;; sshd_port) echo 2222 ;; sshd_enable) echo 1 ;;
 	jffs2_scripts) echo 1 ;; rc_support) echo "mssid 2.4G 5G usbX1 bwdpi wl6 amas" ;;
 	cfg_device_list) echo "<RP-AX56>192.168.50.10>$NODE>0" ;;
+	dhcp_staticlist) echo "<02:CC:00:00:00:04>192.168.50.20>>" ;;
 	custom_clientlist) echo "<Living room TV>02:CC:00:00:00:05>0>23>><Kids \"tablet\"\\\\>02:CC:00:00:00:13>0>21>>" ;;
 esac
 EOF
@@ -77,7 +78,8 @@ case "\$1" in
 		awk -v i="\$ifc" -v m="\$2" -v now="\$(date +%s)" '\$1 == i && \$2 == m {
 			printf "[VER 8] STA %s:\n\t aid:3\n\t idle 2 seconds\n\t in network 4100 seconds\n", m
 			printf "\t tx total pkts: 1\n\t tx total bytes: %.0f\n\t rx data pkts: 1\n\t rx data bytes: %.0f\n", 9000000000 + \$3 * (now % 100000), 1000000000 + \$4 * (now % 100000)
-			printf "\t rate of last tx pkt: 864000 kbps - 1000 kbps\n\t rate of last rx pkt: 650000 kbps\nsmoothed rssi: -58\n" }' "$F/assoc" ;;
+			printf "\t rate of last tx pkt: 864000 kbps - 1000 kbps\n\t rate of last rx pkt: 650000 kbps\nsmoothed rssi: -58\n"
+			if (m !~ /:13\$/) printf "\t flags 0x1e13b: WME N_CAP VHT_CAP HE_CAP AMPDU AMSDU\n\t OMI 0x0000: 20Mhz rx=1ss tx=1ss\n\t tx nrate\n\t he mcs 11 Nss 2 Tx Exp 0 bw80 ldpc 2xLTF GI 0.8us auto\n\t rx nrate\n\t he mcs 9 Nss 1 Tx Exp 0 bw80 ldpc\n\t link bandwidth = 80 MHZ\n" }' "$F/assoc" ;;
 	*) exit 1 ;;
 esac
 EOF
@@ -99,6 +101,8 @@ Inter-|   Receive                                                |  Transmit
 wds1.0.1: 962647865 2228803 0 5159 0 0 0 45379 9796037641 8283991 0 0 0 0 0 0
     br0: 4630432670 7044139 0 0 0 0 0 0 24640308964 20233741 0 0 0 0 0 0
 EOF
+printf 'IP address       HW type     Flags       HW address            Mask     Device\n192.168.50.30    0x1         0x2         02:cc:00:00:00:01     *        br0\n192.168.50.31    0x1         0x0         00:00:00:00:00:00     *        br0\n' > "$t/proc/net/arp"
+printf '#!%s sh\n[ "$1 $2 $3" = "-6 neigh show" ] && printf "2001:db8::12 lladdr 02:cc:00:00:00:12 REACHABLE\\nfe80::12 lladdr 02:cc:00:00:00:12 STALE\\n2001:db8::99 FAILED\\n"\n' "$bb" > "$B/ip"
 echo "25588.76 90000.00" > "$t/proc/uptime"; echo "1.39 1.28 1.27 3/216 4894" > "$t/proc/loadavg"
 for i in eth0 eth1 eth2 eth3 eth4 eth5 eth6 eth7 br0; do mkdir -p "$t/sys/class/net/$i"; done
 echo 24:4b:fe:00:00:20 > "$t/sys/class/net/br0/address"; echo 24:4b:fe:00:00:24 > "$t/sys/class/net/eth7/address"
@@ -213,6 +217,11 @@ mkdir -p "$R/jffs/addons/arteria"
 runa sample > "$t/sample.json" 2> "$t/sample.err" || true
 [ -s "$t/sample.err" ] && { bad "'sample' printed errors:"; cat "$t/sample.err"; }
 run sample > "$t/sample2.json" 2> "$t/sample2.err" || true
+# debug: router facts and classification counts for an issue, never a name, host name, MAC or IP
+run debug > "$t/debug.out" 2>&1 || true
+if grep -q '^Saved icons: ' "$t/debug.out" && grep -q '^Detected types: ' "$t/debug.out" && grep -q '^Private MACs: ' "$t/debug.out" \
+	&& ! grep -qE 'Living room|tablet|Pixel-8|Hall|192\.168\.|02:[Cc][Cc]|02:10:00' "$t/debug.out"; then ok "debug: counts only, no names, MACs or IPs"
+else bad "debug output:"; cat "$t/debug.out"; fi
 [ -s "$t/sample2.err" ] && { bad "'sample' printed errors under bash without builtins:"; cat "$t/sample2.err"; }
 python3 - "$t/sample.json" <<'EOF' && ok "sample: internet, ports, Wi-Fi clients, node and backhaul" || fail=1
 import json, sys
@@ -283,6 +292,14 @@ assert 'Kids "tablet"\\' in names['custom'], names['custom']
 assert 'Pixel-8' in names['leases'], names['leases']
 assert names['nmp']['02:CC:00:00:00:03']['vendor'] == 'Apple'
 assert '02:10:00:00:00:80' in names['cl']
+# Details: the Wi-Fi standard, streams and width per client, on the router and the node; null where the driver says nothing
+r = {x[2]: x for x in s['sta']}
+assert r['02:CC:00:00:00:03'][10:13] == ['ax', 2, 80], r['02:CC:00:00:00:03']
+assert c['02:CC:00:00:00:12'][10:13] == ['ax', 2, 80], c['02:CC:00:00:00:12']
+assert c['02:CC:00:00:00:13'][10:13] == [None, None, None], c['02:CC:00:00:00:13']
+assert names['fixed'] == '<02:CC:00:00:00:04>192.168.50.20>>', names['fixed']
+assert names['arp'] == '02:cc:00:00:00:01 192.168.50.30|', names['arp']
+assert names['n6'] == '02:cc:00:00:00:12 2001:db8::12|02:cc:00:00:00:12 fe80::12|', names['n6']
 EOF
 grep -q '<' "$W/live.htm" "$W/names.htm" && bad "a raw '<' reached the page's data (httpd would run it as a template)" || ok "no raw '<' in the data files"
 [ "$(grep -c "sh -s" "$t/dbclient.cmds" 2>/dev/null || echo 0)" = 1 ] && ok "one SSH session per node" || bad "SSH sessions: $(grep -c 'sh -s' "$t/dbclient.cmds" 2>/dev/null)"
