@@ -8,7 +8,7 @@
 #
 #  Usage: arteria.sh                    (a menu, when run in a terminal: amtm opens this)
 #         arteria.sh install | update [force | dev [branch]] | uninstall | status | check |
-#                    nodes [test] | nodekey [node-ip | print] | fingerbank [off] | debug | sample |
+#                    nodes [test] | nodekey [node-ip | print] | fingerbank [off | now] | debug | sample |
 #                    amtmupdate [check] | startup | version
 #
 #  Install:  d=/tmp/arteria-install; rm -rf "$d" && mkdir -m 700 "$d" && curl -fsL --retry 3 \
@@ -505,6 +505,7 @@ service_event() {   # action service
 		"${NAME}fbprep") tmpd; fb_ui_prep ;;    # the page's Settings (Fingerbank), see fb_ui_save
 		"${NAME}fb") tmpd; fb_ui_save ;;
 		"${NAME}fboff") tmpd; fb_ui_off ;;
+		"${NAME}fbnow") tmpd; fb_ui_now ;;
 	esac
 }
 
@@ -560,8 +561,11 @@ case "\$1" in add|old)
 	case "\$m" in ??:??:??:??:??:??) ;; *) o="" ;; esac
 	case "\$m" in *[!0-9A-F:]*) o="" ;; esac
 	if [ -n "\$o" ] && [ -z "\$DNSMASQ_IAID" ]; then
-		v=\$(printf '%s' "\$DNSMASQ_VENDOR_CLASS" | tr -cd 'A-Za-z0-9 ._:/+-' | cut -c1-80)
+		v=\$(printf '%s' "\$DNSMASQ_VENDOR_CLASS" | tr -cd 'A-Za-z0-9 ._:/+-' | tr -s ' ' | sed 's/^ //; s/ \$//' | cut -c1-80)
 		{ grep -v "^\$m " "$DHCP_FP" 2>/dev/null | tail -n 299; printf '%s %s %s\n' "\$m" "\$o" "\$v"; } > "$DHCP_FP.new" && mv -f "$DHCP_FP.new" "$DHCP_FP"
+		# a fingerprint Fingerbank hasn't answered yet: ask now, in the background, page open or not
+		t=\$(printf '\t')
+		grep -qF "\$o;\$v\$t" "$FB_CACHE" 2>/dev/null || ( ${ROOT:+AR_ROOT=$ROOT }"$SCRIPT" fblookup < /dev/null > /dev/null 2>&1 & )
 	fi ;;
 esac
 $nx
@@ -633,12 +637,13 @@ fb_lookup() {   # up to 10 lookups, while there's anything to ask and Fingerbank
 	done
 }
 
-# From the sampler: one round of lookups at a time, in the background, so a slow answer never holds up a sample.
-fb_tick() {
+# From dnsmasq's lease script (a new fingerprint) and the sampler: one round of lookups at a time, in the background.
+fb_tick() {   # [wait]: wait for a round that's running (dnsmasq's script: its new fingerprint mustn't be missed)
 	fb_on && [ -s "$DHCP_FP" ] && have curl || return 0
+	lk="-n"; [ "$1" = wait ] && lk="-w 120"
 	st=$(cat "$TMPD/fb_state" 2>/dev/null)
 	case "$st" in badkey) return 0 ;; "wait "*) [ "$(now)" -ge "${st#wait }" ] 2>/dev/null || return 0 ;; esac
-	( exec 8>&- 7>"$TMPD/fb.lock"; flock -n 7 || exit 0; fb_lookup ) < /dev/null > /dev/null 2>&1 &
+	( exec 8>&- 7>"$TMPD/fb.lock"; flock $lk 7 || exit 0; fb_lookup ) < /dev/null > /dev/null 2>&1 &
 }
 
 # For the page: "MAC>score>Fingerbank's device path>options|" for each device with a fingerprint
@@ -699,14 +704,18 @@ EOF
 	fb_hooks add
 	log "Fingerbank turned on"
 	if fb_restart_dnsmasq on; then
-		FB_MSG="Saved. Each device is looked up the next time it connects or renews its address (within about 12 hours), while the Arteria page is open.$note"
+		FB_MSG="Saved. Each device is recognised the next time it connects or renews its address. To recognise Wi-Fi devices now, use Recognise now (they reconnect for a few seconds).$note"
 	else
 		FB_MSG="Saved, but dnsmasq hasn't picked up the change yet. It will at its next restart (a reboot, or saving a LAN setting).$note"
 	fi
 	return 0
 }
 
-fingerbank_cmd() {   # [off]
+fingerbank_cmd() {   # [off | now]
+	if [ "$1" = now ]; then
+		tmpd; say "Reconnecting each Wi-Fi device that has no fingerprint yet, one at a time (a few seconds off Wi-Fi each)..."
+		fb_nudge || die "$FB_MSG"; say "$FB_MSG"; return 0
+	fi
 	if [ "$1" = off ]; then
 		fb_off
 		say "Fingerbank is off: the key and Fingerbank's answers are deleted, and dnsmasq runs the router's own lease script directly again."
@@ -739,6 +748,7 @@ EOF
 	say "Checking the key with Fingerbank..."
 	fb_enable "$k" || die "$FB_MSG"
 	say "$FB_MSG"
+	say "To recognise Wi-Fi devices now (each reconnects for a few seconds): $SCRIPT fingerbank now"
 	say "To stop and delete the key and the answers: $SCRIPT fingerbank off (or the page's Settings)."
 }
 
@@ -761,9 +771,10 @@ fb_status() {   # -> fb.htm, for the page's Settings: never the key, only its la
 	hk=false; fb_hooked && hk=true
 	bz=false; [ -f "$TMPD/fb_busy" ] && bz=true
 	dv=$(fb_devices); kn=$(awk -F'\t' '$2 == 200 { n++ } END { print n + 0 }' "$FB_CACHE" 2>/dev/null)
+	wt=0; fb_on && [ -d "$TMPD" ] && wt=$(fb_waiting | grep -c .)
 	ok=$(sed -n 1p "$TMPD/fb_msg" 2>/dev/null); case "$ok" in 1) ok=true ;; 0) ok=false ;; *) ok=null ;; esac
-	printf '{"on":%s,"tail":"%s","hooked":%s,"busy":%s,"devices":%s,"known":%s,"last":"%s","state":"%s","seq":%s,"ok":%s,"msg":"%s","prep":"%s"}' \
-		"$on" "$tl" "$hk" "$bz" "${dv:-0}" "${kn:-0}" "$(cut -d' ' -f1 "$TMPD/fb_last" 2>/dev/null | tr -cd '0-9')" \
+	printf '{"on":%s,"tail":"%s","hooked":%s,"busy":%s,"devices":%s,"known":%s,"waiting":%s,"last":"%s","state":"%s","seq":%s,"ok":%s,"msg":"%s","prep":"%s"}' \
+		"$on" "$tl" "$hk" "$bz" "${dv:-0}" "${kn:-0}" "${wt:-0}" "$(cut -d' ' -f1 "$TMPD/fb_last" 2>/dev/null | tr -cd '0-9')" \
 		"$(cut -d' ' -f1 "$TMPD/fb_state" 2>/dev/null | tr -cd 'a-z')" "$(cat "$TMPD/fb_seq" 2>/dev/null || echo 0)" "$ok" \
 		"$(js "$(sed -n '2,$p' "$TMPD/fb_msg" 2>/dev/null)")" "$(cat "$TMPD/fb_prep" 2>/dev/null)" | write_atomic "$d/fb.htm"
 }
@@ -783,6 +794,68 @@ fb_ui_save() {
 	rm -f "$TMPD/cs.saved" "$TMPD/cs.new"
 	touch "$TMPD/fb_busy"; fb_msg "" "Checking the key with Fingerbank..."; fb_status
 	if fb_enable "$k"; then fb_msg 1 "$FB_MSG"; else fb_msg 0 "$FB_MSG"; fi
+	rm -f "$TMPD/fb_busy"; fb_status
+}
+# A device that stays connected asks for its address again only when half its lease is over: about 12 hours on ASUS's
+# default lease. "Recognise now" disconnects each Wi-Fi device that has a lease from the router but no fingerprint yet,
+# one at a time, so it reconnects and asks right away (a few seconds off Wi-Fi each). Never the router, a node or a
+# node's backhaul. Wired devices can't be nudged: they show up at their next renewal.
+NUDGE_GAP="${AR_NUDGE_GAP:-3}"   # seconds between two devices (AR_NUDGE_GAP: test hook only)
+case "$NUDGE_GAP" in ''|*[!0-9]*) NUDGE_GAP=3 ;; esac
+fb_waiting() {   # MACs with a lease from the router and no fingerprint yet
+	{
+		own_macs
+		node_list | while read -r m ip model; do echo "$m"; node_stas "$m" | tr ' ' '\n'; done
+		cut -d' ' -f1 "$DHCP_FP" 2>/dev/null
+	} | tr 'a-f' 'A-F' | grep . > "$TMPD/nudge.skip"
+	awk 'NR == FNR { skip[$1] = 1; next } { m = toupper($2) } length(m) == 17 && m ~ /^[0-9A-F:]+$/ && !(m in skip) && !seen[m]++ { print m }' \
+		"$TMPD/nudge.skip" "$ROOT/var/lib/misc/dnsmasq.leases" 2>/dev/null
+	rm -f "$TMPD/nudge.skip"
+}
+node_nudge() {   # ip "MAC MAC ..." -> how many of them the node reconnected (key login only, never a password)
+	b=$(ssh_batch); [ -n "$b" ] || { echo 0; return 0; }
+	ssh_home_init; o="$TMPD/nudge.$$"
+	cmd="n=0; for m in $2; do for i in \$(nvram get wl0_ifname) \$(nvram get wl1_ifname) \$(nvram get wl2_ifname) \$(nvram get wl0_vifs) \$(nvram get wl1_vifs) \$(nvram get wl2_vifs); do if wl -i \$i assoclist 2>/dev/null | grep -qi \" \$m\$\"; then wl -i \$i deauthenticate \$m > /dev/null 2>&1; n=\$((n + 1)); sleep $NUDGE_GAP; break; fi; done; done; echo arteria-nudged \$n"
+	(HOME="$SSH_HOME" exec dbclient $b -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" "$cmd") < /dev/null > "$o" 2>&1 &
+	p=$!; i=0
+	while kill -0 "$p" 2>/dev/null; do [ $i -ge 180 ] && { kill "$p" 2>/dev/null; break; }; sleep 1; i=$((i + 1)); done
+	n=$(sed -n 's/^arteria-nudged \([0-9][0-9]*\)$/\1/p' "$o" 2>/dev/null | tail -n 1); rm -f "$o"
+	echo "${n:-0}"
+}
+fb_nudge() {   # -> FB_MSG; status updates go to fb.htm as it goes
+	fb_on || { FB_MSG="Fingerbank is off: add a key first."; return 1; }
+	w=$(fb_waiting); total=$(printf '%s\n' "$w" | grep -c .)
+	[ "$total" -gt 0 ] || { FB_MSG="Every device with an address from the router already has a fingerprint."; return 0; }
+	done_n=0; left=""
+	for m in $w; do
+		hit=0
+		for p in $(radio_list); do
+			x=${p%%:*}
+			if wl -i "$x" assoclist 2>/dev/null | grep -qi " $m$"; then wl -i "$x" deauthenticate "$m" > /dev/null 2>&1 && hit=1; break; fi
+		done
+		if [ $hit = 1 ]; then
+			done_n=$((done_n + 1)); fb_msg "" "Reconnecting Wi-Fi devices, one at a time: $done_n so far..."; fb_status; sleep "$NUDGE_GAP"
+		else left="$left $m"; fi
+	done
+	# the rest may be on an AiMesh node: each node reconnects those of them it has
+	if [ -n "$left" ] && [ "$NODES" = on ] && [ -s "$KEY" ] && have dbclient; then
+		node_list > "$TMPD/nudge.nodes"
+		while read -r nm ip model; do
+			[ -n "$ip" ] || continue
+			fb_msg "" "Reconnecting Wi-Fi devices on $model..."; fb_status
+			done_n=$((done_n + $(node_nudge "$ip" "$left")))
+		done < "$TMPD/nudge.nodes"
+		rm -f "$TMPD/nudge.nodes"
+	fi
+	rest=$((total - done_n))
+	FB_MSG="Reconnected $done_n Wi-Fi device(s): each is looked up as it gets its address again."
+	[ $rest -gt 0 ] && FB_MSG="$FB_MSG $rest more aren't on Wi-Fi right now (wired, or away): they're looked up when they next renew their address."
+	return 0
+}
+fb_ui_now() {
+	touch "$TMPD/fb_busy"; fb_msg "" "Reconnecting Wi-Fi devices, one at a time..."; fb_status
+	if fb_nudge; then fb_msg 1 "$FB_MSG"; else fb_msg 0 "$FB_MSG"; fi
+	log "Fingerbank: $FB_MSG"
 	rm -f "$TMPD/fb_busy"; fb_status
 }
 fb_ui_off() {
@@ -1603,7 +1676,7 @@ amtm_update() {   # [check]
 
 usage() {
 	say "Usage: $0 [menu] | install | check | update [force | dev [branch]] | uninstall | status |"
-	say "       nodes [test] | nodekey [node-ip | print] | fingerbank [off] | debug | sample | amtmupdate [check] | startup | version"
+	say "       nodes [test] | nodekey [node-ip | print] | fingerbank [off | now] | debug | sample | amtmupdate [check] | startup | version"
 }
 menu_pause() { printf '\n Press Enter to go back to the menu '; read -r dummy || exit 0; }
 menu_uninstall() {   # true once removed
@@ -1690,6 +1763,7 @@ case "$1" in
 	nodekey)       nodekey "$2"; exit $? ;;
 	fingerbank)    fingerbank_cmd "$2"; exit $? ;;
 	dnsmasq_conf)  dnsmasq_conf "$2" ;;
+	fblookup)      fb_on && tmpd && fb_tick wait ;;   # from dnsmasq's lease script, for a new fingerprint
 	status)        status ;;
 	debug)         debug ;;
 	version)       say "$VERSION" ;;

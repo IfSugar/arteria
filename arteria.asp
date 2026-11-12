@@ -157,28 +157,27 @@
 #ar .ar-link:hover, #ar .ar-foot a:hover { color: var(--ink-2); }
 #ar .ar-side.ar-report { flex: 1 1 0; width: auto; }
 #ar .ar-set { position: absolute; inset: 0; z-index: 6; background: var(--surface); display: flex; flex-direction: column; padding: 12px 8px 6px; }
-#ar .ar-set-body { flex: 1 1 0; min-height: 0; overflow: auto; padding: 4px 14px 8px 8px; color: var(--ink-2); font-size: 12.5px; line-height: 1.55; }
-#ar .ar-set-body h3 { margin: 10px 0 2px; font-size: 15px; line-height: 20px; color: var(--ink); font-weight: 700; }
-#ar .ar-set-body h4 { margin: 14px 0 2px; font-size: 12.5px; color: var(--ink); font-weight: 700; }
-#ar .ar-set-body p { margin: 8px 0; }
-#ar .ar-set-body ol { margin: 4px 0 8px; padding-left: 20px; }
+#ar .ar-set-body { flex: 1 1 0; min-height: 0; overflow: auto; padding: 0 14px 4px 8px; color: var(--ink-2); font-size: 12.5px; line-height: 1.45; }
+#ar .ar-set-body h3 { margin: 8px 0 0; font-size: 15px; line-height: 20px; color: var(--ink); font-weight: 700; }
+#ar .ar-set-body p { margin: 6px 0; }
 #ar .ar-set-body a { color: var(--dnt); }
 #ar .ar-set-body code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; color: var(--ink); }
 #ar .ar-tag { margin-left: 6px; padding: 1px 7px; border: 1px solid #6b7b80; border-radius: 9px; font-size: 10.5px; font-weight: 600; color: var(--muted); vertical-align: 2px; }
 #ar .ar-set-st { color: var(--ink-2); }
 #ar .ar-set-st > span:first-child { color: var(--ink); font-weight: 700; }
 #ar .ar-set-st .ok { color: #8fd694; } #ar .ar-set-st .bad { color: var(--up); }
-#ar .ar-set-box { margin: 10px 0; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: #263034; }
+#ar .ar-set-box { margin: 8px 0; padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px; background: #263034; }
 #ar .ar-set-box.ar-warn { border-color: rgba(255,204,0,.45); background: rgba(255,204,0,.06); }
-#ar .ar-set-row { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+#ar .ar-set-row { display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+#ar .ar-set-now { flex: 1 1 0; min-width: 0; color: var(--muted); }
 #ar .ar-set-row input { flex: 1 1 0; min-width: 0; height: 34px; padding: 0 10px; border: 1px solid #6b7b80; border-radius: 8px; background: #1f272a; color: var(--ink); font: 13px ui-monospace, Menlo, Consolas, monospace; }
 #ar .ar-set-row input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 #ar .ar-btn { flex: none; height: 34px; min-width: 76px; padding: 0 14px; border: 0; border-radius: 17px; background: var(--accent); color: #1f272a; font-size: 12.5px; font-weight: 700; }
 #ar .ar-btn.ar-btn-2 { background: none; border: 1px solid #6b7b80; color: var(--ink-2); }
 #ar .ar-btn:disabled { opacity: .5; cursor: default; }
-#ar .ar-set-msg { min-height: 20px; color: var(--ink); }
+#ar .ar-set-msg { min-height: 18px; margin: 8px 0 0; color: var(--ink); }
 #ar .ar-set-msg.ok { color: #8fd694; } #ar .ar-set-msg.bad { color: var(--upt); }
-#ar .ar-set-fine { color: var(--muted); font-size: 11.5px; }
+
 #ar .ar-report textarea { flex: 1 1 0; min-height: 0; margin: 0 4px; resize: none; border: 1px solid var(--line); border-radius: 8px; background: #1f272a; color: var(--ink-2);
 	font: 10px/14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 6px 8px; white-space: pre; overflow: auto; }
 #ar .hide { display: none !important; }
@@ -427,14 +426,17 @@ function fbMsg(text, good) {
 }
 function renderFb() {
 	var st = A.fb, on = !!(st && st.on), el = $('arFbSt');
-	if (!on) el.innerHTML = '<span>Off</span> · Arteria recognises devices by their names, the router\'s detection and their makers';
-	else el.innerHTML = '<span class="ok">On</span> · key …' + esc(st.tail) + ' · ' + (+st.devices || 0) + ' devices fingerprinted · ' + (+st.known || 0) + ' kinds of device known to Fingerbank' +
+	if (!on) el.innerHTML = '<span>Off</span> · devices are recognised by their names, the router\'s detection and their makers';
+	else el.innerHTML = '<span class="ok">On</span> · key …' + esc(st.tail) + ' · ' + (+st.devices || 0) + ' devices fingerprinted · ' + (+st.known || 0) + ' kinds known' +
+		(+st.waiting ? ' · ' + (+st.waiting) + ' not seen yet' : '') +
 		(st.state === 'badkey' ? ' · <span class="bad">Fingerbank turned the key down: save a new one</span>' : st.state === 'wait' ? ' · waiting before the next lookups' : '') +
 		(st.hooked ? '' : ' · <span class="bad">dnsmasq hasn\'t picked it up yet</span>');
 	$('arFbSave').textContent = on ? 'Replace key' : 'Save';
 	$('arFbOff').className = on ? 'ar-btn ar-btn-2' : 'ar-btn ar-btn-2 hide';
+	$('arFbHow').className = on ? 'hide' : '';
+	$('arFbNowRow').className = on ? 'ar-set-row' : 'ar-set-row hide';
 	var busy = A.fbBusy || !!(st && st.busy);
-	$('arFbSave').disabled = busy; $('arFbOff').disabled = busy; $('arFbKey').disabled = busy;
+	$('arFbSave').disabled = busy; $('arFbOff').disabled = busy; $('arFbKey').disabled = busy; $('arFbNow').disabled = busy;
 }
 function fbBusy(b) { A.fbBusy = b; renderFb(); }
 function fbDone(st) { fbMsg(st.msg, st.ok); }
@@ -462,6 +464,13 @@ function fbOff() {
 	fbBusy(true); fbMsg('Turning Fingerbank off…');
 	post('start_arteriafboff')
 		.then(function () { return fbWait(function (st) { return +st.seq > seq0 && !st.busy && st.ok !== null; }, 30000); })
+		.then(fbDone, fbLate).then(function () { fbBusy(false); });
+}
+function fbNow() {
+	var seq0 = +(A.fb || {}).seq || 0;
+	fbBusy(true); fbMsg('Reconnecting Wi-Fi devices, one at a time…');
+	post('start_arteriafbnow')
+		.then(function () { return fbWait(function (st) { if (st.busy && st.msg) fbMsg(st.msg); return +st.seq > seq0 && !st.busy && st.ok !== null; }, 300000); })
 		.then(fbDone, fbLate).then(function () { fbBusy(false); });
 }
 function setSettings(on) {
@@ -2796,6 +2805,7 @@ function boot() {
 	$('arFbSave').addEventListener('click', fbSave);
 	$('arFbKey').addEventListener('keydown', function (e) { if (e.key === 'Enter') fbSave(); });
 	$('arFbOff').addEventListener('click', fbOff);
+	$('arFbNow').addEventListener('click', fbNow);
 	document.addEventListener('keydown', function () { A.kbd = true; }, true);
 	document.addEventListener('pointerdown', function () { A.kbd = false; }, true);
 	document.addEventListener('visibilitychange', function () { if (document.hidden) { suspend(); } else if (!A.paused) resume(); });
@@ -2846,7 +2856,6 @@ window.Arteria = { _t: { fbKind: fbKind, objDevice: objDevice, objNode: objNode,
 <tr>
 <td bgcolor="#4D595D" colspan="3" valign="top">
 <div>&nbsp;</div>
-<div class="formfontdesc">Live traffic between the internet, your router, its AiMesh nodes and every client. The router samples only while this page is open.</div>
 
 <div id="ar">
 	<div class="ar-bar">
@@ -2895,22 +2904,20 @@ window.Arteria = { _t: { fbKind: fbKind, objDevice: objDevice, objNode: objNode,
 			<div class="ar-set-body">
 				<h3>Device recognition with Fingerbank <span class="ar-tag">optional</span></h3>
 				<p class="ar-set-st" id="arFbSt">Off</p>
-				<p>Arteria works fully without this, and it stays off unless you add a key. When it's on, Arteria asks <a href="https://www.fingerbank.org" target="_blank" rel="noopener noreferrer">Fingerbank</a> what each device is, from the DHCP options the device asks for when it gets an address. That tells an iPhone from an Echo or a Fire TV Stick, even when a device uses a private MAC address and has no name. Fingerbank's answer counts after the icon you chose for a device and before its name.</p>
-				<div class="ar-set-box"><b>Adding a key shares information with Fingerbank.</b> For each kind of device on your network, Arteria sends Fingerbank the list of DHCP options it asks for and its DHCP vendor class (such as <code>android-dhcp-14</code>). Never a MAC address, a device name or an IP address on your network. Fingerbank also sees your public IP address, as any website does, and adds combinations it doesn't know yet to its database. See Fingerbank's terms when you sign up.</div>
-				<h4>Get a free key</h4>
-				<ol>
-					<li>Open <a href="https://api.fingerbank.org" target="_blank" rel="noopener noreferrer">api.fingerbank.org</a> and choose <b>Login or Signup</b> to create a free account.</li>
-					<li>Open your account page there and copy your <b>API key</b>.</li>
-					<li>Paste it below and choose <b>Save</b>.</li>
-				</ol>
-				<div class="ar-set-box ar-warn"><b>Keep your key to yourself.</b> Don't share it or post it anywhere (forums, GitHub issues, screenshots). The free key allows 300 lookups an hour: anyone using your key uses up your lookups, and Fingerbank can block a key that is misused. Arteria uses at most 100 an hour.</div>
+				<p><a href="https://www.fingerbank.org" target="_blank" rel="noopener noreferrer">Fingerbank</a> tells devices apart by the DHCP options they ask for, such as an iPhone from an Echo, even without a name. Arteria works fully without it. Its answer comes after the icon you chose and before the name.</p>
+				<div class="ar-set-box"><b>Adding a key shares data with Fingerbank:</b> each kind of device's DHCP options and vendor class (e.g. <code>android-dhcp-14</code>), never a MAC address, name or IP address on your network. Fingerbank sees your public IP, like any website, and keeps combinations it doesn't know.</div>
+				<p id="arFbHow"><b>Get a free key:</b> sign up at <a href="https://api.fingerbank.org" target="_blank" rel="noopener noreferrer">api.fingerbank.org</a> (<i>Login or Signup</i>), copy the <b>API key</b> from your account page and paste it here.</p>
+				<div class="ar-set-box ar-warn"><b>Keep your key to yourself.</b> Don't post it anywhere: the free key allows 300 lookups an hour, anyone using it uses yours up, and Fingerbank can block a misused key.</div>
 				<div class="ar-set-row">
 					<input type="password" id="arFbKey" autocomplete="off" spellcheck="false" maxlength="128" placeholder="Fingerbank API key" aria-label="Fingerbank API key">
-					<button type="button" class="ar-btn" id="arFbSave">Save</button>
-					<button type="button" class="ar-btn ar-btn-2 hide" id="arFbOff">Turn off</button>
+					<button type="button" class="ar-btn" id="arFbSave" title="Checks the key with Fingerbank, then restarts the router's DNS and DHCP service (about a second)">Save</button>
+					<button type="button" class="ar-btn ar-btn-2 hide" id="arFbOff" title="Deletes the key and Fingerbank's answers">Turn off</button>
+				</div>
+				<div class="ar-set-row hide" id="arFbNowRow">
+					<span class="ar-set-now" id="arFbNowTx">Devices are recognised when they connect or renew their address, page open or not.</span>
+					<button type="button" class="ar-btn ar-btn-2" id="arFbNow" title="Reconnects each Wi-Fi device that has no fingerprint yet, one at a time, so it asks for its address now (a few seconds off Wi-Fi each). Wired devices show up when they renew their address.">Recognise now</button>
 				</div>
 				<p class="ar-set-msg" id="arFbMsg" role="status" aria-live="polite"></p>
-				<p class="ar-set-fine">Saving checks the key with Fingerbank, then restarts the router's DNS and DHCP service, which pauses for about a second. The key stays on the router, readable only by root, and is sent only to Fingerbank. Turning it off deletes the key and Fingerbank's answers. Over SSH: <code>arteria.sh fingerbank</code> and <code>arteria.sh fingerbank off</code>.</p>
 			</div>
 		</div>
 	</div>

@@ -151,11 +151,13 @@ async def settings(b, port):
         await ready(pg)
         await pg.click('#arSetBtn')
         txt = await pg.inner_text('#arSet')
-        need = ['optional', 'works fully without this', 'Adding a key shares information with Fingerbank', 'Never a MAC address',
-                'public IP address', 'Login or Signup', 'API key', 'Keep your key to yourself', '300 lookups an hour']
+        need = ['optional', 'works fully without it', 'Adding a key shares data with Fingerbank', 'never a MAC address',
+                'public IP', 'Login or Signup', 'API key', 'Keep your key to yourself', '300 lookups an hour']
+        fits = "(() => { const b = document.querySelector('#arSet .ar-set-body'); return b.scrollHeight <= b.clientHeight + 1; })()"
         check(await pg.is_visible('#arSet') and all(x in txt for x in need) and txt.find('Off') >= 0
               and await pg.get_attribute('#arFbKey', 'type') == 'password' and await pg.get_attribute('#arSetBtn', 'aria-expanded') == 'true',
               'settings: Fingerbank is optional and off; the page says what a key shares, how to get one, and to keep it private')
+        check(await pg.evaluate(fits), 'settings: all of it fits the page view without scrolling (off)')
         await pg.fill('#arFbKey', 'not a key'); await pg.click('#arFbSave')
         check("doesn't look like" in await pg.inner_text('#arFbMsg') and not await pg.evaluate("fetch('/_posted').then(r => r.json()).then(p => p.length)"),
               "settings: a key that can't be one never leaves the page")
@@ -168,6 +170,11 @@ async def settings(b, port):
         check('key …1f2e' in await pg.inner_text('#arFbSt') and await pg.input_value('#arFbKey') == '' and await pg.is_visible('#arFbOff')
               and posted[-1] == {'otheraddon_path': '/opt/share/otheraddon', 'otheraddon_mode': 'on', 'arteria_fbkey': 'abcdef0123456789abcdef0123456789abcd1f2e'},
               "settings: a good key goes to the router with every other addon's settings; the page shows only its last 4 characters")
+        check(await pg.evaluate(fits) and await pg.is_visible('#arFbNow') and not await pg.is_visible('#arFbHow'),
+              'settings: on, it still fits without scrolling, with Recognise now instead of the sign-up line')
+        await pg.click('#arFbNow')
+        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('Reconnected') === 0", timeout=15000)
+        check('2 not seen yet' in await pg.inner_text('#arFbSt') and await pg.evaluate(fits), 'settings: Recognise now reports what it did, and the panel still fits')
         await pg.click('#arFbOff')
         sure = await pg.inner_text('#arFbOff')
         await pg.click('#arFbOff')

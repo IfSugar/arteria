@@ -172,7 +172,7 @@ def names():
 # Settings: what the router does with the page's Fingerbank requests (arteria.sh fb_ui_prep / fb_ui_save / fb_ui_off),
 # and the addons' shared settings the router puts in the page (one other addon's, made up).
 CUSTOM = {'otheraddon_path': '/opt/share/otheraddon', 'otheraddon_mode': 'on'}
-FB = {'on': False, 'tail': '', 'hooked': False, 'busy': False, 'devices': 0, 'known': 0, 'last': '', 'state': '', 'seq': 0, 'ok': None, 'msg': '', 'prep': ''}
+FB = {'on': False, 'tail': '', 'hooked': False, 'busy': False, 'devices': 0, 'known': 0, 'waiting': 0, 'last': '', 'state': '', 'seq': 0, 'ok': None, 'msg': '', 'prep': ''}
 POSTED = []
 
 
@@ -185,10 +185,13 @@ def router_action(f):
         if k.startswith('BAD'):
             FB.update(seq=FB['seq'] + 2, ok=False, msg="Fingerbank turned this key down (HTTP 401). Check it on your account page at api.fingerbank.org. Nothing changed.")
         else:
-            FB.update(on=True, tail=k[-4:], hooked=True, devices=14, known=9, last='200', seq=FB['seq'] + 2, ok=True,
-                      msg='Saved. Each device is looked up the next time it connects or renews its address (within about 12 hours), while the Arteria page is open.')
+            FB.update(on=True, tail=k[-4:], hooked=True, devices=6, known=4, waiting=7, last='200', seq=FB['seq'] + 2, ok=True,
+                      msg='Saved. Each device is recognised the next time it connects or renews its address. To recognise Wi-Fi devices now, use Recognise now (they reconnect for a few seconds).')
+    elif act == 'start_arteriafbnow':
+        FB.update(devices=11, known=8, waiting=2, seq=FB['seq'] + 2, ok=True,
+                  msg="Reconnected 5 Wi-Fi device(s): each is looked up as it gets its address again. 2 more aren't on Wi-Fi right now (wired, or away): they're looked up when they next renew their address.")
     elif act == 'start_arteriafboff':
-        FB.update(on=False, tail='', hooked=False, devices=0, known=0, last='', seq=FB['seq'] + 2, ok=True,
+        FB.update(on=False, tail='', hooked=False, devices=0, known=0, waiting=0, last='', seq=FB['seq'] + 2, ok=True,
                   msg="Fingerbank is off. The key and its answers are deleted, and dnsmasq runs the router's own lease script directly again.")
 
 

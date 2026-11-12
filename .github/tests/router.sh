@@ -551,6 +551,7 @@ esac
 EOF
 chmod +x "$t/dhcpc_lease" "$B/service" "$B/dnsmasq" "$B/curl"
 FBK=abcdef0123456789abcdef0123456789abcdef01
+fbst() { python3 -c "import json,sys; v=json.load(open(sys.argv[1]))[sys.argv[2]]; print(json.dumps(v) if not isinstance(v, str) else v)" "$W/fb.htm" "$1"; }
 fbk="$R/jffs/addons/arteria/fingerbank_key"
 
 # A key Fingerbank turns down changes nothing
@@ -579,35 +580,43 @@ PATH="$B" service restart_dnsmasq
 
 # The lease script, called as dnsmasq calls it: it notes the fingerprint (and the vendor class, cleaned), always hands
 # on to ASUS's script with the same arguments and environment, and ignores a MAC or option list that isn't one
-: > "$t/lease.log"
+: > "$t/lease.log"; : > "$t/fbcurl.args"
 lease() { env -i PATH="$B" DNSMASQ_REQUESTED_OPTIONS="$1" DNSMASQ_VENDOR_CLASS="$2" "$hook" "$3" "$4" 192.168.50.99 host; }
-lease '1,3,6,15,31,33,43,44,46,47,119,121,249,252' 'dhcpcd-9.4.1:Linux:armv7l "x"<b>' add 02:cc:00:00:00:05
-lease '1,3,6,15,119,252' '' old 02:cc:00:00:00:12
+lease '1,3,6,15,31,33,43,44,46,47,119,121,249,252' 'dhcpcd-9.4.1:Linux:armv7l "x"<>' add 02:cc:00:00:00:05
+lease '1,3,6,15,119,252' '  MSFT   5.0 ' old 02:cc:00:00:00:12
 lease '1,3,6;reboot' '' add '02:cc:00:00:00:0Z'
 lease '1,3,6' '' del 02:cc:00:00:00:07
 lease '1,3,6,15,119,252,95' '' add 02:cc:00:00:00:12    # the same device again: one line, the latest
 fp="$R/tmp/arteria/dhcp_fp"
-if [ "$(cat "$fp")" = "$(printf '02:CC:00:00:00:05 1,3,6,15,31,33,43,44,46,47,119,121,249,252 dhcpcd-9.4.1:Linux:armv7l xb\n02:CC:00:00:00:12 1,3,6,15,119,252,95 ')" ] \
+if [ "$(cat "$fp")" = "$(printf '02:CC:00:00:00:05 1,3,6,15,31,33,43,44,46,47,119,121,249,252 dhcpcd-9.4.1:Linux:armv7l x\n02:CC:00:00:00:12 1,3,6,15,119,252,95 ')" ] \
 	&& [ "$(grep -c '' "$t/lease.log")" = 5 ] && grep -q '^add 02:cc:00:00:00:05 192.168.50.99 host opts=1,3,6,15,31' "$t/lease.log" && grep -q '^del 02:cc:00:00:00:07 ' "$t/lease.log"; then
 	ok "lease script: notes each device's fingerprint once, cleaned; ASUS's script still gets every call, unchanged"
 else bad "lease script:"; cat "$fp" "$t/lease.log"; fi
 
-# While the page is open the sampler asks Fingerbank about each new fingerprint (the option list and vendor class only),
-# keeps the answers on JFFS, and the page gets them at once. The Echo's vendor class as dnsmasq gave it, cleaned.
-sed -i 's/armv7l xb$/armv7l x/' "$fp"
+# Fingerbank is asked about each new fingerprint at once, in the background, page open or not (the option list and
+# vendor class only), the answers stay on JFFS, and the page gets them when it opens.
+fb_answered() { grep -q '^1,3,6,15,119,252,95;' "$R/jffs/addons/arteria/fingerbank" 2>/dev/null && grep -q 'Amazon Echo' "$R/jffs/addons/arteria/fingerbank"; }
+waitfor 15 fb_answered
+python3 - "$R/jffs/addons/arteria/fingerbank" "$t/fbcurl.args" <<'EOF' && ok "lookups: each new fingerprint asked at once, page closed, without MAC or name" || fail=1
+import sys
+cache = [l.split('\t') for l in open(sys.argv[1]).read().splitlines()]
+got = set((c[0], c[1], c[2]) for c in cache)
+need = {('1,3,6,15,119,252,95;', '404', '0'), ('1,3,6,15,31,33,43,44,46,47,119,121,249,252;dhcpcd-9.4.1:Linux:armv7l x', '200', '87')}
+# :12's first fingerprint (its vendor class "  MSFT   5.0 " with single spaces) may or may not be asked about before :12 sent its next one
+assert need <= got <= need | {('1,3,6,15,119,252;MSFT 5.0', '404', '0')}, cache
+args = open(sys.argv[2]).read()
+assert args.count('interrogate') == len(cache), args
+assert '02:cc:00' not in args.lower() and 'host' not in args and '192.168' not in args, args
+EOF
 : > "$t/fbcurl.args"; rm -f "$W/names.htm"
 runi service_event start arteria
-fb_answered() { grep -q 'Amazon Echo' "$W/names.htm" 2>/dev/null && [ "$(grep -c . "$R/jffs/addons/arteria/fingerbank" 2>/dev/null)" = 2 ]; }
-waitfor 15 fb_answered
-python3 - "$W/names.htm" "$R/jffs/addons/arteria/fingerbank" "$t/fbcurl.args" <<'EOF' && ok "lookups: each fingerprint asked once, without MAC or name; the answer reaches the page" || fail=1
+fb_shown() { grep -q 'Amazon Echo' "$W/names.htm" 2>/dev/null; }
+waitfor 10 fb_shown
+python3 - "$W/names.htm" "$t/fbcurl.args" <<'EOF' && ok "the page gets the answers when it opens, without asking Fingerbank again" || fail=1
 import json, sys
 fb = json.load(open(sys.argv[1]))['fb']
 assert fb == '02:CC:00:00:00:05>87>Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo>1,3,6,15,31,33,43,44,46,47,119,121,249,252|02:CC:00:00:00:12>>>1,3,6,15,119,252,95|', fb
-cache = [l.split('\t') for l in open(sys.argv[2]).read().splitlines()]
-assert sorted((c[0], c[1], c[2]) for c in cache) == [('1,3,6,15,119,252,95;', '404', '0'), ('1,3,6,15,31,33,43,44,46,47,119,121,249,252;dhcpcd-9.4.1:Linux:armv7l x', '200', '87')], cache
-args = open(sys.argv[3]).read()
-assert args.count('interrogate') == 2, args
-assert '02:cc:00' not in args.lower() and 'host' not in args and '192.168' not in args, args
+assert open(sys.argv[2]).read().count('interrogate') == 0
 EOF
 runi service_event start arteriastop; waitfor 6 sampler_gone
 
@@ -617,6 +626,26 @@ if grep -q '^Fingerbank:  on, 2 devices fingerprinted, 1 kinds of device known t
 	&& grep -q "^Fingerbank:     on; lease script: Arteria's, then $t/dhcpc_lease; renewals: yes; 2 devices" "$t/dbg.out" \
 	&& ! grep -qi "$FBK\|02:cc:00" "$t/st.out" "$t/dbg.out"; then ok "status and debug: Fingerbank's state in counts, no key or MAC"
 else bad "status/debug:"; grep -i fingerbank "$t/st.out" "$t/dbg.out"; fi
+# Recognise now: each Wi-Fi device with a lease and no fingerprint yet is disconnected once, on the router or its node, so it
+# asks for its address now. Never the router, the node or its backhaul, nor a device that has a fingerprint already.
+export AR_NUDGE_GAP=0
+cp "$R/var/lib/misc/dnsmasq.leases" "$t/leases.before"
+for m in 01 03 05 12 13 99; do echo "1794400000 02:cc:00:00:00:$m 192.168.50.1$m h$m *"; done > "$R/var/lib/misc/dnsmasq.leases"
+printf '1794400000 02:10:00:00:00:80 192.168.50.10 node *\n1794400000 02:10:00:00:00:81 192.168.50.11 bh *\n' >> "$R/var/lib/misc/dnsmasq.leases"
+for d in "$B" "$N"; do mv "$d/wl" "$d/wl.real"; w=router; [ "$d" = "$N" ] && w=node
+	printf '#!%s sh
+[ "$3" = deauthenticate ] && { echo "%s $2 $4" >> "%s/deauth.log"; exit 0; }
+exec "%s/wl.real" "$@"
+' "$bb" "$w" "$t" "$d" > "$d/wl"; chmod +x "$d/wl"; done
+: > "$t/deauth.log"
+runi service_event start arteriafbnow
+if [ "$(sort "$t/deauth.log")" = "$(printf 'node wl1.1 02:CC:00:00:00:13\nrouter eth6 02:CC:00:00:00:01\nrouter eth7 02:CC:00:00:00:03')" ] \
+	&& [ "$(fbst ok)" = true ] && fbst msg | grep -q "^Reconnected 3 Wi-Fi device(s).* 1 more aren't on Wi-Fi right now"; then
+	ok "recognise now: Wi-Fi devices without a fingerprint reconnect once, on the router and the node; never the node, its backhaul or a known device"
+else bad "recognise now:"; cat "$t/deauth.log" "$W/fb.htm"; fi
+[ "$(fbst waiting)" = 4 ] && ok "fb.htm counts the devices not seen yet" || { bad "waiting count:"; cat "$W/fb.htm"; }
+for d in "$B" "$N"; do mv -f "$d/wl.real" "$d/wl"; done
+cp "$t/leases.before" "$R/var/lib/misc/dnsmasq.leases"; unset AR_NUDGE_GAP
 printf 'BADKEY0123456789BADKEY01\n' > "$fbk"; lease '1,3,6,15,44' '' add 02:cc:00:00:00:01
 runi service_event start arteria; fb_refused() { grep -q badkey "$R/tmp/arteria/fb_state" 2>/dev/null; }; waitfor 10 fb_refused
 runi service_event start arteriastop; waitfor 6 sampler_gone
@@ -628,7 +657,6 @@ fb_refused && grep -q 'KEY TURNED DOWN' "$t/st.out" && ok "a key Fingerbank turn
 # puts back the copy it made just before, so every other addon's setting is exactly as it was; fb.htm tells the page.
 cs="$R/jffs/addons/custom_settings.txt"
 printf 'otheraddon_title Cool Addon 1.0\notheraddon_mode on\n' > "$cs"; cp "$cs" "$t/cs.before"
-fbst() { python3 -c "import json,sys; v=json.load(open(sys.argv[1]))[sys.argv[2]]; print(json.dumps(v) if not isinstance(v, str) else v)" "$W/fb.htm" "$1"; }
 # commands that get their arguments on a command line ([, test, printf, echo are programs on the router): they log them
 mkdir -p "$t/argv"; for c in '[' test printf echo expr; do printf '#!%s sh\necho "$*" >> "%s/argv.log"\nexec "%s" "%s" "$@"\n' "$bb" "$t" "$bb" "$c" > "$t/argv/$c"; chmod +x "$t/argv/$c"; done
 runw() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$t/argv:$B" BASH_ENV="$t/no-builtins.sh" "$bash_bin" "$script" "$@"; }
