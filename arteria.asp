@@ -2132,12 +2132,14 @@ function buildFlow(gs, net) {
 			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + esc(nn) + '</text>'));
 		}
 	});
-	/* pictures, as on the Map: the internet terminal over its label, the router over its name, each node over its bar.
+	/* with Pictures on, as on the Map: the internet terminal over its label, the router over its name, each node over its bar.
 	   Each is drawn with its bottom at 0 and moved into place like the labels. */
 	var pic = function (key, x, size, inner) { return lbl('pic:' + key, '<g transform="translate(' + n1(x - size / 2) + ' ' + (-size) + ')">' + inner + '</g>'); };
-	o.push(pic('wan', FX0.src - 8 - textW('Internet', true) / 2, FP().wan, wanPic(FP().wan)));
-	o.push(pic('rt', FX0.rt + 6, FP().rt, routerPic(model, FP().rt)));
-	gs.forEach(function (g) { if (g.node) o.push(pic('n:' + g.id, FX0.mesh + FBW.mesh / 2, FP().node, nodePic(g.node.model, FP().node, g.node.online))); });
+	if (A.pics) {
+		o.push(pic('wan', FX0.src - 8 - textW('Internet', true) / 2, FP().wan, wanPic(FP().wan)));
+		o.push(pic('rt', FX0.rt + 6, FP().rt, routerPic(model, FP().rt)));
+		gs.forEach(function (g) { if (g.node) o.push(pic('n:' + g.id, FX0.mesh + FBW.mesh / 2, FP().node, nodePic(g.node.model, FP().node, g.node.online))); });
+	}
 	var hs = 'font-size:10px;font-weight:700;letter-spacing:.12em;fill:#93a9b1';
 	var heads = '<text data-t="srchead" x="' + (FX0.src - 22) + '" y="68" style="' + hs + ';text-anchor:middle">SOURCE</text>' +
 		[[FX0.rt + 6, 'ROUTER'], [FX0.link + 5, 'LINK']].map(function (h) { return '<text x="' + h[0] + '" y="68" style="' + hs + ';text-anchor:middle">' + h[1] + '</text>'; }).join('') +
@@ -2184,7 +2186,7 @@ function flowLayout(gs, net, mode) {
 			if (aggH) Hh = aggH;
 			/* a node's backhaul can carry more than its listed clients (the node itself, rounding) */
 			if (g.node && !flowAgg(g) && gv * k > Hh) Hh = Math.min(gv * k, y - y0);
-			if (g.node) {   /* room for the node's picture above its name: move the group down if it doesn't fit */
+			if (g.node && A.pics) {   /* room for the node's picture above its name: move the group down if it doesn't fit */
 				var ly = Hh > 0 ? (y0 + y) / 2 - Hh / 2 - 7 : (y0 + y) / 2 + 4, room = ly - 16 - FP().node - (gi ? y0 - FGGAP : FTOP) - 2;
 				if (room < 0) { g.rows.forEach(function (r) { slot[r.id].top -= room; slot[r.id].bar -= room; }); y0 -= room; y -= room; }
 			}
@@ -2203,8 +2205,8 @@ function flowLayout(gs, net, mode) {
 	if (!LIM) rc = Math.min(rc, Math.max(G.flow.top + Hr / 2 + FSGAP, G.SH / 2));   /* scrolling: the router stays on the first screen */
 	var wv = Math.max(net.wan[f], 0), lv = Math.max(net.local[f], 0);
 	var hi = wv + lv > 0 ? Hr * Math.min(wv / (wv + lv), 1) : Hr;
-	/* the router's picture and name, and the internet's picture and label, fit under the column titles */
-	rc = Math.max(rc, FTOP + FP().rt + 27 + Hr / 2, FTOP + FP().wan + 19 + (Hr + FSGAP) / 2 - hi / 2);
+	/* with pictures, the router's picture and name, and the internet's picture and label, fit under the column titles */
+	if (A.pics) rc = Math.max(rc, FTOP + FP().rt + 27 + Hr / 2, FTOP + FP().wan + 19 + (Hr + FSGAP) / 2 - hi / 2);
 	var stop = rc - (Hr + FSGAP) / 2;
 	return { k: k, slot: Lf.slot, grp: grp, bottom: Lf.bottom, Hr: Hr, rtop: rc - Hr / 2,
 		src: { wan: { top: stop, h: hi }, loc: { top: stop + hi + FSGAP, h: Hr - hi } },
@@ -2229,7 +2231,7 @@ function flowRowInfo(g, r) {
 }
 /* The Flow view, every poll: the layout above, painted onto the scene (rebuilt only when the rows change). */
 function renderFlow(net) {
-	var gs = flowGroups(net), sig = flowSignature(gs) + '|' + (net.router.model || '');
+	var gs = flowGroups(net), sig = flowSignature(gs) + '|' + (net.router.model || '') + (A.pics ? '|pics' : '');
 	A.flowGs = gs;
 	if (sig !== A.flowSig) {
 		var b = buildFlow(gs, net);
@@ -2353,11 +2355,12 @@ function renderFlow(net) {
 		var x = flowRowInfo(g, r), name = x.name, sub = x.sub, icon = x.icon, st = x.st, c1 = x.c1, c2 = x.c2;
 		var v = st === 'ok' ? rowVal(r, f) : null, fm = fmt(v);
 		var isOn = rowSel(r);
-		var key = [name, sub, icon, fm.n, fm.u, st, upm, c1, c2, x.node ? !!x.node.online : ''].join('|');
+		var key = [name, sub, icon, fm.n, fm.u, st, upm, c1, c2, x.node ? !!x.node.online : '', !!A.pics].join('|');
 		if (r.more) el.setAttribute('aria-expanded', isOn ? 'true' : 'false');
 		if (el._k !== key) {
 			el._k = key;
-			el.querySelector('.ic').innerHTML = x.node ? nodePic(x.node.model, FP().row, x.node.online) : devicePic(icon, FP().row);
+			el.querySelector('.ic').innerHTML = !A.pics ? iconSvg(x.node ? FORM_ICON[formOf(x.node.model, 'tower').form] || 'mesh' : icon, 16, INK2)
+				: x.node ? nodePic(x.node.model, FP().row, x.node.online) : devicePic(icon, FP().row);
 			el.querySelector('.nm').textContent = name;
 			el.querySelector('.sb').textContent = sub;
 			var nEl = el.querySelector('.vl .n');
@@ -2372,7 +2375,7 @@ function renderFlow(net) {
 	$('arScaleSw').style.background = upm ? UP : DN;
 	$('arDn').className = upm ? '' : 'on-dn'; $('arUp').className = upm ? 'on-up' : '';
 	$('arDn').setAttribute('aria-pressed', upm ? 'false' : 'true'); $('arUp').setAttribute('aria-pressed', upm ? 'true' : 'false');
-	var nt = noticeFor(net) || ['Ribbon width follows throughput. Tap a device to trace it.', MUTED];
+	var nt = noticeFor(net) || ['Tap a device to trace it.', MUTED];
 	setNotice(nt[0], nt[1]);
 }
 /* The big view's third label line: how it's connected (band and signal, or port and speed). Link rates
@@ -2602,6 +2605,13 @@ function setUnit(u) {
 	$('arUnitMb').setAttribute('aria-pressed', A.unit === 'Mb' ? 'true' : 'false'); $('arUnitMB').setAttribute('aria-pressed', A.unit === 'MB' ? 'true' : 'false');
 	render();
 }
+/* The Flow shows outline icons (the default, the lightest look) or the Map's drawings; kept per browser. */
+function setPics(on) {
+	A.pics = !!on; store('flowpics', A.pics ? '1' : '0');
+	$('arPicsOff').className = A.pics ? '' : 'on'; $('arPicsOn').className = A.pics ? 'on' : '';
+	$('arPicsOff').setAttribute('aria-pressed', A.pics ? 'false' : 'true'); $('arPicsOn').setAttribute('aria-pressed', A.pics ? 'true' : 'false');
+	render();
+}
 /* ---------------------------------------------------------------- the expanded view
    Same DOM, same state, same render(): only the geometry changes. #ar moves to <body> while expanded so
    no ancestor of the router's page can clip it; a comment marks its place to go back to. */
@@ -2691,6 +2701,9 @@ function boot() {
 	$('arUnitMb').addEventListener('click', function () { setUnit('Mb'); });
 	$('arUnitMB').addEventListener('click', function () { setUnit('MB'); });
 	setUnit(store('unit'));
+	$('arPicsOff').addEventListener('click', function () { setPics(false); });
+	$('arPicsOn').addEventListener('click', function () { setPics(true); });
+	setPics(store('flowpics') === '1');
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
@@ -2808,6 +2821,7 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 					<button type="button" id="arDn" class="on-dn" aria-pressed="true">↓ Download</button>
 					<button type="button" id="arUp" aria-pressed="false">↑ Upload</button>
 				</div>
+				<div class="ar-unit" role="group" aria-label="Show devices as"><button type="button" id="arPicsOff" class="on" aria-pressed="true" title="Small outline icons: the lightest look">Icons</button><button type="button" id="arPicsOn" aria-pressed="false" title="The Map's drawings for each device, the router, each node and the internet">Pictures</button></div>
 				<div class="ar-notice" id="arNoticeFlow" style="flex:1 1 0;min-width:0"><span class="sw"></span><span class="tx"></span></div>
 				<div class="ar-scale"><span class="sw" id="arScaleSw"></span><span id="arScaleTx"></span></div>
 			</div>
