@@ -2,9 +2,12 @@
 """Records docs/demo.gif, the README's demo: the page served by preview.py with made-up data
 ("home" scenario), driven by a drawn cursor. Re-run it when the page changes.
 
+With --map it records docs/map.gif instead: the map alone, about 10 seconds at 600 px wide, small
+enough (about 1 MB) to embed in a forum post.
+
 Needs: Python 3 with Playwright (pip install playwright), Chrome or Chromium, Pillow and ffmpeg.
-Usage: python3 .github/demo-gif.py [path to chrome]   (about 3 minutes: the page runs for two
-minutes first, so the 2-minute internet chart is full)
+Usage: python3 .github/demo-gif.py [--map] [path to chrome]   (the full demo takes about 3 minutes:
+the page runs for two minutes first, so the 2-minute internet chart is full)
 """
 import asyncio, base64, io, os, shutil, subprocess, sys, tempfile, time
 from playwright.async_api import async_playwright
@@ -12,9 +15,13 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-OUT = os.path.join(REPO, 'docs', 'demo.gif')
-CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or None)
-FPS = 20
+MAP = '--map' in sys.argv
+ARGS = [a for a in sys.argv[1:] if a != '--map']
+OUT = os.path.join(REPO, 'docs', 'map.gif' if MAP else 'demo.gif')
+CHROME = ARGS[0] if ARGS else (shutil.which('google-chrome') or shutil.which('chromium') or None)
+FPS = 12 if MAP else 20
+COLORS = 96 if MAP else 192
+WIDTH = 600 if MAP else None   # the map GIF is scaled down: every moving packet costs bytes in every frame
 port = 8871
 
 CURSOR = """
@@ -40,9 +47,9 @@ async def record():
         pg = await b.new_page(viewport={'width': 900, 'height': 1000}, device_scale_factor=1)
         await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
         await pg.evaluate("localStorage.clear()")
-        await pg.wait_for_timeout(125000)   # warm up: rates, stand slots, and a full 2-minute chart
+        await pg.wait_for_timeout(25000 if MAP else 125000)   # warm up: rates, stand slots (and for the full demo, a full 2-minute chart)
         await pg.evaluate(CURSOR)
-        box = await pg.evaluate("() => { const r = document.getElementById('ar').getBoundingClientRect(); const c = document.getElementById('arHist').closest('.ar-cards') || document.getElementById('arHist').parentElement; const cb = c.getBoundingClientRect(); return [r.left, r.top, r.width, cb.bottom - r.top]; }")
+        box = await pg.evaluate("() => { const s = document.querySelector('#ar .ar-stage').getBoundingClientRect(); return [s.left, s.top, s.width, s.height]; }") if MAP else await pg.evaluate("() => { const r = document.getElementById('ar').getBoundingClientRect(); const c = document.getElementById('arHist').closest('.ar-cards') || document.getElementById('arHist').parentElement; const cb = c.getBoundingClientRect(); return [r.left, r.top, r.width, cb.bottom - r.top]; }")
         cdp = await pg.context.new_cdp_session(pg)
         def on_frame(ev):
             frames.append((ev['metadata']['timestamp'], ev['data']))
@@ -57,6 +64,15 @@ async def record():
             await pg.evaluate('([x, y]) => demoRipple(x, y)', [x, y]); await pg.click(sel, force=True)
             await pg.wait_for_timeout(after)
 
+        if MAP:
+            await pg.wait_for_timeout(3000)                                   # the map, flowing
+            await click('.ar-lb[data-id="00:00:5E:00:53:11"]', after=3400)     # trace a TV behind the node
+            await click('.ar-lb[data-id="00:00:5E:00:53:11"]', before=600, after=900)   # let go
+            await pg.evaluate('demoMove(820, 560)'); await pg.wait_for_timeout(1500)   # rest where it started, for a clean loop
+            await cdp.send('Page.stopScreencast')
+            await pg.wait_for_timeout(300)
+            await b.close()
+            return
         await pg.wait_for_timeout(3500)                                   # the map, flowing
         await click('.ar-lb[data-id="00:00:5E:00:53:11"]', after=3400)     # trace a TV behind the node
         await click('#arRoDet', after=3200)                                # its details
@@ -89,8 +105,9 @@ def build(tmp):
         img.save(os.path.join(tmp, 's%05d.png' % i))
     pal = os.path.join(tmp, 'palette.png')
     src = ['-framerate', str(FPS), '-i', os.path.join(tmp, 's%05d.png')]
-    subprocess.run(['ffmpeg', '-v', 'error', '-y'] + src + ['-vf', 'palettegen=max_colors=192:stats_mode=diff', pal], check=True)
-    subprocess.run(['ffmpeg', '-v', 'error', '-y'] + src + ['-i', pal, '-lavfi', 'paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle', '-loop', '0', OUT], check=True)
+    sc = 'scale=%d:-1:flags=lanczos,' % WIDTH if WIDTH else ''
+    subprocess.run(['ffmpeg', '-v', 'error', '-y'] + src + ['-vf', sc + 'palettegen=max_colors=%d:stats_mode=diff' % COLORS, pal], check=True)
+    subprocess.run(['ffmpeg', '-v', 'error', '-y'] + src + ['-i', pal, '-lavfi', ('[0:v]' + sc.rstrip(',') + '[x];[x][1:v]' if sc else '') + 'paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle', '-loop', '0', OUT], check=True)
     print('%s: %d frames, %d KB' % (os.path.relpath(OUT, REPO), n, os.path.getsize(OUT) // 1024))
 
 if __name__ == '__main__':
