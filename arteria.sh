@@ -4,7 +4,7 @@
 #  A live, animated map of how traffic flows between the internet, the router,
 #  its AiMesh nodes and every client. It only samples while its page is open.
 #
-#  Page: Traffic Analyzer -> Arteria (two views: Map and Flow)
+#  Page: Traffic Analyzer -> Arteria, or Network Tools -> Arteria without Traffic Analyzer (two views: Map and Flow)
 #
 #  Usage: arteria.sh                    (a menu, when run in a terminal: amtm opens this)
 #         arteria.sh install | update [force | dev [branch]] | uninstall | status | check |
