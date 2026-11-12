@@ -224,7 +224,7 @@ var A = {
 	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false,
 	prev: {}, sm: {}, bk: {}, names: null, namesAt: 0,
 	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowAt: 0,
-	hist: [], timers: {}, mapRefs: null, flowRefs: null, labels: {}, big: false, narrow: false, slotBy: {}
+	hist: [], timers: {}, mapRefs: null, flowRefs: null, big: false, narrow: false, slotBy: {}
 };
 
 /* ---------------------------------------------------------------- small helpers */
@@ -302,7 +302,6 @@ var ICON = {
 	phone: rr(7.5, 3, 9, 18, 2) + 'M11 18h2',
 	tv: rr(3, 5, 18, 12, 1.5) + 'M9 21h6M12 17v4',
 	tablet: rr(5, 3, 14, 18, 2) + 'M11 18h2',
-	iot: 'M9 3v5M15 3v5' + rr(6, 8, 12, 7, 2) + 'M12 15v6',
 	console: rr(3, 8, 18, 9, 4.5) + 'M8 11v3M6.5 12.5h3M15.5 12h.01M17.5 13.5h.01',
 	generic: rr(4, 7, 16, 10, 2) + 'M8 12h.01M12 12h4',
 	switch: rr(2.5, 8, 19, 8, 1.5) + 'M6 12h.01M9 12h.01M12 12h.01M15 12h.01M18 12h.01',
@@ -331,8 +330,7 @@ var ICON = {
 	more: ci(6, 12, 1.6) + ci(12, 12, 1.6) + ci(18, 12, 1.6),
 	expand: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
 	collapse: 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5',
-	full: rr(3, 5, 18, 14, 2) + 'M7 10V8.5h2M17 10V8.5h-2M7 14v1.5h2M17 14v1.5h-2',
-	home: 'M4 11l8-7 8 7M6 9.5V20h12V9.5'
+	full: rr(3, 5, 18, 14, 2) + 'M7 10V8.5h2M17 10V8.5h-2M7 14v1.5h2M17 14v1.5h-2'
 };
 function iconSvg(name, size, color) {
 	return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" aria-hidden="true" style="display:block;flex:none">' +
@@ -382,7 +380,7 @@ function heartbeat() {
 function poll() {
 	clearTimeout(A.timers.poll);
 	if (!running()) return;
-	getJSON('live.htm').then(onSample, function () { onSample(null); }).then(function () {
+	getJSON('live.htm').then(onSample, function () { onSample(null); }).then(null, logErr).then(function () {
 		A.timers.poll = setTimeout(poll, Math.max(1, A.interval) * 1000);
 	});
 	if (Date.now() - A.namesAt > 30000) loadNames();
@@ -402,7 +400,7 @@ function suspend() {
 }
 
 /* ---------------------------------------------------------------- names and device kinds */
-var WEAK = /^(dhcpcd|android-dhcp|udhcp|unknown|client|localhost|espressif|esp[_-]|wlan|\*|-)|:|^[0-9a-f]{10,}$/i;
+var JUNK_NAME = /^(dhcpcd|android-dhcp|udhcp|unknown|client|localhost|espressif|esp[_-]|wlan|\*|-)|:|^[0-9a-f]{10,}$/i;
 function parseNames(n) {
 	var out = { custom: {}, nmp: {}, lease: {}, cl: n && n.cl || {}, arp: {}, n6: {}, fixed: {} };
 	String(n && n.custom || '').split('<').forEach(function (e) {
@@ -432,13 +430,12 @@ function nameInfo(mac, al) {
 	var N = A.names, c = N && N.custom[mac], m = N && N.nmp[mac], l = N && N.lease[mac];
 	if (c && c.name) return { name: c.name, src: 'nick' };
 	if (al && al.name) return { name: al.name, src: 'alias' };
-	if (m && m.name && !WEAK.test(m.name) && m.name !== m.vendor) return { name: m.name.trim(), src: 'device' };
-	if (l && l.host && !WEAK.test(l.host)) return { name: l.host, src: 'device' };
-	var v = m && (m.vendor || m.vendorclass);
-	if (v && !WEAK.test(v)) return { name: v.replace(/,? (Co\.|Inc\.|Ltd\.|Corp\.|Corporation|Limited|Technology|Technologies|Electronics|Manufacturing|Communication).*$/i, '').trim(), src: 'maker' };
+	if (m && m.name && !JUNK_NAME.test(m.name) && m.name !== m.vendor) return { name: String(m.name).trim(), src: 'device' };
+	if (l && l.host && !JUNK_NAME.test(l.host)) return { name: l.host, src: 'device' };
+	var v = String(m && (m.vendor || m.vendorclass) || '');
+	if (v && !JUNK_NAME.test(v)) return { name: v.replace(/,? (Co\.|Inc\.|Ltd\.|Corp\.|Corporation|Limited|Technology|Technologies|Electronics|Manufacturing|Communication).*$/i, '').trim(), src: 'maker' };
 	return { name: 'Device …' + mac.slice(-5), src: 'tail' };
 }
-function nameOf(mac) { return nameInfo(mac).name; }
 /* ---- device kinds ----------------------------------------------------------------------------
    ASUS icon numbers (the "type" in custom_clientlist and in nmp_cl_json.js) -> Arteria kind.
    Source: client_function.js custom_icon_list_api.db and networkmap/db/nmp_*_type.js (3004.388.13). */
@@ -473,7 +470,7 @@ var KIND_STRONG = [
 	['speaker', /speaker|sonos|homepod|\becho\b|echo[ _-]?(dot|show|pop|studio)|alexa|google[ _-]?home|nest[ _-]?(mini|audio|hub)|\bbose\b|\bheos\b|\bjbl\b/i],
 	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?deck|\bswitch[ _-]?(oled|lite)\b/i],
 	['tablet', /ipad|tablet|kindle|\bkobo\b|e-?reader|paperwhite|galaxy[ _-]?tab|\btab\b/i],
-	['watch', /watch|fitbit|garmin|\bmi ?band\b|bracelet/i],
+	['watch', /watch\b|fitbit|garmin|\bmi ?band\b|bracelet/i],
 	['phone', /iphone|\bpixel[ _-]?\d|galaxy[ _-]?[asz]\d|phone\b|redmi|oneplus|\bpoco\b/i],
 	['printer', /printer|laserjet|officejet|deskjet|\benvy ?\d|\bepson|\bbrother\b|\bcanon\b|\bet-\d|\bmfc-|\bhl-l|scanner/i],
 	['doorbell', /doorbell|ring[ _-]?pro|\bring[ _-]?(door|video)/i],
@@ -481,12 +478,12 @@ var KIND_STRONG = [
 	['lock', /\block\b|smart ?lock|\bnuki\b|\byale\b|schlage/i],
 	['thermostat', /thermostat|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning/i],
 	['light', /bulb|\blamp\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee/i],
-	['hub', /bridge|\bhub\b|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee/i],
+	['hub', /\bbridge\b|\bhub\b|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee/i],
 	['air', /\bac\b|a\/c|air ?con|daikin|heat ?pump|climate|mitsubishi|sensibo|midea|\bgree\b/i],
 	['vacuum', /vacuum|roborock|rockrobo|roomba|irobot|deebot|ecovacs|dreame|\bmop\b/i],
 	['appliance', /washer|washing|dryer|fridge|refrigerator|freezer|\boven\b|dishwasher|microwave|kettle|coffee|purifier|humidifier|\bfan\b|heater|boiler|cooker|air ?fryer/i],
 	['plug', /\bplug|smart ?plug|\boutlet\b|socket|wall ?switch|power ?strip|\bhs1\d\d\b|\bkp1\d\d\b/i],
-	['sensor', /sensor|motion|\bleak\b|smoke|detector|alarm|weather ?station|aqara/i],
+	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara/i],
 	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life/i]
 ];
 /* Weaker hints: the maker (from the MAC address) and the DHCP vendor class. Used only when nothing above matched. */
@@ -505,37 +502,37 @@ var KIND_WEAK = [
 ];
 /* Why a device got its kind: kept for the readout's Details and the classification report. */
 function classify(mac, name, link, al) {
-	var N = A.names, c = al ? { name: al.name, type: al.type || 0 } : N && N.custom[mac], m = N && N.nmp[mac], l = N && N.lease[mac], x = N && N.asus && N.asus[mac];
-	var ct = (c && c.type) || 0, nt = (m && +m.type) || (x && +x.defaultType) || 0, os = (m && +m.os_type) || 0;
+	var N = A.names, c = al ? { name: al.name, type: al.type || 0 } : N && N.custom[mac], m = N && N.nmp[mac], l = N && N.lease[mac];
+	var ct = (c && c.type) || 0, nt = (m && +m.type) || 0, os = (m && +m.os_type) || 0;
 	var res = function (kind, rule, tok) { return { kind: kind, rule: rule, tok: tok || '', ct: ct, nt: nt, os: os }; };
 	/* 1. the icon you picked in the router's client list (not one the router saved along with a nickname) */
 	if (ct && TYPE_KIND[ct] && (!TYPE_LOOSE[ct] || (nt && ct !== nt))) return res(TYPE_KIND[ct], 'your icon');
 	/* 2. a name that says what it is: your nickname, then the names the device gave */
-	var names = [c && c.name, name, l && l.host, m && m.name, x && x.dpiDevice], i, j, r;
+	var names = [c && c.name, name, l && l.host, m && m.name], i, j;
 	for (j = 0; j < names.length; j++) {
 		if (!names[j]) continue;
-		for (i = 0; i < KIND_STRONG.length; i++) if ((r = KIND_STRONG[i][1].exec(names[j]))) return res(KIND_STRONG[i][0], 'name', ['nickname', 'label', 'hostname', 'router name', 'dpi'][j] + ' #' + i);
+		for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(names[j])) return res(KIND_STRONG[i][0], 'name', ['nickname', 'label', 'hostname', 'router name'][j] + ' #' + i);
 	}
 	/* 3. the router's own icon number */
 	var t = ct || nt;
 	if (t === 30 || (!TYPE_KIND[t] && os === 2)) return res(link === 'wired' ? 'desktop' : 'laptop', 'windows + link');
 	if (TYPE_KIND[t]) return res(TYPE_KIND[t], ct ? 'saved icon' : 'router icon');
-	/* 4. maker and DHCP vendor class */
-	var txt = [m && m.vendor, m && m.vendorclass, x && x.vendor].join(' ');
-	for (i = 0; i < KIND_WEAK.length; i++) if ((r = KIND_WEAK[i][1].exec(txt))) return res(KIND_WEAK[i][0], 'maker', '#' + i);
+	/* 4. Android says so itself (before the maker: phones carry Wi-Fi chips from module makers), then maker and DHCP vendor class */
 	if (/^android-dhcp/i.test(m && m.vendorclass || '') || os === 1) return res('phone', 'android');
+	var txt = [m && m.vendor, m && m.vendorclass].join(' ');
+	for (i = 0; i < KIND_WEAK.length; i++) if (KIND_WEAK[i][1].test(txt)) return res(KIND_WEAK[i][0], 'maker', '#' + i);
 	return res('generic', 'none');
 }
-function kindOf(mac, name, link) { return classify(mac, name, link).kind; }
 
 /* ---- names: private addresses and re-identifying a device whose address changed (section 7) ---- */
 function isPrivate(mac) { return /^.[26AEae]/.test(mac); }   /* locally administered: a randomised "private" Wi-Fi address */
 /* Host names many devices share out of the box: never enough to say two addresses are one device. */
 var GENERIC_HOST = /^(iphone|ipad|ipod|mac|imac|macbook(-?(air|pro))?|mac-?(mini|studio|pro)|apple-?watch|watch|android(-[0-9a-f]+)?|galaxy[-a-z0-9]*|pixel[-a-z0-9]*|localhost|espressif|esp[-_][0-9a-f]+|wlan\d*|unknown)$/i;
-function hostKey(h) { h = String(h || '').trim().toLowerCase().replace(/\.(local|lan|home)$/, ''); return h.length >= 4 && !WEAK.test(h) && !GENERIC_HOST.test(h) ? h : ''; }
+function hostKey(h) { h = String(h || '').trim().toLowerCase().replace(/\.(local|lan|home)$/, ''); return h.length >= 4 && !JUNK_NAME.test(h) && !GENERIC_HOST.test(h) ? h : ''; }
 function hostMemo(set) {   /* per-browser memory of "this named address used this host name"; the router stores nothing */
 	var m = {};
-	try { m = JSON.parse(store('hosts') || '{}') || {}; } catch (e) { m = {}; }
+	try { m = JSON.parse(store('hosts') || '{}'); } catch (e) { m = null; }
+	if (!m || typeof m !== 'object' || Array.isArray(m)) m = {};
 	if (set) {
 		Object.keys(set).forEach(function (k) { m[k] = set[k]; });
 		var ks = Object.keys(m);
@@ -600,7 +597,7 @@ function ipOf(dv) {
 function detailsFor(net, dv) {
 	var N = A.names || { custom: {}, nmp: {}, lease: {}, arp: {}, n6: {}, fixed: {} }, mac = dv.mac, m = N.nmp[mac], l = N.lease[mac], al = dv.alias, w = dv.why || {};
 	var ip = ipOf(dv);
-	var v6 = (N.n6 && N.n6[mac]) || [], now = Date.now() / 1000;
+	var v6 = (N.n6 && N.n6[mac]) || [], now = (net && net.epoch) || Date.now() / 1000;   /* the router's clock: the browser's can differ */
 	var left = l && +l.exp ? +l.exp - now : 0;
 	var lease = N.fixed && N.fixed[mac] ? 'Reserved' : (l ? (left > 0 ? 'DHCP · ' + ago(left) + ' left' : 'DHCP') : (ip ? 'Static' : '—'));
 	var priv = mac && isPrivate(mac), wifi = dv.link === 'wifi';
@@ -612,10 +609,10 @@ function detailsFor(net, dv) {
 	var cells = [
 		['IP address', ip || '—'],
 		[priv ? 'MAC · private' : 'MAC address', mac || '—', priv ? mac + ': a private (randomised) Wi-Fi address. It can change, and it says nothing about the maker.' : ''],
-		['Host name', (l && l.host) || (m && m.name) || '—'],
+		['Host name', (l && l.host && l.host !== '*' ? l.host : '') || (m && m.name) || '—'],
 		['Maker', (m && m.vendor) || (priv ? 'Hidden' : '—'), priv && !(m && m.vendor) ? 'A private address hides the maker.' : ''],
 		['System', osOf(m)],
-		wifi ? ['Wi-Fi', wifiTxt, (WIFI_STD[dv.std] || 'Wi-Fi') + (dv.nss ? ', ' + dv.nss + ' spatial streams' : '') + (dv.bw ? ', ' + dv.bw + ' MHz channel' : '')] : ['Port', (dv.portLabel || '—') + (dv.speed ? ' · ' + (dv.speed >= 1000 ? dv.speed / 1000 + ' GbE' : dv.speed + ' Mb/s') : '')],
+		wifi ? ['Wi-Fi', wifiTxt, (WIFI_STD[dv.std] || 'Wi-Fi') + (dv.nss ? ', ' + dv.nss + ' spatial streams' : '') + (dv.bw ? ', ' + dv.bw + ' MHz channel' : '')] : ['Port', (dv.portLabel || '—') + (dv.speed ? ' · ' + speedTxt(dv.speed) : '')],
 		['Shown as', kl, kl + (why ? ': recognised by ' + why : '')],
 		wifi ? ['Link ↓ / ↑', (dv.phy || '—') + ' / ' + (dv.phyUp || '—') + ' Mb/s'] : ['Devices on it', String(dv.count || 1)],
 		wifi ? ['Connected', ago(dv.conn), 'Connected for ' + ago(dv.conn) + (dv.idle > 0 ? ', idle for ' + ago(dv.idle) : '') + (dv.node ? ' (restarts when it roams between the router and a node)' : '')] : ['Connected', '—'],
@@ -649,6 +646,8 @@ function smooth(key, r) {
 function measure(key, t, d, u) { return smooth(key, rate(key, t, d, u)); }
 
 /* ---------------------------------------------------------------- the network, from one sample */
+function speedTxt(mbps) { return mbps >= 1000 ? mbps / 1000 + ' GbE' : mbps + ' Mb/s'; }   /* a port's link speed */
+function dbm(v, none) { return v !== null && v !== undefined && v !== '' ? v + ' dBm' : (none === undefined ? '—' : none); }
 function bandName(b) { return b === '2.4' ? '2.4 GHz' : (b === '6' ? '6 GHz' : (b === '5' ? '5 GHz' : 'Wi-Fi')); }
 function portLabel(d, ifn) {
 	var i = (d.ports || []).indexOf(ifn), sp = linkOf(d, ifn).speed;
@@ -659,8 +658,26 @@ function linkOf(d, ifn) {
 	var l = (d.links || []).filter(function (x) { return x[0] === ifn; })[0];
 	return { up: l ? l[1] === 1 : false, speed: l && l[2] > 0 ? l[2] : 0 };
 }
+/* Addresses and interface names become ids, and ids go into the scene's markup as attributes: anything
+   that is not exactly a MAC address or an interface name is dropped here, wherever it came from. */
+var MAC_RE = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/, IF_RE = /^[A-Za-z0-9_.-]{1,16}$/;
+function isMac(m) { return typeof m === 'string' && MAC_RE.test(m); }
+function isIf(i) { return typeof i === 'string' && IF_RE.test(i); }
+function cleanSample(d) {
+	var rows = function (a) { return (Array.isArray(a) ? a : []).filter(function (r) { return Array.isArray(r) && isMac(r[2]) && isIf(r[0]); }); };
+	return { router: d.router || {}, ms: d.ms, interval: d.interval, epoch: +d.epoch || 0, up: d.up, wan: isIf(d.wan) ? d.wan : '',
+		own: (Array.isArray(d.own) ? d.own : []).filter(isMac), ports: (Array.isArray(d.ports) ? d.ports : []).filter(isIf),
+		links: (Array.isArray(d.links) ? d.links : []).filter(function (l) { return Array.isArray(l) && isIf(l[0]); }),
+		ifs: (Array.isArray(d.ifs) ? d.ifs : []).filter(function (r) { return Array.isArray(r) && isIf(r[0]); }),
+		macs: (Array.isArray(d.macs) ? d.macs : []).filter(function (pm) { return Array.isArray(pm) && isIf(pm[0]) && isMac(pm[1]); }),
+		sta: rows(d.sta),
+		nodes: (Array.isArray(d.nodes) ? d.nodes : []).filter(function (n) { return n && isMac(n.mac); }).map(function (n) {
+			return { mac: n.mac, ip: n.ip, model: String(n.model || ''), alias: String(n.alias || ''), state: n.state, up: n.up, c: rows(n.c), sta: String(n.sta || '').split(/\s+/).filter(isMac).join(' ') };
+		}) };
+}
 function buildNet(d) {
-	var t = parseFloat(d.up), own = {}, bh = {}, net = { router: d.router || {}, nodes: [], devs: [], byId: {}, ms: d.ms, interval: d.interval };
+	d = cleanSample(d);
+	var t = parseFloat(d.up), own = {}, bh = {}, net = { router: d.router, nodes: [], devs: [], byId: {}, ms: d.ms, interval: d.interval, epoch: d.epoch };
 	(d.own || []).forEach(function (m) { own[m] = 1; });
 	var ifs = {};
 	(d.ifs || []).forEach(function (r) { ifs[r[0]] = r; });
@@ -715,10 +732,10 @@ function buildNet(d) {
 		} else if (A.names && A.names.cl[node.mac]) {   /* not readable: list its clients without numbers */
 			var cl = A.names.cl[node.mac];
 			[['2G', '2.4'], ['5G', '5'], ['5G1', '5'], ['6G', '6']].forEach(function (bk) {
-				Object.keys(cl[bk[0]] || {}).forEach(function (m) {
-					m = m.toUpperCase();
-					if (seen[m] || own[m] || bh[m]) return;
-					seen[m] = { ap: node.mac, node: node, band: bk[1], mac: m, rssi: +((cl[bk[0]][m] || {}).rssi) || null, phy: null, s: { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }, st: node.online ? 'nodata' : 'off' };
+				Object.keys(cl[bk[0]] || {}).forEach(function (k) {
+					var m = k.toUpperCase();
+					if (!isMac(m) || seen[m] || own[m] || bh[m]) return;
+					seen[m] = { ap: node.mac, node: node, band: bk[1], mac: m, rssi: +((cl[bk[0]][k] || {}).rssi) || null, phy: null, s: { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }, st: node.online ? 'nodata' : 'off' };
 				});
 			});
 		}
@@ -1317,11 +1334,17 @@ function box2(a, b, pad) { return [Math.min(a[0], b[0]) - pad, Math.min(a[1], b[
 function genSlots(g) {
 	var cells = [], pitchX = 3.0, pitchY = 2.6;
 	var inR = function (x, y, r) { return x > r[0] && x < r[2] && y > r[1] && y < r[3]; };
-	/* node zones: back right and front left as in the small view, a third front right */
+	/* node zones: back right and front left as in the small view, a third front right. On a small floor (a
+	   short or narrow window) they shrink, so none reaches under the router or into another zone. */
+	var RT = [4.4, 4.8, 9.8, 9.4];
+	var z0 = [Math.max(g.x1 - 10.5, RT[2] + 0.4), g.y0, g.x1, g.y0 + 9];
+	var z1 = [g.x0, Math.max(g.y1 - 8.4, RT[3] + 0.3), g.x0 + 9, g.y1];
+	var z2 = [Math.max(g.x1 - 9.5, z1[2] + 0.3), Math.max(g.y1 - 8, z0[3] + 0.3), g.x1, g.y1];
+	if (z2[0] < RT[2] + 0.4) z2[1] = Math.max(z2[1], RT[3] + 0.3);
 	g.nodeSlots = [
-		{ zone: [g.x1 - 10.5, g.y0, g.x1, g.y0 + 9], cx: g.x1 - 9.35, cy: g.y0 + 0.95 },
-		{ zone: [g.x0, g.y1 - 8.4, g.x0 + 9, g.y1], cx: g.x0 + 1.3, cy: g.y1 - 7.1 },
-		{ zone: [g.x1 - 9.5, g.y1 - 8, g.x1, g.y1], cx: g.x1 - 8.3, cy: g.y1 - 6.8 }
+		{ zone: z0, cx: z0[0] + 1.15, cy: g.y0 + 0.95 },
+		{ zone: z1, cx: g.x0 + 1.3, cy: z1[1] + 1.3 },
+		{ zone: z2, cx: z2[0] + 1.2, cy: z2[1] + 1.2 }
 	].slice(0, g.nodes);
 	var keep = [[4.4, 4.8, 9.8, 9.4], [0.4, 0.6, 3.2, 2.9], [3.2, 0.9, 7.9, 2.5], [6.3, 2.5, 7.9, 4.8],   /* router, internet terminal, WAN pipe */
 		[1.0, g.y0, 2.4, 1.2], [g.x0, 3.9, 3.2, 6.9]];                                                   /* the fibre from the wall, the tray */
@@ -1365,8 +1388,7 @@ function pickStands(list, n, prevKey) {   /* the n busiest, keeping devices that
 	var ranked = list.slice().sort(function (a, b) { return score(b) - score(a) || byName(a, b); });
 	var keep = ranked.slice(0, n);
 	if (cur.length && Date.now() - A.slotAt < 20000) {   /* hold the stands for 20 s unless devices joined or left */
-		var same = cur.every(function (dv) { return list.indexOf(dv) >= 0; });
-		if (same && cur.length >= Math.min(n, list.length)) keep = cur.slice(0, n);
+		if (cur.length >= Math.min(n, list.length)) keep = cur.slice(0, n);
 	}
 	return keep;
 }
@@ -1676,12 +1698,12 @@ function render() {
 	if (!root) return;
 	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
 	if (!net) { setNotice('Starting the sampler on the router…', MUTED); return; }
-	try { renderSummary(net); } catch (e) { report(e); }
-	if (A.tab === 'map') { try { renderMap(net); } catch (e) { report(e); } }
-	else { try { renderFlow(net); } catch (e) { report(e); } }
-	try { renderReadout(net); renderSide(net); renderFoot(net); } catch (e) { report(e); }
+	try { renderSummary(net); } catch (e) { logErr(e); }
+	if (A.tab === 'map') { try { renderMap(net); } catch (e) { logErr(e); } }
+	else { try { renderFlow(net); } catch (e) { logErr(e); } }
+	try { renderReadout(net); renderSide(net); renderFoot(net); } catch (e) { logErr(e); }
 }
-function report(e) { if (window.console) console.error('Arteria:', e); }
+function logErr(e) { if (window.console) console.error('Arteria:', e); }
 function setLive() {
 	var b = $('arLive'), t = $('arLiveTxt');
 	if (!b) return;
@@ -1825,6 +1847,7 @@ function flowGroups(net) {
 	add('lan', 'LAN', 'wired', visible.filter(function (dv) { return dv.link === 'wired'; }));
 	add('r24', '2.4 GHz', 'wifi', visible.filter(function (dv) { return dv.link === 'wifi' && !dv.node && dv.band === '2.4'; }));
 	add('r6', '6 GHz', 'wifi', visible.filter(function (dv) { return dv.link === 'wifi' && !dv.node && dv.band !== '5' && dv.band !== '2.4'; }));
+	if (!gs.length) gs.push({ id: 'r5', label: '5 GHz', kind: 'wifi', devs: [], node: null });   /* nothing connected: an empty band, so the frame still draws */
 	/* row budget: every group gets one row; then the busiest devices overall, each costing a row
 	   (and its group a "+N more" row while some of it is still hidden) */
 	var shown = {}, budget = G.flow.rows;
@@ -2066,7 +2089,7 @@ function renderFlow(net) {
 			if (G.big) {   /* wider rows: where it's connected and its address, then signal and link rate in columns */
 				var ip = ipOf(dv), wired = dv.link === 'wired';
 				sub = (wired ? dv.portLabel : (dv.node ? dv.node.name : bandName(dv.band))) + (ip ? ' · ' + ip : '') + (dv.guest ? ' · guest' : '') + (dv.st === 'off' ? ' · offline' : '');
-				c1 = wired ? (dv.speed ? (dv.speed >= 1000 ? dv.speed / 1000 + ' GbE' : dv.speed + ' Mb/s') : '') : (dv.rssi !== null && dv.rssi !== undefined ? dv.rssi + ' dBm' : '');
+				c1 = wired ? (dv.speed ? speedTxt(dv.speed) : '') : dbm(dv.rssi, '');
 				c2 = wired ? (dv.count > 1 ? dv.count + ' devices' : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
 			}
 		} else if (r.more) { name = '+' + r.more.length + ' more'; icon = 'more'; sub = r.more.slice(0, 3).map(function (dv) { return dv.name; }).join(', '); }
@@ -2099,12 +2122,12 @@ function renderFlow(net) {
 /* The big view's third label line: how it's connected (band and signal, or port and speed). Link rates
    and addresses are in the readout and on Flow's rows; on the map they would make the labels too wide. */
 function thirdLine(x) {
-	if (!x.link) return !x.online ? 'Offline' : (x.wiredPort ? 'Wired backhaul' : bandName(x.bhBand) + ' backhaul') + (x.bhRssi !== null && x.bhRssi !== undefined ? ' · ' + x.bhRssi + ' dBm' : '');
+	if (!x.link) return !x.online ? 'Offline' : (x.wiredPort ? 'Wired backhaul' : bandName(x.bhBand) + ' backhaul') + (dbm(x.bhRssi, '') ? ' · ' + dbm(x.bhRssi) : '');
 	return x.st === 'off' ? 'Offline' : linkShort(x);
 }
 function linkShort(dv) {
-	if (dv.link === 'wired') return dv.portLabel + (dv.speed ? ' · ' + (dv.speed >= 1000 ? dv.speed / 1000 + ' GbE' : dv.speed + ' Mb/s') : '') + (dv.count > 1 ? ' · ' + dv.count + ' devices' : '');
-	return (dv.node ? dv.node.name : bandName(dv.band)) + (dv.rssi !== null && dv.rssi !== undefined ? ' · ' + dv.rssi + ' dBm' : '') + (dv.guest ? ' · guest' : '');
+	if (dv.link === 'wired') return dv.portLabel + (dv.speed ? ' · ' + speedTxt(dv.speed) : '') + (dv.count > 1 ? ' · ' + dv.count + ' devices' : '');
+	return (dv.node ? dv.node.name : bandName(dv.band)) + (dbm(dv.rssi, '') ? ' · ' + dbm(dv.rssi) : '') + (dv.guest ? ' · guest' : '');
 }
 
 /* ---------------------------------------------------------------- the readout card (both views) */
@@ -2134,10 +2157,10 @@ function readoutFor(net) {
 		path = rname + ' → ' + t.length + ' devices'; note = 'Listed on the right, busiest first. Pick one to trace it.';
 	} else if (id && id.indexOf('node:') === 0 && net.byId[id]) {
 		var n = net.byId[id];
-		d = { icon: 'mesh', badge: 'AiMesh node', name: n.name, link: n.online ? (n.wiredPort ? 'Wired backhaul' : bandName(n.bhBand) + ' wireless backhaul') : 'Offline' };
+		d = { icon: FORM_ICON[formOf(n.model, 'tower').form] || 'mesh', badge: 'AiMesh node', name: n.name, link: n.online ? (n.wiredPort ? 'Wired backhaul' : bandName(n.bhBand) + ' wireless backhaul') : 'Offline' };
 		dn = n.online ? n.bh.dn : null; up = n.online ? n.bh.up : null;
 		sdn = pct(dn, net.total.dn) + '% goes through the node'; sup = pct(up, net.total.up) + '% comes through the node';
-		k1 = 'Backhaul signal'; v1 = n.bhRssi !== undefined && n.bhRssi !== null ? n.bhRssi + ' dBm' : '—'; k2 = 'Link rate'; v2 = n.bhPhy ? n.bhPhy + ' Mb/s' : '—';
+		k1 = 'Backhaul signal'; v1 = dbm(n.bhRssi); k2 = 'Link rate'; v2 = n.bhPhy ? n.bhPhy + ' Mb/s' : '—';
 		path = rname + ' → ' + n.name;
 		note = { ok: 'Its devices are counted on the node and read over SSH.', nokey: 'Per-device data needs node access: run arteria.sh nodekey.', hostkey: 'Its SSH identity changed: run arteria.sh nodekey.',
 			down: 'Not answering over SSH: showing its backhaul total.', wait: 'Connecting to the node…', off: 'Node access is off: backhaul total only.' }[n.state] || '';
@@ -2150,7 +2173,7 @@ function readoutFor(net) {
 		dn = dv.st === 'ok' ? dv.dn : null; up = dv.st === 'ok' ? dv.up : null;
 		sdn = pct(dn, net.total.dn) + '% of all download'; sup = pct(up, net.total.up) + '% of all upload';
 		if (dv.link === 'wired') { k1 = 'Port'; v1 = dv.portLabel; k2 = 'Link rate'; v2 = dv.speed ? dv.speed + ' Mb/s' : '—'; }
-		else { k1 = 'Signal'; v1 = dv.rssi !== null && dv.rssi !== undefined ? dv.rssi + ' dBm' : '—'; k2 = 'Link rate'; v2 = dv.phy ? dv.phy + ' Mb/s' : '—'; }
+		else { k1 = 'Signal'; v1 = dbm(dv.rssi); k2 = 'Link rate'; v2 = dv.phy ? dv.phy + ' Mb/s' : '—'; }
 		path = rname + (dv.node ? ' → ' + dv.node.name : '') + ' → ' + dv.name;
 		note = dv.link === 'wired' ? (dv.count > 1 ? dv.count + ' devices share this port: their traffic is added up.' : 'Measured on the port counters.')
 			: (dv.node ? 'Counted on ' + dv.node.name + ' and read over SSH.' : 'Measured from Wi-Fi client counters on the router.');
@@ -2264,7 +2287,7 @@ function renderMore(hs) {
 		if (!el) {
 			el = document.createElement('button');
 			el.type = 'button'; el.setAttribute('data-id', id);
-			el.innerHTML = '<span class="ic"></span><span style="flex:1 1 0;min-width:0"><span class="nm"></span><span class="bar"><span></span></span></span><span class="rt"><span class="rd c-dn"></span><span class="ru c-up"></span></span>';
+			el.innerHTML = A.rowHtml;
 		}
 		delete have[id];
 		if (box.children[i] !== el) box.insertBefore(el, box.children[i] || null);
@@ -2284,7 +2307,7 @@ function focusMore() {
 	if (isMore(A.sel) && b && A.kbd) b.focus();
 }
 function renderSpark() {
-	var Wd = 244, H = 116, base = H - 20, h = A.hist, n = Math.max(h.length, 2);
+	var Wd = 244, H = 116, base = H - 20, h = A.hist;
 	var per = A.unit === 'MB' ? 8 : 1;   /* the axis steps are round numbers in the unit shown */
 	var mxv = Math.max.apply(null, h.map(function (x) { return Math.max(x.dn, x.up); }).concat([0.001])) / per;
 	var steps = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000], top = steps[steps.length - 1];
@@ -2299,7 +2322,6 @@ function renderSpark() {
 	$('arSpArea').setAttribute('d', h.length ? line('dn') + ' L' + px(h.length - 1) + ' ' + base + ' L' + px(0) + ' ' + base + ' Z' : 'M0 0');
 	if (h.length) { var ex = px(h.length - 1), ey = py(h[h.length - 1].dn); ['arSpDot', 'arSpRip'].forEach(function (id) { $(id).setAttribute('cx', ex); $(id).setAttribute('cy', ey); }); }
 	$('arSpTop').textContent = lab(top); $('arSpMid').textContent = lab(top / 2);
-	void n;
 }
 function renderFoot(net) {
 	var t = 'Arteria ' + VERSION + ' · samples every ' + A.interval + ' s only while this page is open';
@@ -2334,7 +2356,7 @@ function toggleFull() {
 	try {
 		if (fsEl()) { var x = document.exitFullscreen || document.webkitExitFullscreen; if (x) x.call(document); }
 		else { var q = r.requestFullscreen || r.webkitRequestFullscreen; var p = q && q.call(r); if (p && p.catch) p.catch(function () {}); }
-	} catch (e) { report(e); }
+	} catch (e) { logErr(e); }
 }
 /* Size the stage: the page's 728 × 518, or what the window leaves when expanded. */
 function fit() {
@@ -2384,7 +2406,14 @@ function setBig(on) {
 /* While expanded, Tab stays inside and Escape closes it (the "+N more" list and the report close first). */
 function bigKeys(e) {
 	if (!A.big) return;
-	if (e.key === 'Escape' || e.key === 'Esc') { if (!fsEl()) { e.preventDefault(); setBig(false); } return; }
+	if (e.key === 'Escape' || e.key === 'Esc') {
+		if (fsEl()) return;   /* the browser leaves full screen itself */
+		e.preventDefault();
+		if (A.report) { A.report = false; render(); $('arRepBtn').focus(); }
+		else if (A.net && hiddenSet(A.net) && hiddenSet(A.net).open) closeMore();
+		else setBig(false);
+		return;
+	}
 	if (e.key !== 'Tab') return;
 	var f = Array.prototype.filter.call($('ar').querySelectorAll('button, a[href], textarea'), function (el) { return el.offsetParent !== null && !el.disabled; });
 	if (!f.length) return;
@@ -2410,7 +2439,8 @@ function boot() {
 	$('arLive').addEventListener('click', togglePause);
 	$('arDn').addEventListener('click', function () { setMode('dn'); });
 	$('arUp').addEventListener('click', function () { setMode('up'); });
-	for (var t = 4; t < TOP_BIG; t++) { var c = $('arTop0').cloneNode(true); c.id = 'arTop' + t; c.className = 'hide'; $('arTopEmpty').parentNode.insertBefore(c, $('arTopEmpty')); }
+	A.rowHtml = $('arTop0').innerHTML;   /* the one row markup, for the busiest list and the "+N more" list */
+	for (var t = 1; t < TOP_BIG; t++) { var c = $('arTop0').cloneNode(true); c.id = 'arTop' + t; c.className = 'hide'; $('arTopEmpty').parentNode.insertBefore(c, $('arTopEmpty')); }
 	for (var i = 0; i < TOP_BIG; i++) (function (btn) { btn.addEventListener('click', function () { if (btn._id) pick(btn._id); }); })($('arTop' + i));
 	$('arBig').innerHTML = iconSvg('expand', 20, '#f0efec');
 	$('arFull').innerHTML = iconSvg('full', 20, '#f0efec');
@@ -2550,9 +2580,6 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, iconSvg: iconSv
 			<div class="eyebrow" style="padding:0 8px">Busiest right now</div>
 			<div class="ar-top">
 				<button type="button" id="arTop0" class="hide" aria-pressed="false"><span class="ic"></span><span style="flex:1 1 0;min-width:0"><span class="nm"></span><span class="bar"><span></span></span></span><span class="rt"><span class="rd c-dn"></span><span class="ru c-up"></span></span></button>
-				<button type="button" id="arTop1" class="hide" aria-pressed="false"><span class="ic"></span><span style="flex:1 1 0;min-width:0"><span class="nm"></span><span class="bar"><span></span></span></span><span class="rt"><span class="rd c-dn"></span><span class="ru c-up"></span></span></button>
-				<button type="button" id="arTop2" class="hide" aria-pressed="false"><span class="ic"></span><span style="flex:1 1 0;min-width:0"><span class="nm"></span><span class="bar"><span></span></span></span><span class="rt"><span class="rd c-dn"></span><span class="ru c-up"></span></span></button>
-				<button type="button" id="arTop3" class="hide" aria-pressed="false"><span class="ic"></span><span style="flex:1 1 0;min-width:0"><span class="nm"></span><span class="bar"><span></span></span></span><span class="rt"><span class="rd c-dn"></span><span class="ru c-up"></span></span></button>
 				<div id="arTopEmpty" class="ar-empty">Nothing is moving yet.</div>
 			</div>
 		</div>

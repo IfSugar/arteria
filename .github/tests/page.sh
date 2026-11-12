@@ -18,6 +18,11 @@ page = open(sys.argv[1], encoding='utf-8').read()
 js = '\n'.join(re.findall(r'<script type="text/javascript">(.*?)</script>', page, re.S))
 if not js.strip():
     sys.exit('no inline script found')
+icons = re.search(r'var ICON = \{(.*?)\n\};', js, re.S)
+keys = re.findall(r'^\t(\w+):', icons.group(1), re.M) if icons else []
+dup = sorted(set(k for k in keys if keys.count(k) > 1))
+if dup:
+    sys.exit('ICON lists an icon twice (the first one is lost): ' + ', '.join(dup))
 if '<%' in js:
     sys.exit("the page's script contains '<%', which the router's web server would run as a template tag")
 open(sys.argv[2], 'w', encoding='utf-8').write(js)

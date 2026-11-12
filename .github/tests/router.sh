@@ -9,11 +9,12 @@
 #  1. "sample" prints one valid sample: internet, ports, Wi-Fi clients, the node and its backhaul.
 #  2. The page's request (service-event "start arteria") starts the sampler; it reads the node's
 #     clients over the session, writes live.htm and names.htm, and stops when the page says so.
-#  3. Without the node key, the node is reported as "nokey" and never retried in a loop.
+#  3. Without the node key, the node is reported as "nokey" and never retried in a loop. At a terminal,
+#     nodekey keeps a node's pinned identity unless you say to trust a new one, and logs in once.
 #  4. A stale pid file never makes Arteria signal another process, or keeps the sampler from starting.
 #  5. install hooks itself in and adds its menu line right after Statistic in Traffic Analyzer (last in
-#     Network Tools on routers without it); uninstall
-#     removes everything it added and nothing else.
+#     Network Tools on routers without it); update and update dev install only a whole download of the
+#     right version, from this repository's branches; uninstall removes everything it added and nothing else.
 #
 # Usage: .github/tests/router.sh [path/to/arteria.sh]   (needs busybox, python3)
 set -eu
@@ -87,7 +88,7 @@ cat > "$B/brctl" <<EOF
 #!$bb sh
 case "\$1" in
 	showstp) printf 'br0\n bridge id\neth1 (4)\n port id\neth5 (5)\neth6 (6)\neth7 (7)\nwds1.0.1 (9)\n' ;;
-	showmacs) printf 'port no\tmac addr\t\tis local?\tageing timer\n  5\t02:cc:00:00:00:09\tno\t\t   0.11\n  9\t02:cc:00:00:00:11\tno\t\t   0.20\n  6\t24:4b:fe:00:00:20\tyes\t\t   0.00\n' ;;
+	showmacs) printf 'port no\tmac addr\t\tis local?\tageing timer\n  5\t02:cc:00:00:00:09\tno\t\t   0.11\n  9\t02:cc:00:00:00:11\tno\t\t   0.20\n  6\t00:00:5e:00:53:fc\tyes\t\t   0.00\n' ;;
 esac
 EOF
 cat > "$t/proc/net/dev" <<'EOF'
@@ -105,8 +106,8 @@ printf 'IP address       HW type     Flags       HW address            Mask     
 printf '#!%s sh\n[ "$1 $2 $3" = "-6 neigh show" ] && printf "2001:db8::12 lladdr 02:cc:00:00:00:12 REACHABLE\\nfe80::12 lladdr 02:cc:00:00:00:12 STALE\\n2001:db8::99 FAILED\\n"\n' "$bb" > "$B/ip"
 echo "25588.76 90000.00" > "$t/proc/uptime"; echo "1.39 1.28 1.27 3/216 4894" > "$t/proc/loadavg"
 for i in eth0 eth1 eth2 eth3 eth4 eth5 eth6 eth7 br0; do mkdir -p "$t/sys/class/net/$i"; done
-echo 24:4b:fe:00:00:20 > "$t/sys/class/net/br0/address"; echo 24:4b:fe:00:00:24 > "$t/sys/class/net/eth7/address"
-echo 24:4b:fe:00:00:20 > "$t/sys/class/net/eth6/address"
+echo 00:00:5e:00:53:fc > "$t/sys/class/net/br0/address"; echo 00:00:5e:00:53:fd > "$t/sys/class/net/eth7/address"
+echo 00:00:5e:00:53:fc > "$t/sys/class/net/eth6/address"
 for i in eth0 eth5; do echo 1 > "$t/sys/class/net/$i/carrier"; done
 for i in eth1 eth2 eth3 eth4; do echo 0 > "$t/sys/class/net/$i/carrier"; echo -1 > "$t/sys/class/net/$i/speed"; done
 echo 1000 > "$t/sys/class/net/eth0/speed"; echo 2500 > "$t/sys/class/net/eth5/speed"
@@ -188,8 +189,8 @@ cat > "$N/nvram" <<EOF
 case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;; esac
 EOF
 cat > "$F/node-assoc" <<'EOF'
-eth1 24:4B:FE:00:00:20 1000 2000
-eth2 24:4B:FE:00:00:24 3000 4000
+eth1 00:00:5E:00:53:FC 1000 2000
+eth2 00:00:5E:00:53:FD 3000 4000
 wl0.1 02:CC:00:00:00:11 4000 1000
 wl1.1 02:CC:00:00:00:12 5000000 60000
 wl1.1 02:CC:00:00:00:13 800000 90000
@@ -201,6 +202,15 @@ cat > "$B/dbclient" <<EOF
 [ "\$1 \$2" = "-o help" ] && { printf 'Available options:\\n\\tBatchMode\\n\\tPort\\n' >&2; exit 0; }
 echo "\$*" >> "$t/dbclient.args"
 key=""; while [ \$# -gt 1 ]; do [ "\$1" = -i ] && key=\$2; shift; done
+# the node's identity (host key), pinned on first contact like dbclient -y does; only when a test sets one
+if [ -f "$t/node-identity" ]; then
+	kh="\$HOME/.ssh/known_hosts"; id=\$(cat "$t/node-identity")
+	if grep -q "^192.168.50.10 " "\$kh" 2>/dev/null; then
+		grep -qx "192.168.50.10 ssh-ed25519 \$id" "\$kh" || { printf 'dbclient: Connection to admin@192.168.50.10:2222 exited:\\n\\nHost key mismatch for 192.168.50.10 !\\nIf you know that the host key is correct you can\\nremove the bad entry from ~/.ssh/known_hosts\\n' >&2; exit 1; }
+	else mkdir -p "\$HOME/.ssh"; echo "192.168.50.10 ssh-ed25519 \$id" >> "\$kh"; fi
+	# a password typed at a terminal (nodekey): the right one, always
+	if [ -z "\$key" ] && [ -t 0 ]; then echo "password login to \$id" >> "$t/dbclient.pw"; exec env PATH="$N:$B" "$bb" sh -c "\$1"; fi
+fi
 [ -n "\$key" ] && [ -s "\$key" ] || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
 echo "\$1" >> "$t/dbclient.cmds"
 case "\$1" in 'sh -s') exec env PATH="$N:$B" "$bb" sh -s ;; *) exec env PATH="$N:$B" "$bb" sh -c "\$1" ;; esac
@@ -243,7 +253,7 @@ n = s['nodes'][0]
 assert n['mac'] == '02:10:00:00:00:80' and n['ip'] == '192.168.50.10' and n['model'] == 'RP-AX56' and n['alias'] == 'Hall', n
 assert n['sta'].split() == ['02:10:00:00:00:81', '02:10:00:00:00:84'], n['sta']
 assert n['state'] == 'nokey' and n['c'] == [], n
-assert '24:4B:FE:00:00:20' in s['own']
+assert '00:00:5E:00:53:FC' in s['own']
 assert s['router']['model'] == 'RT-AX86U' and s['router']['fw'] == '3004.388.13_0', s['router']
 EOF
 cmp -s "$t/sample.json" "$t/sample2.json" || python3 -c "
@@ -320,6 +330,42 @@ if [ -n "$line" ] && PATH="$t/nk:$B" "$bb" sh -c "$line" > /dev/null && PATH="$t
 	ok "nodekey print: a one-line command that adds the key once and keeps the node's own keys"
 else bad "nodekey print:"; printf '%s\n' "$line"; cat "$t/nk/store"; fi
 
+# nodekey, at a terminal (a pty): the node's pinned identity is only replaced when the person says so, and
+# no password goes to a node whose identity changed until then
+mkdir -p "$R/jffs/addons/arteria/.ssh"; echo "192.168.50.10 ssh-ed25519 OLDKEY" > "$R/jffs/addons/arteria/.ssh/known_hosts"
+echo NEWKEY > "$t/node-identity"; rm -f "$R/jffs/addons/arteria/node_key" "$t/dbclient.pw"
+cat > "$t/term.py" <<'EOF'
+import os, pty, sys, select, time
+pid, fd = pty.fork()
+if pid == 0:
+    os.execv(sys.argv[1], [sys.argv[1], 'ash', sys.argv[2], 'nodekey'])
+out = b''; sent = False; end = time.time() + 40
+while time.time() < end:
+    r, _, _ = select.select([fd], [], [], 0.5)
+    if not r: continue
+    try: d = os.read(fd, 4096)
+    except OSError: break
+    if not d: break
+    out += d
+    if not sent and b'(y/n)' in out: os.write(fd, sys.argv[3].encode() + b'\n'); sent = True
+sys.stdout.write(out.decode('utf-8', 'replace'))
+EOF
+py=$(command -v python3)
+nk() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$py" "$t/term.py" "$bb" "$inst" "$1" 2>&1 || true; }   # answer
+if "$py" -c 'import pty' 2>/dev/null; then
+	nk n > "$t/nk-n.out"
+	if grep -q "Trust the new identity" "$t/nk-n.out" && grep -q "OLDKEY" "$R/jffs/addons/arteria/.ssh/known_hosts" && [ ! -f "$t/dbclient.pw" ]; then
+		ok "nodekey: a changed node identity is kept, and no password is sent, when the answer is no"
+	else bad "nodekey with a changed identity, answer n:"; cat "$t/nk-n.out"; fi
+	nk y > "$t/nk-y.out"
+	if grep -q "Key added" "$t/nk-y.out" && grep -q "Key login works" "$t/nk-y.out" && grep -q "NEWKEY" "$R/jffs/addons/arteria/.ssh/known_hosts" \
+		&& ! grep -q "OLDKEY" "$R/jffs/addons/arteria/.ssh/known_hosts" && [ "$(grep -c . "$t/dbclient.pw")" = 1 ]; then
+		ok "nodekey: after a yes the new identity is pinned and the key is added with one password login"
+	else bad "nodekey with a changed identity, answer y:"; cat "$t/nk-y.out"; fi
+else echo "skip  nodekey at a terminal (python3 has no pty module here)"; fi
+rm -f "$t/node-identity" "$t/dbclient.pw"; rm -rf "$R/jffs/addons/arteria/.ssh"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
+rm -rf "$R/tmp/arteria"
+
 # ---- 3: stale pid files never touch someone else's process ----------------------------------------
 # The router reuses pids within minutes. A pid file left behind (a sampler or node session that was
 # killed) may by then name an unrelated process: it must neither be signalled nor block the sampler.
@@ -364,6 +410,70 @@ if [ "$r" = "Network Tools|1" ] && [ "$(wc -l < "$t/nt.js")" -eq $(( $(wc -l < "
 else bad "Network Tools menu ($r):"; grep -n -B2 -A2 Arteria "$t/nt.js"; fi
 grep -q "arteria.sh startup & # arteria" "$R/jffs/scripts/services-start" && grep -q 'service_event "$@" & # arteria' "$R/jffs/scripts/service-event" && ok "hooks added" || bad "hooks missing"
 grep -qi "key login works\|Node(s) without the key" "$t/install.out" && ok "install checks node access" || { bad "install didn't check the nodes:"; cat "$t/install.out"; }
+
+# ---- 5: update and update dev install only a whole download of the right version --------------
+# A stand-in curl serves GitHub's addresses from $t/srv: the latest release's tag, branches, raw files.
+srv=$t/srv; mkdir -p "$srv/api/branches" "$srv/raw"
+cat > "$B/curl" <<EOF
+#!$bb sh
+o=""; w=""; url=""
+while [ \$# -gt 0 ]; do
+	case "\$1" in -o) o=\$2; shift ;; -w) w=\$2; shift ;; -H|--retry|--connect-timeout) shift ;; -*) ;; *) url=\$1 ;; esac
+	shift
+done
+echo "\$url" >> "$t/curl.log"
+case "\$url" in
+	https://raw.githubusercontent.com/IfSugar/arteria/*) f="$srv/raw/\${url#https://raw.githubusercontent.com/IfSugar/arteria/}" ;;
+	https://api.github.com/repos/IfSugar/arteria/releases/latest) f="$srv/api/latest" ;;
+	https://api.github.com/repos/IfSugar/arteria/branches/*) f="$srv/api/branches/\${url#https://api.github.com/repos/IfSugar/arteria/branches/}" ;;
+	*) f=/nonexistent ;;
+esac
+if [ -f "\$f" ]; then if [ -n "\$o" ]; then cat "\$f" > "\$o"; else cat "\$f"; fi; [ -n "\$w" ] && printf 200; exit 0; fi
+[ -n "\$w" ] && printf 404
+exit 22
+EOF
+chmod +x "$B/curl"
+cur=$(sed -n 's/^VERSION="\([0-9.]*\)".*/\1/p' "$script")
+release() {   # dir version: a whole release of this script and page, renumbered
+	mkdir -p "$srv/raw/$1"
+	sed "s/^VERSION=\"$cur\"/VERSION=\"$2\"/" "$script" > "$srv/raw/$1/arteria.sh"
+	sed "s/arteria-version: $cur /arteria-version: $2 /" "$asp" > "$srv/raw/$1/arteria.asp"
+}
+upd() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" "$@" < /dev/null > "$t/upd.out" 2>&1; }
+inst_ver() { sed -n 's/^VERSION="\([0-9.]*\)".*/\1/p' "$R/jffs/addons/arteria/arteria.sh"; }
+printf '{"tag_name": "%s"}' "$cur" > "$srv/api/latest"; release "$cur" "$cur"
+upd update; grep -q 'Already up to date' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] && ok "update: the same version changes nothing" || { bad "update, same version:"; cat "$t/upd.out"; }
+printf '{"tag_name": "9.9.9"}' > "$srv/api/latest"; release 9.9.9 9.9.9
+sed -i '/^# Keep this dispatch last/,$d' "$srv/raw/9.9.9/arteria.sh"   # cut off before the dispatch: still passes sh -n
+upd update || true
+grep -q 'looks incomplete' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] && ok "update: a script cut short is refused" || { bad "update, cut script:"; cat "$t/upd.out"; }
+release 9.9.9 9.9.9; head -n 40 "$asp" | sed "s/arteria-version: $cur /arteria-version: 9.9.9 /" > "$srv/raw/9.9.9/arteria.asp"
+upd update || true
+grep -q 'matching web page' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] && ok "update: a page cut short is refused" || { bad "update, cut page:"; cat "$t/upd.out"; }
+release 9.9.9 9.9.9; sed -i 's/arteria-version: 9.9.9 /arteria-version: 9.9.8 /' "$srv/raw/9.9.9/arteria.asp"
+upd update || true
+grep -q 'matching web page' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] && ok "update: a page of another version is refused" || { bad "update, page version:"; cat "$t/upd.out"; }
+release 9.9.9 9.9.9; sed -i 's/^INTERVAL=.*/INTERVAL=3/' "$R/jffs/addons/arteria/config"
+upd update
+if [ "$(inst_ver)" = 9.9.9 ] && grep -q 'arteria-version: 9.9.9 ' "$R/jffs/addons/arteria/arteria.asp" && grep -q '^INTERVAL=3' "$R/jffs/addons/arteria/config" \
+	&& [ "$(grep -c '# arteria$' "$R/jffs/scripts/services-start")" = 1 ] && [ "$(grep -c '# arteria$' "$R/jffs/scripts/service-event")" = 1 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
+	ok "update: a newer release is installed, settings kept, one hook line each"
+else bad "update to 9.9.9:"; cat "$t/upd.out"; fi
+printf '{"tag_name": "%s"}' "$cur" > "$srv/api/latest"
+upd update; grep -q 'newer than the latest release' "$t/upd.out" && [ "$(inst_ver)" = 9.9.9 ] && ok "update: never goes back to an older release unless forced" || { bad "update, older:"; cat "$t/upd.out"; }
+: > "$t/curl.log"; badnames=""
+for br in 'a..b' '-x' 'refs/heads/main' 'a b' 'pull/1/head' '/x' 'x/'; do
+	upd update dev "$br" || true
+	grep -q "isn't a branch name" "$t/upd.out" || badnames="$badnames [$br]"
+done
+[ -z "$badnames" ] && [ ! -s "$t/curl.log" ] && ok "update dev: refuses what isn't a branch name, before any download" || { bad "update dev names:$badnames"; cat "$t/curl.log"; }
+sha=0123456789abcdef0123456789abcdef01234567
+mkdir -p "$srv/api/branches/fix"; printf '{"name": "fix/menu", "commit": {"sha": "%s"}}' "$sha" > "$srv/api/branches/fix/menu"; release "$sha" 9.9.10
+upd update dev fix/menu
+if [ "$(inst_ver)" = 9.9.10 ] && grep -q "^dev fix/menu 0123456 " "$R/jffs/addons/arteria/build" 2>/dev/null \
+	&& ! grep -v "/$sha/\|branches/fix/menu" "$t/curl.log" | grep -q .; then
+	ok "update dev <branch>: that branch's newest commit, fetched by its commit id, marked as a development version"
+else bad "update dev fix/menu:"; cat "$t/upd.out" "$t/curl.log"; fi
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
 cmp -s "$R/jffs/scripts/services-start" "$t/ss.before" && ok "other scripts' hook lines untouched" || { bad "services-start changed:"; cat "$R/jffs/scripts/services-start"; }

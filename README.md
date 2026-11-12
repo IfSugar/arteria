@@ -110,7 +110,7 @@ The router only knows a node's backhaul: the total going to and from it. To show
 
 - **A key only the router holds.** At install, Arteria creates an SSH key in `/jffs/addons/arteria/node_key` and offers to add its public half to each node's authorized keys. That asks for the node's password once (your router's admin password, which AiMesh nodes share); it goes to the node only and is never stored. Run `arteria.sh nodekey` any time to do it later, or again after a node was reset. Like your own SSH key would be, it's a full admin login on each node, so it never leaves the router (readable by root only). AiMesh doesn't copy the router's authorized keys to its nodes, so this is needed even if you log in to the router with a key.
 - **One session per node, only while the page is open.** The router keeps one SSH session to each node, on the router's SSH port and with its admin name. The node runs a small read-only loop that prints its clients' counters every 2 seconds. When you close the page the router hangs up and the loop ends; it also ends by itself after 30 minutes.
-- **Key login only.** Arteria never offers a node a password: key logins use Dropbear's `-o BatchMode=yes` (Dropbear 2024.84 and later; Merlin 3004.388.13 has 2026.94), and the sampler has no terminal anyway. On an older SSH client, `nodes test` won't try the key from a terminal, since it couldn't stop a password prompt; the page still shows whether each node answers. If a node refuses the key, Arteria says so on the page and doesn't retry until the page is opened again. Each node's host key is pinned on first use, in `/jffs/addons/arteria/.ssh/known_hosts`.
+- **Key login only.** Arteria never offers a node a password: key logins use Dropbear's `-o BatchMode=yes` (Dropbear 2024.84 and later; Merlin 3004.388.13 has 2026.94), and the sampler has no terminal anyway. On an older SSH client, `nodes test` won't try the key from a terminal, since it couldn't stop a password prompt; the page still shows whether each node answers. If a node refuses the key, Arteria says so on the page and doesn't retry until the page is opened again. Each node's host key is pinned on first use, in `/jffs/addons/arteria/.ssh/known_hosts`. If a node later shows a different identity (after a reset or a firmware update, or if something else is answering at its address), the page says so and `nodekey` asks before trusting the new one, so your password never goes to a device that only claims to be the node.
 - **If a node refuses the right password.** ASUS firmware locks out an address for a while after several failed logins, and then refuses even the right password from it (the node's `/tmp/protect_srv.log` shows it). A refused key doesn't count, a wrong password or user name does. Wait a while, or reboot the node, and run `nodekey` again. Or add the key on the node yourself: `arteria.sh nodekey print` shows one line to paste in an SSH session on the node, from any computer.
 - **Nothing on the node changes** except the one line in its authorized keys. `arteria.sh nodes test` checks key login on every node. To stop reading nodes, set `NODES=off` in the config.
 
@@ -146,7 +146,7 @@ Reading these counters doesn't disturb Wi-Fi, and no setting is ever changed.
 /jffs/addons/arteria/arteria.sh nodekey       # give the nodes the router's key (asks each node's password once)
 /jffs/addons/arteria/arteria.sh nodekey 192.168.50.2   # only that node
 /jffs/addons/arteria/arteria.sh nodekey print # the line to paste on a node yourself, to add the key there
-/jffs/addons/arteria/arteria.sh sample        # print one sample as JSON
+/jffs/addons/arteria/arteria.sh sample        # print one sample as JSON (it has your devices' MAC and IP addresses: not for issues)
 /jffs/addons/arteria/arteria.sh debug         # router, firmware and driver details for issues (no names or addresses)
 /jffs/addons/arteria/arteria.sh startup       # re-apply the web page and menu entry
 /jffs/addons/arteria/arteria.sh update        # install the latest release from GitHub
@@ -162,7 +162,7 @@ Edit it, then run `arteria.sh startup`. The new values apply the next time the p
 
 ```sh
 INTERVAL=2       # seconds between samples while the page is open (1-10)
-IDLE_STOP=20     # stop sampling this many seconds after the last page closed (10-300)
+IDLE_STOP=20     # stop sampling this many seconds after the last page closed (20-300)
 NODES=on         # on: read each AiMesh node's devices over SSH; off: backhaul totals only
 NODE_USER=""     # SSH user on the nodes; empty = the router's admin name
 AMTM_UPDATE=on   # on: amtm may update Arteria; off: only 'update' does
@@ -194,6 +194,8 @@ Arteria follows amtm's conventions for third-party scripts:
 - **AiMesh nodes:** when you run `nodekey` (or say yes at install), one line is added to each node's authorized keys (*Administration → System → Authorized Keys*, stored in the node's nvram). Nothing else on a node is changed.
 - **RAM only (gone after a reboot, recreated at boot):** the web page, the menu entry and the sample files (a few KB). The menu is edited on a copy and swapped in only if the result is exactly one new line in a tab list (after *Statistic*, or last in *Network Tools*); otherwise it's left alone and the installer prints the page's direct link.
 - **Load:** nothing at all while the page is closed. While it's open: one sample every 2 seconds at the lowest CPU priority (`nice 19`), plus one SSH session per node, each reading its own counters. The page's footer shows how long the last sample took and the router's load.
+- **In your browser:** the page remembers its view, units, the Details switch and, for re-recognising devices whose private address changed, which host name each device you named last used (up to 300, in the browser's local storage for the router's address; nothing is sent anywhere). Clear the site's data in the browser to remove it.
+- **Login:** while the page is open and visible it polls the router every 2 seconds, so the router's automatic logout doesn't happen during that time. It does once you close the page or switch to another tab.
 
 To remove everything: `arteria.sh uninstall`. The key line each node lists stays until you remove it from the node's *Authorized Keys* (or reset the node), but with the router's key deleted it no longer opens anything. If the web UI ever looks wrong, a reboot clears all RAM-side changes.
 

@@ -16,7 +16,7 @@ SCN = sys.argv[1] if len(sys.argv) > 1 else 'home'
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8000
 T0 = time.time()
 NODE = '02:10:00:00:00:80'
-OWN = ['24:4B:FE:00:00:20', '24:4B:FE:00:00:24', '26:4B:FE:00:00:20', '26:4B:FE:00:00:24']
+OWN = ['00:00:5E:00:53:FC', '00:00:5E:00:53:FD', '02:00:5E:00:53:FC', '02:00:5E:00:53:FD']
 
 # (mac, name, where, band/port, down Mb/s, up Mb/s, rssi)  where: router | node | wired
 DEVICES = [
@@ -86,7 +86,7 @@ DEVICES = [(_doc(d[0]),) + tuple(d[1:]) for d in DEVICES]
 X = {_doc(m): x for m, x in X.items()}
 assert len(set(d[0] for d in DEVICES)) == len(DEVICES)
 NODE_ON = SCN not in ('nonode',)
-NODE_STATE = {'nokey': 'nokey', 'offline': 'down'}.get(SCN, 'ok')
+NODE_STATE = {'nokey': 'nokey', 'offline': 'down', 'hostile': 'nokey'}.get(SCN, 'ok')   # hostile: the page lists the node's clients from the AiMesh client list
 NODE_ONLINE = SCN != 'offline'
 WEAK = SCN == 'weak'
 
@@ -152,6 +152,8 @@ def names():
     for (mac, name, where, band, d, u, rssi) in DEVICES:
         if where == 'node':
             cl[NODE]['2G' if band == '2.4' else '5G'][mac] = {'ip': '192.168.50.%d' % (int(mac[-2:], 16) + 100), 'rssi': str(rssi)}
+    if SCN == 'hostile':   # a client-list key that isn't a MAC address, as a hostile or imitated node could report
+        cl[NODE]['2G']['"><img src=x onerror="window.__xss=5">'] = {'ip': '192.168.50.250', 'rssi': '-40'}
     custom = ''.join('<%s>%s>0>%d>>' % (n, m, X.get(m, {}).get('ctype', 0)) for (m, n, w, b, d, u, r) in DEVICES if X.get(m, {}).get('nick', True))
     custom += ''.join('<%s>%s>0>%d>>' % (x['nickonly'], m, x.get('ctype', 0)) for m, x in X.items() if 'nickonly' in x)
     leases = '|'.join('%d %s 192.168.50.%d %s 01:%s' % (int(time.time()) + 79000 - i * 3000, m.lower(), 20 + i, x['host'], m.lower()) for i, (m, x) in enumerate(X.items()) if x.get('host'))

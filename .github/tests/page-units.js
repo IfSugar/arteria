@@ -165,4 +165,48 @@ const html = [];
 const raw = html.join('').match(/<img|<svg onload|<b>|ERROR.*/g);
 ok(!raw && html.join('').indexOf('Tom&#39;s &quot;test&quot; &amp; co') >= 0, 'names that look like HTML stay text on the map and the flow', raw && raw.slice(0, 3).join(', '));
 
+// ---- 8. ids are checked where they enter: nothing that isn't a MAC address or an interface name becomes a device
+const NODE = '02:10:00:00:00:80', EVIL = '"><img src=x onerror="&#97;lert(1)">';
+const smp = o => Object.assign({ v: 1, seq: 1, up: '100.0', epoch: 1, ms: 5, router: { model: 'RT-AX86U' }, interval: 2, wan: 'eth0', ports: ['eth1'], own: [],
+	links: [['eth0', 1, 1000], ['eth1', 0, -1]], macs: [], ifs: [['eth0', '1', '1']], sta: [], nodes: [] }, o || {});
+A.names = AR.parseNames({ cl: { [NODE]: { '2G': { [EVIL]: { ip: '192.168.50.9', rssi: '-50' }, '__proto__': {}, '00:00:5e:00:53:44': { rssi: '-61' } } } } });
+let hn = AR.buildNet(smp({ ports: ['eth1', EVIL], links: [['eth0', 1, 1000], ['eth1', 1, 1000], [EVIL, 1, 1000]], macs: [['eth1', EVIL], [EVIL, '00:00:5E:00:53:45']],
+	sta: [['eth6', '5', EVIL, '1', '1', -50, 100, 100, 10, 1, null, null, null], [EVIL, '5', '00:00:5E:00:53:46', '1', '1', -50, 100, 100, 10, 1, null, null, null], 'junk', null],
+	nodes: [{ mac: NODE, ip: '192.168.50.10', model: 'RP-AX56', alias: 'Hall', sta: '02:10:00:00:00:81 ' + EVIL, state: 'nokey', up: null, c: [] }, { mac: EVIL, model: 'x', state: 'ok', c: [] }, null] }));
+const ids = hn.devs.map(d => d.id).concat(hn.nodes.map(n => n.id)).sort().join(' ');
+let hm = '';
+try { A.gotAny = true; const L = T.mapLayout(hn), m = T.buildMap(hn, L), f = T.buildFlow(T.flowGroups(hn)); hm = m.svg + m.labels + f.svg + f.rows; } catch (e) { hm = 'ERROR ' + e.message; }
+ok(ids === '00:00:5E:00:53:44 node:' + NODE + ' port:eth1' && !/<img|ERROR/i.test(hm) && (hn.byId['00:00:5E:00:53:44'] || {}).rssi === -61, 'addresses and ports that aren\'t one are dropped (sample, node list, AiMesh client list)', ids + ' ' + (hm.match(/<img|ERROR.*/i) || ''));
+
+// ---- 9. one odd value never stops a sample: names of the wrong type, an empty network
+A.names = AR.parseNames({ nmp: { '00:00:5E:00:53:02': { name: 12345, vendor: 67 } }, custom: 7, leases: null });
+let threw = '';
+try {
+	AR.buildNet(smp({ sta: [['eth6', '5', '00:00:5E:00:53:02', '1', '1', -50, 100, 100, 10, 1, null, null, null]] }));
+	AR.buildNet({ v: 1 }); AR.buildNet(smp({ nodes: 'x', sta: {}, macs: 5, ports: null }));
+} catch (e) { threw = e.message; }
+ok(!threw, 'a sample or a name of the wrong type doesn\'t throw', threw);
+A.names = AR.parseNames({});
+const eg = T.flowGroups(AR.buildNet(smp()));
+ok(eg.length === 1 && eg[0].rows.length === 0, 'Flow with nothing connected still has a group to draw', eg.length);
+
+// ---- 10. classification: Android before the Wi-Fi module's maker; words that only contain a keyword
+const kindFor = (name, nmp) => { A.names = AR.parseNames({ nmp: { '00:00:5E:00:53:7E': nmp || {} } }); return T.classify('00:00:5E:00:53:7E', name, 'wifi').kind; };
+const cb = [['', { vendor: 'Murata Manufacturing Co., Ltd.', vendorclass: 'android-dhcp-14', os_type: 1 }, 'phone'], ['', { vendor: 'Murata Manufacturing Co., Ltd.' }, 'iot'],
+	['Watchtower', null, 'generic'], ['Apple Watch', null, 'watch'], ['Johns-AppleWatch', null, 'watch'], ['Cambridge Audio', null, 'generic'], ['Hue Bridge', null, 'hub'], ['Motion sensor', null, 'sensor']]
+	.filter(c => kindFor(c[0], c[1]) !== c[2]).map(c => (c[0] || JSON.stringify(c[1])) + ' -> ' + kindFor(c[0], c[1]));
+ok(!cb.length, 'classification: Android phones with a module maker, and near-miss names', cb.join('; '));
+
+// ---- 11. expanded view: a node's zone never reaches under the router or into another zone, and holds its node
+const ovl = (a, b) => !(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]), zb = [];
+[[728, 518, 3], [992, 518, 3], [1068, 518, 2], [864, 610, 3], [950, 658, 3], [1184, 790, 3], [1504, 970, 3]].forEach(([w, h, n]) => {
+	const g = T.geomBig(w, h, n);
+	g.nodeSlots.forEach((s, i) => {
+		if (ovl(s.zone, [4.4, 4.8, 9.8, 9.4])) zb.push(w + 'x' + h + ': zone ' + i + ' under the router');
+		if (!(s.cx > s.zone[0] && s.cx < s.zone[2] && s.cy > s.zone[1] && s.cy < s.zone[3])) zb.push(w + 'x' + h + ': node ' + i + ' outside its zone');
+		g.nodeSlots.slice(i + 1).forEach((o, j) => { if (ovl(s.zone, o.zone)) zb.push(w + 'x' + h + ': zones ' + i + ' and ' + (i + 1 + j) + ' overlap'); });
+	});
+});
+ok(!zb.length, 'expanded view: node zones clear of the router and of each other (7 window sizes, up to 3 nodes)', zb.slice(0, 5).join('; '));
+
 process.exit(fails ? 1 : 0);
