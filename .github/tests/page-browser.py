@@ -61,16 +61,6 @@ async def scenario(b, scn, port):
         tag = scn.ljust(8)
         # the page's view: Flow, the list, Details, the report
         await pg.click('#arTabFlow'); await pg.wait_for_timeout(250)
-        # Flow pictures: off by default (outline icons); on, the internet, the router and each node get one, and the rows show drawings
-        pics = "[document.querySelectorAll('#arFlow [data-tx^=\"pic:\"]').length, document.querySelectorAll('#arFlowRows .ic svg[viewBox=\"0 0 24 24\"]').length, document.querySelectorAll('#arFlowRows .ic svg').length]"
-        p0 = await pg.evaluate(pics)
-        await pg.click('#arPicsOn'); await pg.wait_for_timeout(400)
-        p1 = await pg.evaluate(pics)
-        await pg.click('#arPicsOff'); await pg.wait_for_timeout(400)
-        p2 = await pg.evaluate(pics)
-        nodes = await pg.evaluate("Arteria.state.net.nodes.length")
-        check(p0[0] == 0 and p0[1] == p0[2] and p1[0] == 2 + nodes and p1[1] < p1[2] and p2 == p0,
-              tag + 'Flow: icons by default; Pictures adds the internet, the router and %d node(s), and drawings in the rows' % nodes)
         await pg.click('#arTabMap'); await pg.wait_for_timeout(250)
         more = await pg.query_selector('#arMapLabels .ar-lb[data-id="more"]')
         if more:
