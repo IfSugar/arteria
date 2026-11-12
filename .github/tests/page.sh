@@ -3,7 +3,8 @@
 #  1. the page's own JavaScript parses (node --check), with the router's <% %> template tags stubbed;
 #  2. it stays inside its private (function () { ... })(); scope, exporting only initial() and
 #     Arteria: a global $ or store() would replace the firmware's own and break the router's menu;
-#  3. it has no '<%' of its own inside the script: httpd would run it as a template tag.
+#  3. it has no '<%' of its own inside the script: httpd would run it as a template tag;
+#  4. page-units.js: device kinds and their drawings, model shapes, private addresses, the device report.
 # Usage: .github/tests/page.sh [path/to/arteria.asp]   (needs node, python3)
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
@@ -17,6 +18,11 @@ page = open(sys.argv[1], encoding='utf-8').read()
 js = '\n'.join(re.findall(r'<script type="text/javascript">(.*?)</script>', page, re.S))
 if not js.strip():
     sys.exit('no inline script found')
+icons = re.search(r'var ICON = \{(.*?)\n\};', js, re.S)
+keys = re.findall(r'^\t(\w+):', icons.group(1), re.M) if icons else []
+dup = sorted(set(k for k in keys if keys.count(k) > 1))
+if dup:
+    sys.exit('ICON lists an icon twice (the first one is lost): ' + ', '.join(dup))
 if '<%' in js:
     sys.exit("the page's script contains '<%', which the router's web server would run as a template tag")
 open(sys.argv[2], 'w', encoding='utf-8').write(js)
@@ -46,6 +52,9 @@ g=$(node "$t/globals.js" "$t/page.js")
 if [ "$g" = "Arteria initial" ]; then echo "ok    globals: only initial and Arteria"
 else echo "FAIL  the page script defines these globals: $g (only initial and Arteria are allowed)"; fail=1
 fi
+
+# Parts of the page run in Node: device kinds, drawings, model shapes, private addresses, the device report.
+node "$here/page-units.js" "$t/page.js" || fail=1
 
 [ $fail -eq 0 ] && echo "Page: all checks passed."
 exit $fail

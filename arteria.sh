@@ -46,18 +46,18 @@ export PATH
 
 # ---- defaults (overridden by $CONF) ----------------------------------------
 INTERVAL=2              # seconds between samples while the page is open (1-10)
-IDLE_STOP=20            # stop sampling this many seconds after the last page closed (10-300)
+IDLE_STOP=20            # stop sampling this many seconds after the last page closed (20-300)
 NODES=on                # on: read each AiMesh node's per-device counters over SSH; off: backhaul totals only
 NODE_USER=""            # SSH user on the nodes; empty = the router's admin name
 AMTM_UPDATE=on          # on: amtm may update Arteria (amtmupdate); off: only 'update' does
 [ -f "$CONF" ] && . "$CONF"
 case "$INTERVAL" in [1-9]|10) ;; *) INTERVAL=2 ;; esac
 case "$IDLE_STOP" in ''|*[!0-9]*) IDLE_STOP=20 ;; esac
-[ "$IDLE_STOP" -lt 10 ] && IDLE_STOP=10
+[ "$IDLE_STOP" -lt 20 ] && IDLE_STOP=20    # the page's heartbeat comes every 8 s: leave room for a late one
 [ "$IDLE_STOP" -gt 300 ] && IDLE_STOP=300
 case "$NODES" in on|off) ;; *) NODES=on ;; esac
 case "$AMTM_UPDATE" in on|off) ;; *) AMTM_UPDATE=on ;; esac
-case "$NODE_USER" in *[!A-Za-z0-9._-]*) NODE_USER="" ;; esac
+case "$NODE_USER" in -*|*[!A-Za-z0-9._-]*) NODE_USER="" ;; esac
 
 # ---- helpers ---------------------------------------------------------------
 log() { logger -t "$NAME" "$*" 2>/dev/null; }
@@ -75,6 +75,16 @@ have() {
 		if [ -f "${_d:-.}/$1" ] && [ -x "${_d:-.}/$1" ]; then IFS=$_ifs; return 0; fi
 	done
 	IFS=$_ifs; return 1
+}
+
+# /tmp is writable by every process on the router, root or not (some services run as "nobody"). Arteria
+# keeps the script it sends to the nodes and the updates it downloads in $TMPD, so it only ever uses that
+# folder if it is a real directory (not a link someone planted) that belongs to root and nobody else can write.
+tmpd() {
+	[ -d "$TMPD" ] || mkdir -m 700 "$TMPD" 2>/dev/null
+	[ -d "$TMPD" ] && [ ! -L "$TMPD" ] && [ -O "$TMPD" ] && return 0
+	log "$TMPD isn't a folder of ours: not using it"
+	die "$TMPD exists and isn't Arteria's own folder. Remove it and try again."
 }
 
 # Background work runs at the lowest CPU priority, so routing, Wi-Fi and the web UI always come first.
@@ -146,8 +156,9 @@ node_alias() { sed -n 's/.*"cfg_alias":"\([^"]*\)".*/\1/p' "$ROOT/tmp/$1.json" 2
 node_stas() {
 	sed -n "s/.*\"$1\":{\([^}]*\)}.*/\1/p" "$ROOT/tmp/relist.json" 2>/dev/null | grep -o '[0-9A-Fa-f:]\{17\}' | tr a-f A-F | tr '\n' ' '
 }
+node_models() { printf '%s\n' "$1" | awk '{ $1 = ""; $2 = ""; sub(/^ +/, ""); printf "%s%s", (c++ ? ", " : ""), $0 }'; }   # node list -> "RP-AX56, ..."
 # Only when missing: on JFFS even a chmod that changes nothing is a write to flash, and the sampler calls this.
-ssh_home() { [ -d "$SSH_HOME/.ssh" ] || { mkdir -p "$SSH_HOME/.ssh" && chmod 700 "$SSH_HOME/.ssh"; } 2>/dev/null; }
+ssh_home_init() { [ -d "$SSH_HOME/.ssh" ] || { mkdir -p "$SSH_HOME/.ssh" && chmod 700 "$SSH_HOME/.ssh"; } 2>/dev/null; }
 node_file() { printf '%s/node.%s' "$TMPD" "$(printf '%s' "$1" | tr -d :)"; }
 
 # Key logins must never fall back to a password: when a node refuses the key, dbclient asks for one on
@@ -162,12 +173,18 @@ has_tty() { ( exec < /dev/tty ) 2> /dev/null; }
 ssh_port() { p=$(nvram get sshd_port); case "$p" in ''|*[!0-9]*) p=22 ;; esac; printf '%s' "$p"; }
 ssh_user() { if [ -n "$NODE_USER" ]; then printf '%s' "$NODE_USER"; else u=$(nvram get http_username); printf '%s' "${u:-admin}"; fi; }
 
-# One line per Wi-Fi client: "S ifname band MAC tx-bytes rx-bytes rssi tx-kbps rx-kbps connected-s idle-s".
-# The input is "@ ifname band MAC" followed by that client's `wl sta_info`. tx is what the access point
-# sent to the client (its download), rx what it received (its upload). The same program runs on the nodes,
-# so it must not contain single quotes.
-STA_AWK='function out() { if (m != "") print "S", x, b, m, tx, rx, r, tr, rr, cn, id }
-$1 == "@" { out(); x = $2; b = $3; m = $4; tx = "-"; rx = "-"; r = "-"; tr = "-"; rr = "-"; cn = "-"; id = "-"; next }
+# One line per Wi-Fi client: "S ifname band MAC tx-bytes rx-bytes rssi tx-kbps rx-kbps connected-s idle-s
+# standard streams width". The input is "@ ifname band MAC" followed by that client's `wl sta_info`. tx is
+# what the access point sent to the client (its download), rx what it received (its upload). The standard
+# comes from the client's capability flags (EHT_CAP = Wi-Fi 7, HE_CAP = 6, VHT_CAP = 5, N_CAP = 4), streams
+# and width from its last data rates ("he mcs 11 Nss 2 ... bw80") or "link bandwidth = 80 MHZ"; drivers
+# that print none of these leave "-". The same program runs on the nodes, so it must not contain single quotes.
+STA_AWK='function out() { if (m != "") print "S", x, b, m, tx, rx, r, tr, rr, cn, id, cap, ss, bw }
+$1 == "@" { out(); x = $2; b = $3; m = $4; tx = "-"; rx = "-"; r = "-"; tr = "-"; rr = "-"; cn = "-"; id = "-"; cap = "-"; ss = "-"; bw = "-"; next }
+/^[ \t]*flags 0x/ { if ($0 ~ /EHT_CAP/) cap = "be"; else if ($0 ~ /HE_CAP/) cap = "ax"; else if ($0 ~ /VHT_CAP/) cap = "ac"; else if ($0 ~ /N_CAP/) cap = "n"; next }
+/Nss [0-9]/ { for (i = 1; i < NF; i++) if ($i == "Nss" && $(i + 1) + 0 > ss + 0) ss = $(i + 1) + 0 }
+/ bw[0-9]+/ { if (match($0, / bw[0-9]+/)) bw = substr($0, RSTART + 3, RLENGTH - 3) }
+/link bandwidth = [0-9]/ { bw = $4; next }
 /tx total bytes:/ { tx = $NF; next }
 /rx data bytes:/ { rx = $NF; next }
 /^smoothed rssi:/ { r = $NF; next }
@@ -177,12 +194,13 @@ $1 == "@" { out(); x = $2; b = $3; m = $4; tx = "-"; rx = "-"; r = "-"; tr = "-"
 /^[ \t]*idle / { id = $2; next }
 END { out() }'
 
-# "S ..." lines -> JSON rows: ["ifname","band","MAC","tx","rx",rssi,txMbps,rxMbps,connected,idle].
+# "S ..." lines -> JSON rows: ["ifname","band","MAC","tx","rx",rssi,txMbps,rxMbps,connected,idle,standard,streams,width].
 # Byte counters stay strings: shell arithmetic is 32-bit, and awk would print big numbers as 9.5e+09.
 ROWS_AWK='function q(s) { return (s ~ /^[0-9]+$/) ? "\"" s "\"" : "null" }
 function n(s) { return (s ~ /^-?[0-9]+$/) ? s : "null" }
 function k(s) { return (s ~ /^[0-9]+$/) ? int(s / 1000) : "null" }
-function row(s) { return "[\"" $2 "\",\"" $3 "\",\"" toupper($4) "\"," q($5) "," q($6) "," n($7) "," k($8) "," k($9) "," n($10) "," n($11) "]" }'
+function cp(v) { return (v ~ /^(n|ac|ax|be)$/) ? "\"" v "\"" : "null" }
+function row() { return "[\"" $2 "\",\"" $3 "\",\"" toupper($4) "\"," q($5) "," q($6) "," n($7) "," k($8) "," k($9) "," n($10) "," n($11) "," cp($12) "," n($13) "," n($14) "]" }'
 
 sta_lines() {   # the router's own Wi-Fi clients (incl. the nodes' backhaul stations)
 	for p in $RADIOS; do
@@ -233,7 +251,9 @@ EOF
 node_start() {   # mac ip
 	f=$(node_file "$1")
 	: > "$f.out"; : > "$f.err"; now > "$f.start"; rm -f "$f.fail" "$f.last"
-	(HOME="$SSH_HOME" exec dbclient $BATCH -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
+	# ulimit -f: a session that writes more than about 1 MB between two trims is ended (nodes_tick trims at 128 KB),
+	# so a node that floods its output can't fill the router's RAM; it is reconnected like any dropped session.
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
 		< "$TMPD/node.sh" >> "$f.out" 2>> "$f.err" 8>&- &
 	echo $! > "$f.pid"
 }
@@ -260,7 +280,7 @@ node_state() {   # file-base -> state
 		[ $(( $(now) - st )) -lt 15 ] && { echo wait; return; }
 		echo down; return
 	fi
-	e=$(cat "$f.err" 2>/dev/null)
+	e=$(tail -c 2048 "$f.err" 2>/dev/null | tr -d '\000')
 	case "$e" in
 		*[Hh]ost\ key*|*[Mm]ismatch*|*[Ii]dentification*) echo hostkey ;;
 		*[Pp]ermission\ denied*|*[Aa]uth*|*[Pp]assword*|*publickey*) echo nokey ;;
@@ -290,6 +310,7 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 			awk '/^#B / { b = "" } { b = b $0 "\n" } /^#E/ { last = b } END { printf "%s", last }' "$o" > "${o%.out}.last"
 			: > "$o"
 		fi
+		[ "$(wc -c < "${o%.out}.err" 2>/dev/null || echo 0)" -gt 65536 ] && : > "${o%.out}.err"
 	done
 	return 0
 }
@@ -347,7 +368,7 @@ sample_init() {
 	FW=$(fw_version)
 	OWN=$(own_macs | awk '{ printf "%s\"%s\"", (c++ ? "," : ""), $1 }')
 	PORT=$(ssh_port); SSHUSER=$(ssh_user); BATCH=$(ssh_batch)
-	ssh_home
+	ssh_home_init
 	NODE_LIST=""
 	[ "$NODES" = on ] && NODE_LIST=$(node_list)
 	PORTS_JSON=$(printf '%s' "$PORTS" | awk '{ for (i = 1; i <= NF; i++) printf "%s\"%s\"", (i > 1 ? "," : ""), $i }')
@@ -374,11 +395,20 @@ export_names() {
 		if head -c 1 "$ROOT/jffs/nmp_cl_json.js" 2>/dev/null | grep -q '{'; then tr -d '\000-\037' < "$ROOT/jffs/nmp_cl_json.js"; else printf '{}'; fi
 		printf ',"cl":'
 		if head -c 1 "$ROOT/tmp/clientlist.json" 2>/dev/null | grep -q '{'; then tr -d '\000-\037' < "$ROOT/tmp/clientlist.json"; else printf '{}'; fi
-		printf '}'
+		# For the page's Details: DHCP reservations, addresses seen without a lease (static ones), and IPv6
+		# neighbours on the LAN bridge. Only hex, dots and colons get through the two awks, so nothing can
+		# break out of the JSON strings.
+		printf ',"fixed":"%s","arp":"' "$(js "$(nvram get dhcp_staticlist)")"
+		awk 'NR > 1 && $3 != "0x0" && $4 ~ /^[0-9A-Fa-f:]+$/ && $1 ~ /^[0-9.]+$/ { printf "%s %s|", $4, $1 }' "$PROC/net/arp" 2>/dev/null
+		printf '","n6":"'
+		if have ip; then
+			ip -6 neigh show dev br0 2>/dev/null | awk '$1 ~ /^[0-9A-Fa-f:]+$/ && $NF != "FAILED" && $NF != "INCOMPLETE" { for (i = 2; i < NF; i++) if ($i == "lladdr" && $(i + 1) ~ /^[0-9A-Fa-f:]+$/) printf "%s %s|", $(i + 1), $1 }'
+		fi
+		printf '"}'
 	} | write_atomic "$(web_dir)/names.htm"
 }
 
-uptime_cs() { awk '{ printf "%d", $1 * 100 }' "$PROC/uptime"; }   # centiseconds, for timing a sample
+uptime_cs() { awk '{ printf "%d", ($1 % 1000000) * 100 }' "$PROC/uptime"; }   # centiseconds (mod 11.5 days: 32-bit safe), for timing a sample
 
 # ---- the sampler: runs only while the page is open ----------------------------------------
 # The page asks for "start_arteria" every few seconds (service-event). Each request refreshes a
@@ -391,7 +421,7 @@ hb_fresh() {
 sampler_running() { pid_ours "$(cat "$TMPD/sampler.pid" 2>/dev/null)" "$NAME.sh sampler"; }
 
 sampler() {
-	mkdir -p "$TMPD" "$(web_dir)"
+	tmpd; mkdir -p "$(web_dir)"
 	exec 8>"$TMPD/sampler.lock"
 	flock -n 8 || exit 0                 # another sampler is already running
 	lowprio
@@ -412,7 +442,7 @@ sampler() {
 		[ $((seq % 30)) -eq 29 ] && sample_init      # nodes and radios can change while the page is open
 		[ "$NODES" = on ] && nodes_tick
 		sample_json "$seq" "$ms" | write_atomic "$WD/live.htm"
-		ms=$(( ($(uptime_cs) - t0) * 10 ))
+		ms=$(( ($(uptime_cs) - t0) * 10 )); [ "$ms" -lt 0 ] && ms=0   # the counter wrapped during this sample
 		seq=$((seq + 1))
 		sleep "$INTERVAL"
 	done
@@ -425,7 +455,7 @@ service_event() {   # action service
 	[ "$1" = "start" ] || return 0
 	case "$2" in
 		"$NAME")
-			mkdir -p "$TMPD"; touch "$TMPD/heartbeat"
+			tmpd; touch "$TMPD/heartbeat"
 			sampler_running || (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>&1 &) ;;
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat" ;;
@@ -498,7 +528,7 @@ find_webui_page() {
 
 mount_webui() {
 	[ -d "$WWW_USER" ] || { say "$WWW_USER not found - is this Asuswrt-Merlin with JFFS scripts enabled?"; return 1; }
-	mkdir -p "$TMPD"
+	tmpd
 	exec 9>"$WEBUI_LOCK"; flock -x 9 2>/dev/null
 	find_webui_page
 	if [ "$am_webui_page" = "none" ]; then
@@ -516,7 +546,7 @@ mount_webui() {
 	# Menu: edit a copy, and only swap it in if the result is exactly our new lines at known anchors.
 	# A broken menuTree.js would break the router's whole menu, so never risk it.
 	[ -f "$TMP_MENUTREE" ] || cp -f "$MENUTREE" "$TMP_MENUTREE"
-	new="$TMP_MENUTREE.$NAME.$$"
+	new="$TMPD/menuTree.$$"   # in our own folder: a name in /tmp could be a link someone planted
 	sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$new"
 	before=$(wc -l < "$new")
 	entry="{url: \"$am_webui_page\", tabName: \"$TITLE\"},"
@@ -563,7 +593,7 @@ hook_del() {   # only lines this addon wrote: start with our script path, end wi
 }
 
 startup() {
-	mkdir -p "$TMPD"
+	tmpd
 	stop_all          # a sampler can't survive a reboot, but an update replaces it
 	mount_webui
 	return 0
@@ -573,7 +603,7 @@ write_conf() {
 	cat > "$CONF" <<EOF
 # Arteria settings - run "$SCRIPT startup" after editing
 INTERVAL=$INTERVAL               # seconds between samples while the page is open (1-10)
-IDLE_STOP=$IDLE_STOP             # stop sampling this many seconds after the last page closed (10-300)
+IDLE_STOP=$IDLE_STOP             # stop sampling this many seconds after the last page closed (20-300)
 NODES=$NODES               # on: read each AiMesh node's per-device counters over SSH; off: backhaul totals only
 NODE_USER="$NODE_USER"            # SSH user on the nodes; empty = the router's admin name
 AMTM_UPDATE=$AMTM_UPDATE         # on: amtm may update Arteria (amtmupdate); off: only 'update' does
@@ -593,7 +623,7 @@ pub_key() { dropbearkey -y -f "$KEY" 2>/dev/null | awk '/^ssh-/ { print $1, $2, 
 # Returns 0 if the key works, 1 if not, 2 if it can't be tried without risking a password prompt
 # (an older dbclient, run from a terminal).
 node_try() {   # ip
-	mkdir -p "$TMPD"; ssh_home; o="$TMPD/try.$$"; TRY_ERR=""
+	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0
 	b=$(ssh_batch)
 	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
 	(HOME="$SSH_HOME" exec dbclient $b -y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
@@ -604,7 +634,8 @@ node_try() {   # ip
 		sleep 1; i=$((i + 1))
 	done
 	grep -q '^arteria-ok' "$o" 2>/dev/null; rc=$?
-	TRY_ERR=$(grep -v '^arteria-ok' "$o" 2>/dev/null | tail -1 | cut -c1-120)
+	grep -qi 'host key mismatch' "$o" 2>/dev/null && TRY_HOSTKEY=1
+	TRY_ERR=$(grep -v '^arteria-ok' "$o" 2>/dev/null | tail -1 | tr -cd '\040-\176' | cut -c1-120)
 	rm -f "$o"
 	return $rc
 }
@@ -651,6 +682,20 @@ nodekey_print() {
 	say "router lists only the router's own). Then run '$SCRIPT nodes test' here."
 }
 
+# A node that was reset or replaced has a new SSH identity (host key), and the one pinned for it no longer
+# matches. Something else answering at the node's address looks exactly the same, and the next step sends
+# it the admin password, so the old identity is only forgotten when the person at the terminal says so.
+trust_new_identity() {   # ip -> 0 if the old identity was forgotten
+	say "  This node's SSH identity isn't the one Arteria saw before. That's expected if the node was reset,"
+	say "  updated or replaced. If it wasn't, something else may be answering at $1: answer n."
+	printf '  Trust the new identity? (y/n) '
+	read -r a < /dev/tty || a=n
+	case "$a" in [yY]*) ;; *) say "  Left alone."; return 1 ;; esac
+	h=$(printf '%s' "$1" | sed 's/\./\\./g')
+	[ -f "$SSH_HOME/.ssh/known_hosts" ] && sed -i "/^$h /d; /^\[$h\]:/d" "$SSH_HOME/.ssh/known_hosts"
+	return 0
+}
+
 # Give each node the router's Arteria key. Asks for the node's password once (the router's admin
 # password, which AiMesh nodes share); it goes to the node only and is never stored. The key is
 # added to the node's authorized keys, keeping any that are already there.
@@ -659,10 +704,11 @@ nodekey() {   # [node-ip | print]
 	have dbclient && have dropbearkey || die "This firmware has no SSH client (dbclient/dropbearkey)."
 	[ "$(nvram get sshd_enable)" = "0" ] && die "SSH is off on the router (Administration > System > Enable SSH). AiMesh nodes follow that setting: turn it on (LAN only is enough) and try again."
 	[ -t 0 ] || die "nodekey asks for each node's password, so run it in a terminal."
+	tmpd
 	[ -s "$KEY" ] || make_key || die "Couldn't create the key in $KEY"
 	pub=$(pub_key); b64=$(printf '%s' "$pub" | cut -d' ' -f2)
 	[ -n "$b64" ] || die "Couldn't read the public key from $KEY"
-	ssh_home
+	ssh_home_init
 	list=$(node_list)
 	[ -n "$1" ] && list=$(printf '%s\n' "$list" | awk -v ip="$1" '$2 == ip')
 	[ -n "$list" ] || die "No AiMesh node${1:+ at $1} found."
@@ -675,16 +721,18 @@ nodekey() {   # [node-ip | print]
 		al=$(node_alias "$mac")
 		say ""
 		say "${al:-$model} ($model, $ip)"
-		# a node that was reset has a new host key: forget the old one so it can be pinned again
-		[ -f "$SSH_HOME/.ssh/known_hosts" ] && sed -i "/^$ip /d; /^\[$ip\]:/d" "$SSH_HOME/.ssh/known_hosts"
 		node_try "$ip"; rc=$?
 		if [ $rc -eq 0 ]; then say "  Already has the key."; continue; fi
+		if [ "$TRY_HOSTKEY" = 1 ] && ! trust_new_identity "$ip"; then fails=$((fails + 1)); continue; fi
 		say "  Enter the node's password (your router's admin password). It goes to the node only and isn't stored."
 		out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1)
+		case "$out" in *[Hh]ost\ key\ mismatch*)   # only seen here when the key couldn't be tried first (an older dbclient)
+			if trust_new_identity "$ip"; then out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1); fi ;;
+		esac
 		case "$out" in
 			*arteria-had-key*)   say "  The node already listed the key." ;;
 			*arteria-added-key*) say "  Key added."; sleep 4 ;;
-			*) say "  Couldn't log in: $(printf '%s' "$out" | tail -1 | cut -c1-120)"; fails=$((fails + 1)); continue ;;
+			*) say "  Couldn't log in: $(printf '%s' "$out" | tail -1 | tr -cd '\040-\176' | cut -c1-120)"; fails=$((fails + 1)); continue ;;
 		esac
 		node_try "$ip"; rc=$?
 		if [ $rc -eq 0 ]; then say "  Key login works."
@@ -761,6 +809,7 @@ check_support() {
 	t="$ROOT/tmp/$NAME.selftest.$$"; printf 'ab' > "$t" 2>/dev/null; lack=""
 	[ "$(tail -c 1 "$t" 2>/dev/null)" = "b" ] || lack="$lack tail-c"
 	date -r "$t" +%s >/dev/null 2>&1 || lack="$lack date-r"
+	[ -O "$t" ] || lack="$lack test-O"
 	[ -n "$(readlink -f "$ROOT/tmp" 2>/dev/null)" ] || lack="$lack readlink-f"
 	[ "$(printf 'x\n' | sed 's/x/y/')" = "y" ] && [ "$(echo 1 | awk '{ print toupper("a") $1 + 1 }')" = "A2" ] || lack="$lack sed/awk"
 	[ "$(printf 'a\tb' | tr -d '\000-\037')" = "ab" ] || lack="$lack tr"
@@ -778,7 +827,7 @@ check_support() {
 		ck_warn "AiMesh nodes found, but no SSH client: the map shows their backhaul totals only."
 	else
 		n=$(printf '%s\n' "$nl" | wc -l | tr -d ' ')
-		ck_ok "$n AiMesh node(s): $(printf '%s\n' "$nl" | awk '{ $1 = ""; $2 = ""; sub(/^ +/, ""); printf "%s%s", (c++ ? ", " : ""), $0 }')"
+		ck_ok "$n AiMesh node(s): $(node_models "$nl")"
 		[ "$(nvram get sshd_enable)" = "0" ] && ck_warn "SSH is off on the router, so nodes can't be read per device (Administration > System > Enable SSH, LAN only is enough)."
 	fi
 
@@ -802,7 +851,12 @@ check_support() {
 }
 
 # ---- install / update / uninstall ------------------------------------------------------
-asp_matches() { [ -s "$1" ] && grep -q "arteria-version: $VERSION " "$1"; }
+# Whole files only: the page ends with </html> and the script with its dispatch (the "esac" on its last
+# line), so a download that was cut short is never installed.
+whole_page() { [ -s "$1" ] && tail -n 3 "$1" | grep -q '</html>'; }
+whole_script() { [ "$(tail -n 1 "$1" 2>/dev/null)" = "esac" ] && sh -n "$1" 2>/dev/null; }
+script_version() { sed -n 's/^VERSION="\([0-9][0-9.]*\)".*/\1/p' "$1" 2>/dev/null | head -1; }
+asp_matches() { whole_page "$1" && grep -q "arteria-version: $VERSION " "$1"; }
 
 # Download $1 to $2 [quiet]. Up to 3 attempts; succeeds only if a non-empty file arrived.
 fetch() {
@@ -851,14 +905,14 @@ install() {
 		nvram set jffs2_scripts=1; nvram commit
 		say "Enabled 'JFFS custom scripts and configs' (needed so the addon survives reboots)."
 	fi
-	mkdir -p "$ADDON_DIR" "$SCRIPTS_DIR" "$TMPD"
+	mkdir -p "$ADDON_DIR" "$SCRIPTS_DIR"; tmpd
 	if [ "$src" != "$ADDON_DIR" ]; then
 		asp="$src/$NAME.asp"
 		if ! asp_matches "$asp"; then   # missing, or left over from another version
 			say "Downloading the web page from GitHub..."
 			asp="$TMPD/$NAME.asp.dl"; got=0
-			if [ -n "$AR_RAW_URL" ]; then bases="$RAW_URL"; else bases="$RAW_BASE/$VERSION $RAW_URL"; fi
-			for base in $bases release; do
+			if [ -n "$AR_RAW_URL" ]; then bases="$RAW_URL"; else bases="$RAW_BASE/$VERSION release $RAW_URL"; fi
+			for base in $bases; do
 				[ "$base" = release ] && { base=$(release_url); [ -n "$base" ] || continue; }
 				if fetch "$base/$NAME.asp" "$asp" quiet; then
 					asp_matches "$asp" && { got=1; break; }
@@ -919,16 +973,35 @@ install() {
 	say "Arteria samples only while that page is open, and stops about $IDLE_STOP seconds after you leave it."
 }
 
+# update and update dev: download the script from base URL $1 into a fresh folder of ours ($dl) and check
+# it is whole; $new is its version. $2 names the source in messages, $3 is fetch's "quiet".
+get_script() {   # base source [quiet]
+	tmpd; dl="$TMPD/update.$$"; rm -rf "$dl"; mkdir "$dl" || die "Couldn't create $dl"
+	fetch "$1/$NAME.sh" "$dl/$NAME.sh" $3 || { rm -rf "$dl"; die "Couldn't download $NAME.sh from $2; nothing was changed."; }
+	new=$(script_version "$dl/$NAME.sh")
+	if [ -z "$new" ] || ! whole_script "$dl/$NAME.sh"; then
+		rm -rf "$dl"; die "The script from $2 looks incomplete; nothing was changed."
+	fi
+}
+# ...then its page, which must be whole and the same version.
+get_page() {   # base source [quiet]
+	if ! fetch "$1/$NAME.asp" "$dl/$NAME.asp" $3 || ! whole_page "$dl/$NAME.asp" || ! grep -q "arteria-version: $new " "$dl/$NAME.asp"; then
+		rm -rf "$dl"; die "Couldn't download the matching web page from $2; nothing was changed."
+	fi
+}
+# ...and install them over this one. Settings and node access are kept; install writes the development-
+# version mark from AR_BUILD ($1), or removes it for a release.
+install_dl() {   # [build]
+	AR_BUILD="$1" sh "$dl/$NAME.sh" install < /dev/null; rc=$?
+	rm -rf "$dl"
+	return $rc
+}
+
 update() {   # [force]  fetch the latest release from GitHub and reinstall over this one
-	dl="$TMPD/update.$$"; rm -rf "$dl"; mkdir -p "$dl" || die "Couldn't create $dl"
 	say "Checking GitHub for updates..."
 	rel=$(release_url)
-	[ -n "$rel" ] || { rm -rf "$dl"; die "Couldn't find the latest release on GitHub (no connection to github.com?); nothing was changed."; }
-	fetch "$rel/$NAME.sh" "$dl/$NAME.sh" || { rm -rf "$dl"; die "Couldn't download the update; nothing was changed."; }
-	new=$(sed -n 's/^VERSION="\([0-9][0-9.]*\)".*/\1/p' "$dl/$NAME.sh" | head -1)
-	if [ -z "$new" ] || ! sh -n "$dl/$NAME.sh" 2>/dev/null; then
-		rm -rf "$dl"; die "The downloaded script looks incomplete; nothing was changed."
-	fi
+	[ -n "$rel" ] || die "Couldn't find the latest release on GitHub (no connection to github.com?); nothing was changed."
+	get_script "$rel" "the latest release"
 	if [ "$new" = "$VERSION" ] && [ "$1" != "force" ] && [ ! -f "$BUILD_FILE" ]; then
 		rm -rf "$dl"; say "Already up to date ($VERSION)."; return 0
 	fi
@@ -937,14 +1010,9 @@ update() {   # [force]  fetch the latest release from GitHub and reinstall over 
 		say "This is $VERSION$( [ -f "$BUILD_FILE" ] && printf ' (a development version)'), newer than the latest release ($new). Nothing was changed; 'update force' installs $new."
 		return 0
 	fi
-	if ! fetch "$rel/$NAME.asp" "$dl/$NAME.asp" || ! grep -q "arteria-version: $new " "$dl/$NAME.asp"; then
-		rm -rf "$dl"; die "Couldn't download the matching web page; nothing was changed."
-	fi
+	get_page "$rel" "the latest release"
 	say "Updating $VERSION -> $new (settings and node access are kept)"
-	sh "$dl/$NAME.sh" install < /dev/null; rc=$?
-	rm -rf "$dl"
-	[ $rc -eq 0 ] && rm -f "$BUILD_FILE"
-	return $rc
+	install_dl
 }
 
 build_text() {   # "" for a release; "development version: main @ 1a2b3c4, installed 2026-11-11 23:30"
@@ -952,35 +1020,25 @@ build_text() {   # "" for a release; "development version: main @ 1a2b3c4, insta
 	read -r kind br sha when < "$BUILD_FILE"
 	[ "$kind" = dev ] && printf 'development version: %s @ %s, installed %s' "$br" "$sha" "$when"
 }
+ver_line() { printf '%s %s' "$TITLE" "$VERSION"; b=$(build_text); [ -n "$b" ] && printf ' (%s)' "$b"; return 0; }   # "Arteria 1.0.0 (development version: ...)"
 update_dev() {   # [branch]
 	br=${1:-main}
 	case "$br" in ''|[-./]*|*..*|*//*|*/|*[!A-Za-z0-9._/-]*|refs/*|pull/*) die "'$br' isn't a branch name; nothing was changed." ;; esac
-	dl="$TMPD/update.$$"; rm -rf "$dl"; mkdir -p "$dl" || die "Couldn't create $dl"
 	say "Looking up the newest commit on $br..."
 	# Only a branch of this repository, by its commit. GitHub also serves commits and pull requests
 	# from other people's forks under this repository's addresses, and those aren't reviewed here.
 	sha=$(curl -fsL --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
 		"https://api.github.com/repos/$REPO/branches/$br" 2>/dev/null \
 		| grep -o '"sha": *"[0-9a-f]\{40\}"' | head -1 | grep -o '[0-9a-f]\{40\}')
-	[ -n "$sha" ] || { rm -rf "$dl"; die "GitHub has no branch '$br' in $REPO, or couldn't be reached; nothing was changed."; }
-	fetch "$RAW_BASE/$sha/$NAME.sh" "$dl/$NAME.sh" quiet || { rm -rf "$dl"; die "Couldn't download $NAME.sh from '$br'; nothing was changed."; }
-	new=$(sed -n 's/^VERSION="\([0-9][0-9.]*\)".*/\1/p' "$dl/$NAME.sh" | head -1)
-	if [ -z "$new" ] || ! sh -n "$dl/$NAME.sh" 2>/dev/null; then
-		rm -rf "$dl"; die "The script on '$br' looks incomplete; nothing was changed."
-	fi
-	if ! fetch "$RAW_BASE/$sha/$NAME.asp" "$dl/$NAME.asp" quiet || ! grep -q "arteria-version: $new " "$dl/$NAME.asp"; then
-		rm -rf "$dl"; die "Couldn't download the matching web page from '$br'; nothing was changed."
-	fi
+	[ -n "$sha" ] || die "GitHub has no branch '$br' in $REPO, or couldn't be reached; nothing was changed."
+	get_script "$RAW_BASE/$sha" "'$br'" quiet
+	get_page "$RAW_BASE/$sha" "'$br'" quiet
 	short=$(printf '%s' "$sha" | cut -c1-7)
 	say "Installing the development version of $br ($new, commit $short). Settings and node access are kept;"
 	say "'$SCRIPT update' goes back to the latest release."
 	b="dev $br $short $(date '+%Y-%m-%d %H:%M')"
-	AR_BUILD="$b" sh "$dl/$NAME.sh" install < /dev/null; rc=$?
-	rm -rf "$dl"
-	if [ $rc -eq 0 ]; then
-		printf '%s\n' "$b" > "$BUILD_FILE"
-		log "development version installed: $br @ $short ($new)"
-	fi
+	install_dl "$b"; rc=$?
+	[ $rc -eq 0 ] && log "development version installed: $br @ $short ($new)"
 	return $rc
 }
 
@@ -996,7 +1054,7 @@ uninstall() {
 }
 
 status() {
-	say "$TITLE $VERSION$(b=$(build_text); [ -n "$b" ] && printf ' (%s)' "$b")"
+	say "$(ver_line)"
 	say "Web page:    $(cat "$ADDON_DIR/webui_page" 2>/dev/null || echo 'not mounted')"
 	if sampler_running; then
 		live="$(web_dir)/live.htm"
@@ -1007,13 +1065,13 @@ status() {
 	fi
 	say "Node access: $NODES$( [ "$NODES" = on ] && { [ -s "$KEY" ] && printf ', key present' || printf ", no key yet ('nodekey' creates it)"; })"
 	nl=$(node_list)
-	[ -n "$nl" ] && say "Nodes:       $(printf '%s\n' "$nl" | awk '{ $1 = ""; $2 = ""; sub(/^ +/, ""); printf "%s%s", (c++ ? ", " : ""), $0 }') (details: '$SCRIPT nodes test')"
+	[ -n "$nl" ] && say "Nodes:       $(node_models "$nl") (details: '$SCRIPT nodes test')"
 	say "amtm updates: $AMTM_UPDATE"
 }
 
 # Everything a bug report needs, and nothing personal: no device names, no MAC or IP addresses.
 debug() {
-	say "$TITLE $VERSION$(b=$(build_text); [ -n "$b" ] && printf ' (%s)' "$b")"
+	say "$(ver_line)"
 	say "Router:      $(nvram get productid) $(nvram get odmpid)  firmware $(fw_version)  $(uname -m)"
 	say "BusyBox:     $(busybox 2>/dev/null | head -1 | cut -d' ' -f2)   dbclient: $(have dbclient && echo yes || echo no)   dropbearkey: $(have dropbearkey && echo yes || echo no)"
 	say "Settings:    INTERVAL=$INTERVAL IDLE_STOP=$IDLE_STOP NODES=$NODES amtm=$AMTM_UPDATE"
@@ -1037,9 +1095,20 @@ debug() {
 		x=${p%%:*}; m=$(wl -i "$x" assoclist 2>/dev/null | cut -d' ' -f2 | head -1)
 		[ -n "$m" ] || continue
 		say "sta_info fields ($x):"
-		wl -i "$x" sta_info "$m" 2>/dev/null | sed 's/[0-9A-Fa-f][0-9A-Fa-f]:[0-9A-Fa-f:]*/xx:xx/g; s/^/  /' | head -40
+		wl -i "$x" sta_info "$m" 2>/dev/null | sed 's/\([0-9A-Fa-f]\{2\}:\)\{2,\}[0-9A-Fa-f]\{2\}/xx:xx/g; s/^/  /' | head -80
 		break
 	done
+	# How the router classifies devices, as numbers only (no names, addresses or MACs): the icon numbers
+	# saved in the client list, the types and systems networkmap detected, the DHCP vendor classes cut to
+	# their leading letters (the rest can name a phone model), and how many Wi-Fi clients use a private address.
+	say "Saved icons:    $(nvram get custom_clientlist | tr '<' '\n' | awk -F'>' 'NF >= 4 && $4 ~ /^[0-9]+$/ { n[$4 + 0]++ } END { for (t in n) printf "%sx%d ", t, n[t] }')"
+	f="$ROOT/jffs/nmp_cl_json.js"
+	if [ -f "$f" ]; then
+		say "Detected types: $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"type": *"\{0,1\}\([0-9][0-9]*\).*/\1/p' | sort -n | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
+		say "Detected OS:    $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"os_type": *"\{0,1\}\([0-9][0-9]*\).*/\1/p' | sort -n | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
+		say "Vendor classes: $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"vendorclass": *"\([A-Za-z]*\).*/\1/p' | cut -c1-12 | sort | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
+	fi
+	say "Private MACs:   $(for p in $(radio_list); do wl -i "${p%%:*}" assoclist 2>/dev/null; done | awk '$2 ~ /^.[26AEae]/ { n++ } END { print n + 0, "of", NR }')"
 	live="$(web_dir)/live.htm"
 	[ -f "$live" ] && say "Last sample: $(sed -n 's/.*"ms":\([0-9]*\).*/\1/p' "$live" | head -1) ms, $(( $(now) - $(date -r "$live" +%s) )) s ago"
 }
@@ -1055,9 +1124,9 @@ amtm_update() {   # [check]
 		return 1
 	fi
 	say "  i  Running function amtmupdate"
-	mkdir -p "$TMPD"; alog="$TMPD/amtmupdate.log"
+	tmpd; alog="$TMPD/amtmupdate.log"
 	( update ) > "$alog" 2>&1; rc=$?
-	now_ver=$(sed -n 's/^VERSION="\([0-9][0-9.]*\)".*/\1/p' "$SCRIPT" 2>/dev/null | head -1)
+	now_ver=$(script_version "$SCRIPT")
 	if [ $rc -eq 0 ]; then
 		say "  ✔  $TITLE ${now_ver:-$VERSION} amtmupdate complete"
 		log "amtmupdate: $VERSION -> ${now_ver:-$VERSION}"
@@ -1134,6 +1203,7 @@ menu() {
 	done
 }
 
+# Keep this dispatch last, ending in a bare "esac": update only installs a download that ends with it (whole_script).
 case "$1" in
 	'')            if [ -t 0 ] && [ -t 1 ]; then menu; else usage; fi ;;
 	menu)          menu ;;
@@ -1143,7 +1213,7 @@ case "$1" in
 	uninstall)     uninstall ;;
 	startup)       startup ;;
 	sampler)       sampler ;;
-	sample)        mkdir -p "$TMPD"; sample_init; links_json > "$TMPD/links.json"; macs_json > "$TMPD/macs.json"; sample_json 0 0; echo ;;
+	sample)        tmpd; sample_init; links_json > "$TMPD/links.json"; macs_json > "$TMPD/macs.json"; sample_json 0 0; echo ;;
 	service_event) service_event "$2" "$3" ;;
 	nodes)         nodes_cmd "$2" ;;
 	nodekey)       nodekey "$2"; exit $? ;;

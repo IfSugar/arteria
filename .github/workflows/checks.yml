@@ -16,7 +16,9 @@ jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0, pinned to its commit
+        with:
+          persist-credentials: false   # the checks never push
 
       - name: Script and page versions match
         run: |
@@ -48,6 +50,12 @@ jobs:
         # It must parse, and stay inside its private (function () { ... })(); scope: a global $ or
         # store() replaces the firmware's own and breaks the router's menu.
         run: sh .github/tests/page.sh
+
+      - name: Check the page in a browser (every scenario, the expanded view, keyboard, hostile names, two tabs)
+        # Headless Chrome (the runner's own) against preview.py's made-up data.
+        run: |
+          python3 -m venv /tmp/pw && /tmp/pw/bin/pip install --quiet playwright
+          /tmp/pw/bin/python .github/tests/page-browser.py "$(command -v google-chrome || command -v chromium)"
 
       - name: Changelog entry
         run: |
