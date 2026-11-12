@@ -440,6 +440,35 @@ stop_all() {   # sampler and node sessions, e.g. before an update or uninstall
 }
 
 # ---- web UI (Merlin Addons API) ------------------------------------------------
+# Insert line $2 into the menu copy $1, in a tab list right after the tab for url $3 and the hidden
+# sub-pages that follow it (its "__INHERIT__" tabs). Only tab-list lines count: some models'
+# menuTree.js also builds tabs in code ("menuTree.list[i].tab[index] = {url: ...}"), never touched.
+after_tab() {   # file line url
+	awk -v e="$2" -v u="$3" '
+		ins { if ($0 ~ /tabName: "__INHERIT__"/ && $0 !~ /url: "NULL"/) { print; next } print e; ins = 0 }
+		index($0, "{url: \"" u "\", tabName:") && $0 ~ /^[ \t]*[{]url: / { ins = 1 }
+		{ print }' "$1" > "$1.2" && mv -f "$1.2" "$1"
+}
+tab_count() { grep -c "^[[:space:]]*{url: \"$2\", tabName:" "$1"; }   # file url
+
+# Where the menu entry goes: Traffic Analyzer, right after Statistic. Merlin shows that menu on models
+# with Trend Micro's engine (bwdpi, like the RT-AX86U) in router mode. Routers without it: Network
+# Tools, after all its other tabs (just before the list's closing "NULL" entry). Sets where (the menu's
+# name) and added (lines added); if neither fits, where stays empty and the menu is left alone.
+menu_insert() {   # file line
+	where=""; added=0; ta=0
+	case ",$(nvram get rc_support | tr ' ' ',')," in *,bwdpi,*) ta=1 ;; esac
+	case "$(nvram get sw_mode)" in ''|1) ;; *) ta=0 ;; esac   # hidden in access point, repeater and bridge modes
+	if [ $ta = 1 ] && [ "$(tab_count "$1" TrafficAnalyzer_Statistic.asp)" = 1 ]; then
+		after_tab "$1" "$2" TrafficAnalyzer_Statistic.asp && added=1 && where="Traffic Analyzer"
+	elif [ "$(grep -c 'index: "menu_NekworkTool"' "$1")" = 1 ]; then
+		awk -v e="$2" '
+			/index: "menu_/ { nt = ($0 ~ /index: "menu_NekworkTool"/) }
+			nt && /^[ \t]*[{]url: "NULL"/ { print e; nt = 0 }
+			{ print }' "$1" > "$1.2" && mv -f "$1.2" "$1" && added=1 && where="Network Tools"
+	fi
+}
+
 menu_remount() {
 	umount "$MENUTREE" 2>/dev/null
 	mount -o bind "$TMP_MENUTREE" "$MENUTREE"
@@ -491,18 +520,7 @@ mount_webui() {
 	sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$new"
 	before=$(wc -l < "$new")
 	entry="{url: \"$am_webui_page\", tabName: \"$TITLE\"},"
-	# Just before Traffic Monitor (the tabs after it inherit its name, so never after it). Merlin's
-	# menu lists Traffic Monitor in two menus, Traffic Analyzer (models with Trend Micro's engine, like
-	# the RT-AX86U) and Traffic Manager (the others), and shows one of them: Arteria goes in both.
-	# Merlin's Tools menu is the fallback.
-	where=""; added=0
-	n=$(grep -c 'url: "Main_TrafficMonitor_realtime.asp"' "$new")
-	if [ "$n" -ge 1 ] && [ "$n" -le 2 ]; then
-		sed -i "/url: \"Main_TrafficMonitor_realtime.asp\"/i $entry" "$new"; added=$n
-		case ",$(nvram get rc_support | tr ' ' ',')," in *,bwdpi,*) where="Traffic Analyzer" ;; *) where="Traffic Manager" ;; esac
-	elif [ "$(grep -c 'url: "Tools_OtherSettings.asp"' "$new")" = 1 ]; then
-		sed -i "/url: \"Tools_OtherSettings.asp\"/a $entry" "$new"; added=1; where="Tools"
-	fi
+	menu_insert "$new" "$entry"
 	if [ -n "$where" ] && [ "$(grep -c "tabName: \"$TITLE\"" "$new")" = "$added" ] && [ "$(wc -l < "$new")" -eq $((before + added)) ]; then
 		mv -f "$new" "$TMP_MENUTREE"
 		menu_remount

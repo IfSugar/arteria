@@ -67,7 +67,7 @@ The installer:
 4. mounts the page
 5. if you have AiMesh nodes, offers to give them the router's key (see [AiMesh nodes](#aimesh-nodes))
 
-Open **Traffic Analyzer → Arteria**, the tab before *Traffic Monitor* (on models without Trend Micro's engine, that menu is *Traffic Manager*). If the tab doesn't show up, reload the router page with **Ctrl+F5** (Windows) or **Cmd+Shift+R** (Mac): browsers cache the router's menu. The installer also prints a direct link to the page.
+Open **Traffic Analyzer → Arteria**, the tab after *Statistic*. Routers without Traffic Analyzer (models without Trend Micro's engine, or not in router mode) get it as the last tab of **Network Tools** instead. If the tab doesn't show up, reload the router page with **Ctrl+F5** (Windows) or **Cmd+Shift+R** (Mac): browsers cache the router's menu. The installer also prints a direct link to the page.
 
 **Updating:** run `/jffs/addons/arteria/arteria.sh update`. It asks GitHub for the latest release, and if that's a newer version it installs it over the old one, keeping your settings, the node key and the page slot. `update force` reinstalls the latest release. Only published releases are installed, never unreleased work.
 
@@ -162,7 +162,7 @@ Arteria follows amtm's conventions for third-party scripts:
 - **JFFS (flash):** about 170 KB of addon files and the node key, written at install. One tagged line is added to each of `/jffs/scripts/services-start` and `service-event`. Nothing is written to flash while sampling, apart from a node's host key the first time Arteria connects to it.
 - **Settings:** the only router setting it may change is *JFFS custom scripts and configs*, switched on if it's off.
 - **AiMesh nodes:** when you run `nodekey` (or say yes at install), one line is added to each node's authorized keys (*Administration → System → Authorized Keys*, stored in the node's nvram). Nothing else on a node is changed.
-- **RAM only (gone after a reboot, recreated at boot):** the web page, the menu entry and the sample files (a few KB). The menu is edited on a copy and swapped in only if the result is exactly the expected lines: one before each *Traffic Monitor* tab (Merlin lists it in two menus and shows one).
+- **RAM only (gone after a reboot, recreated at boot):** the web page, the menu entry and the sample files (a few KB). The menu is edited on a copy and swapped in only if the result is exactly one new line in a tab list (after *Statistic*, or last in *Network Tools*); otherwise it's left alone and the installer prints the page's direct link.
 - **Load:** nothing at all while the page is closed. While it's open: one sample every 2 seconds at the lowest CPU priority (`nice 19`), plus one SSH session per node, each reading its own counters. The page's footer shows how long the last sample took and the router's load.
 
 To remove everything: `arteria.sh uninstall`. The key line each node lists stays until you remove it from the node's *Authorized Keys* (or reset the node), but with the router's key deleted it no longer opens anything. If the web UI ever looks wrong, a reboot clears all RAM-side changes.
