@@ -8,7 +8,7 @@
 #
 #  Usage: arteria.sh                    (a menu, when run in a terminal: amtm opens this)
 #         arteria.sh install | update [force | dev [branch]] | uninstall | status | check |
-#                    nodes [test] | nodekey [node-ip | print] | fingerbank [off | now] | debug | sample |
+#                    nodes [test] | nodekey [node-ip | print] | fingerbank [off | now | compare] | debug | sample |
 #                    amtmupdate [check] | startup | version
 #
 #  Install:  d=/tmp/arteria-install; rm -rf "$d" && mkdir -m 700 "$d" && curl -fsL --retry 3 \
@@ -38,7 +38,8 @@ TMP_MENUTREE="$ROOT/tmp/menuTree.js"
 WEBUI_LOCK="$ROOT/tmp/addonwebui.lock"
 TMPD="$ROOT/tmp/$NAME"
 FB_KEY="$ADDON_DIR/fingerbank_key"   # your own Fingerbank API key, when you turned device recognition on
-FB_CACHE="$ADDON_DIR/fingerbank"     # Fingerbank's answers, one line per DHCP fingerprint
+FB_CACHE="$ADDON_DIR/fingerbank"     # Fingerbank's answers, one line per question (see fb_keys)
+DISC="$ADDON_DIR/discovered"         # what devices said about themselves when asked (Recognise now), by MAC
 FB_URL="https://api.fingerbank.org/api/v2/combinations/interrogate"
 DHCP_FP="$TMPD/dhcp_fp"              # each device's DHCP fingerprint, in RAM: "MAC options vendor-class"
 DNSMASQ_CONF="$ROOT/etc/dnsmasq.conf"
@@ -445,6 +446,8 @@ export_names() {
 		fi
 		printf '","fb":"'
 		fb_on && fb_export
+		printf '","dc":"'
+		fb_on && disc_export
 		printf '"}'
 	} | write_atomic "$(web_dir)/names.htm"
 	fb_status
@@ -553,7 +556,8 @@ write_dhcp_hook() {   # file next-script (empty: none)
 	cat > "$1.new" <<EOF || return 1
 #!/bin/sh
 # Arteria (Fingerbank device recognition): note which DHCP options a device asked for, in order (its fingerprint),
-# and its vendor class, then run the lease script dnsmasq had before, with the same arguments and environment.
+# and its vendor class, have a new device recognised, then run the lease script dnsmasq had before, with the same
+# arguments and environment.
 PATH="\${PATH:-/sbin:/bin:/usr/sbin:/usr/bin}"
 case "\$1" in add|old)
 	m=\$(printf '%s' "\$2" | tr 'a-f' 'A-F')
@@ -566,6 +570,10 @@ case "\$1" in add|old)
 		# a fingerprint Fingerbank hasn't answered yet: ask now, in the background, page open or not
 		t=\$(printf '\t')
 		grep -qF "\$o;\$v\$t" "$FB_CACHE" 2>/dev/null || ( ${ROOT:+AR_ROOT=$ROOT }"$SCRIPT" fblookup < /dev/null > /dev/null 2>&1 & )
+		# a device that just joined and hasn't said what it is yet: ask the network about it in a minute (once until a reboot)
+		if [ "\$1" = add ] && ! grep -q "^\$m|" "$DISC" 2>/dev/null && ! grep -qx "\$m" "$TMPD/disc_tried" 2>/dev/null; then
+			echo "\$m" >> "$TMPD/disc_tried"; ( ${ROOT:+AR_ROOT=$ROOT }${AR_PROC:+AR_PROC=$PROC }${AR_DISC_DELAY:+AR_DISC_DELAY=$DISC_DELAY }"$SCRIPT" discnew < /dev/null > /dev/null 2>&1 & )
+		fi
 	fi ;;
 esac
 $nx
@@ -587,10 +595,20 @@ fb_hooks() {   # add | del
 	return 0
 }
 fb_hooked() { grep -q "^dhcp-script=$TMPD/dhcp_hook\." "$DNSMASQ_CONF" 2>/dev/null; }
+fb_rehook() {   # the lease script dnsmasq runs, rewritten by this version (dnsmasq keeps calling it by its name)
+	f=$(sed -n 's/^dhcp-script=//p' "$DNSMASQ_CONF" 2>/dev/null | head -n 1)
+	case "$f" in "$TMPD"/dhcp_hook.*.sh) ours_file "$f" || return 0 ;; *) return 0 ;; esac
+	write_dhcp_hook "$f" "$(sed -n 's/^exec \(.*\) "\$@"$/\1/p' "$f" | head -n 1)"
+}
 
 # One question to Fingerbank. The key goes in a header read from a here-document, so it never shows in a command line.
-fb_query() {   # key options vendor -> "HTTP-code body"
-	if [ -n "$3" ]; then b="{\"dhcp_fingerprint\":\"$2\",\"dhcp_vendor\":\"$3\"}"; else b="{\"dhcp_fingerprint\":\"$2\"}"; fi
+fb_query() {   # api-key question ("options;vendor class[;services;SERVER strings[;MAC]]", see fb_keys) -> "HTTP-code body"
+	b=$(printf '%s\n' "$2" | awk -F';' 'function list(name, v, sep,   a, n, i, t) { n = split(v, a, sep); t = ""
+			for (i = 1; i <= n; i++) if (a[i] != "") t = t (t == "" ? "" : ",") "\"" a[i] "\""
+			if (t != "") s = s (s == "" ? "" : ",") "\"" name "\":[" t "]" }
+		{ s = ""; if ($1 != "") s = "\"dhcp_fingerprint\":\"" $1 "\""; if ($2 != "") s = s (s == "" ? "" : ",") "\"dhcp_vendor\":\"" $2 "\""
+		  list("mdns_services", $3, ","); list("upnp_server_strings", $4, "~")
+		  if ($5 ~ /^[0-9A-F:]+$/) s = s (s == "" ? "" : ",") "\"mac\":\"" $5 "\""; print "{" s "}" }' | tr -d '\\')
 	out=$(curl -s --proto =https --connect-timeout 10 --max-time 20 -K - -X POST -H 'Content-Type: application/json' -d "$b" -w '\n%{http_code}' "$FB_URL" 2>/dev/null <<EOF
 header = "Authorization: Bearer $1"
 EOF
@@ -604,16 +622,29 @@ fb_cache_add() {   # fingerprint-key code score name
 		&& mv -f "$FB_CACHE.new" "$FB_CACHE"
 }
 
-# The first fingerprint Fingerbank hasn't answered: never asked, or not known to it more than 30 days ago.
-# Its key is "options;vendor class" (the vendor class with single spaces).
+# What Arteria asks Fingerbank about each device, one line each: "MAC<tab>question". The question is the key of
+# Fingerbank's answer in the cache too: "options;vendor class" from its DHCP request (the vendor class with single
+# spaces), then, once it has answered Recognise now, ";services;SERVER strings": up to 5 of the mDNS services it offers
+# (the telling ones first, comma-separated) and up to 3 UPnP SERVER strings ("~"-separated). Identical devices
+# ask the same question, so they share one answer.
+fb_keys() {
+	cat "$DISC" 2>/dev/null | awk -F'|' -v fp="$DHCP_FP" 'BEGIN { while ((getline l < fp) > 0) { n = split(l, f, " "); if (f[1] !~ /^[0-9A-F:]+$/ || f[2] !~ /^[0-9,]+$/) continue
+			v = ""; for (i = 3; i <= n; i++) v = v (i > 3 ? " " : "") f[i]; if (!(f[1] in d)) o[++c] = f[1]; d[f[1]] = f[2] ";" v } }
+		$1 ~ /^[0-9A-F:]+$/ && length($1) == 17 {
+			n = split($2, a, " "); t = ""; k = 0
+			for (p = 0; p < 2; p++) for (i = 1; i <= n && k < 5; i++) if (a[i] ~ /\.local$/ && (a[i] ~ /^_(http|https|ssh|sftp-ssh)\._tcp\./) == p) { t = t (k++ ? "," : "") a[i] }
+			n = split($5, a, "~"); u = ""; for (i = 1; i <= n && i <= 3; i++) u = u (i > 1 ? "~" : "") a[i]
+			if (t u != "") { x[$1] = t ";" u; if (!($1 in d)) o[++c] = $1 } }
+		END { for (i = 1; i <= c; i++) { m = o[i]; if (!(m in d) && !(m in x)) continue; q = (m in d) ? d[m] : ";"; if (m in x) q = q ";" x[m]; print m "\t" q } }'
+}
+# The first question Fingerbank hasn't answered: never asked, or not known to it more than 30 days ago.
 fb_next() {
-	[ -s "$DHCP_FP" ] || return 0
-	awk -v c="$FB_CACHE" -v now="$(now)" 'BEGIN { while ((getline l < c) > 0) { split(l, f, "\t"); if (f[2] == 200 || now - f[5] < 2592000) done[f[1]] = 1 } }
-		$1 ~ /^[0-9A-F:]+$/ && $2 ~ /^[0-9,]+$/ { v = ""; for (i = 3; i <= NF; i++) v = v (i > 3 ? " " : "") $i; if (!(($2 ";" v) in done)) { print $2 ";" v; exit } }' "$DHCP_FP"
+	fb_keys | awk -F'\t' -v c="$FB_CACHE" -v now="$(now)" 'BEGIN { while ((getline l < c) > 0) { split(l, f, "\t"); if (f[2] == 200 || now - f[5] < 2592000) done[f[1]] = 1 } }
+		!($2 in done) { print $2; exit }'
 }
 
 fb_lookup() {   # up to 10 lookups, while there's anything to ask and Fingerbank answers
-	k=$(head -n 1 "$FB_KEY" 2>/dev/null | tr -cd 'A-Za-z0-9'); [ -n "$k" ] || return 0
+	k=$(head -n 1 "$FB_KEY" 2>/dev/null | tr -cd 'A-Za-z0-9'); case $k in "") return 0 ;; esac   # never [ "$k" ]: [ is a program there
 	i=0
 	while [ $i -lt 10 ]; do
 		pick=$(fb_next); [ -n "$pick" ] || return 0
@@ -622,7 +653,7 @@ fb_lookup() {   # up to 10 lookups, while there's anything to ask and Fingerbank
 		[ $((t - h)) -ge 3600 ] 2>/dev/null || [ "$h" = 0 ] && { h=$t; c=0; }
 		[ "$c" -lt 100 ] || { echo "wait $((h + 3600))" > "$TMPD/fb_state"; return 0; }
 		echo "$h $((c + 1))" > "$TMPD/fb_hour"
-		r=$(fb_query "$k" "${pick%%;*}" "${pick#*;}"); code=${r%% *}; body=${r#* }
+		r=$(fb_query "$k" "$pick"); code=${r%% *}; body=${r#* }
 		echo "${code:-000} $t" > "$TMPD/fb_last"
 		case "$code" in
 			200) fb_cache_add "$pick" 200 "$(printf '%s' "$body" | sed -n 's/.*"score":\([0-9][0-9]*\).*/\1/p' | head -n 1)" \
@@ -639,20 +670,20 @@ fb_lookup() {   # up to 10 lookups, while there's anything to ask and Fingerbank
 
 # From dnsmasq's lease script (a new fingerprint) and the sampler: one round of lookups at a time, in the background.
 fb_tick() {   # [wait]: wait for a round that's running (dnsmasq's script: its new fingerprint mustn't be missed)
-	fb_on && [ -s "$DHCP_FP" ] && have curl || return 0
+	fb_on && { [ -s "$DHCP_FP" ] || [ -s "$DISC" ]; } && have curl || return 0
 	lk="-n"; [ "$1" = wait ] && lk="-w 120"
 	st=$(cat "$TMPD/fb_state" 2>/dev/null)
 	case "$st" in badkey) return 0 ;; "wait "*) [ "$(now)" -ge "${st#wait }" ] 2>/dev/null || return 0 ;; esac
 	( exec 8>&- 7>"$TMPD/fb.lock"; flock $lk 7 || exit 0; fb_lookup ) < /dev/null > /dev/null 2>&1 &
 }
 
-# For the page: "MAC>score>Fingerbank's device path>options|" for each device with a fingerprint
-# (score and path empty until Fingerbank has answered).
+# For the page: "MAC>score>Fingerbank's device path>options|" for each device Arteria asks about (score and path
+# empty until Fingerbank has answered). Until the question with a device's services has an answer, the answer to its
+# DHCP fingerprint alone stands in.
 fb_export() {
-	[ -s "$DHCP_FP" ] || return 0
-	awk -v c="$FB_CACHE" 'BEGIN { while ((getline l < c) > 0) { split(l, f, "\t"); if (f[2] == 200) { s[f[1]] = f[3]; n[f[1]] = f[4] } } }
-		$1 ~ /^[0-9A-F:]+$/ && $2 ~ /^[0-9,]+$/ { v = ""; for (i = 3; i <= NF; i++) v = v (i > 3 ? " " : "") $i; k = $2 ";" v
-			printf "%s>%s>%s>%s|", $1, (k in s ? s[k] : ""), (k in n ? n[k] : ""), $2 }' "$DHCP_FP" | tr -d '"\\'
+	fb_keys | awk -F'\t' -v c="$FB_CACHE" 'BEGIN { while ((getline l < c) > 0) { split(l, f, "\t"); if (f[2] == 200) { s[f[1]] = f[3]; n[f[1]] = f[4] } } }
+		{ split($2, q, ";"); k = $2; if (!(k in s)) k = q[1] ";" q[2]
+		  printf "%s>%s>%s>%s|", $1, (k in s ? s[k] : ""), (k in n ? n[k] : ""), q[1] }' | tr -d '"\\'
 }
 
 fb_restart_dnsmasq() {   # want: on | off -> 0 once dnsmasq runs with (or without) our lease script
@@ -666,7 +697,7 @@ fb_restart_dnsmasq() {   # want: on | off -> 0 once dnsmasq runs with (or withou
 
 fb_off() {   # [quiet]
 	was=0; fb_hooked && was=1
-	rm -f "$FB_KEY" "$FB_CACHE" "$TMPD/fb_state" "$TMPD/fb_last"
+	rm -f "$FB_KEY" "$FB_CACHE" "$DISC" "$TMPD/fb_state" "$TMPD/fb_last"
 	fb_hooks del
 	if [ $was = 1 ]; then
 		[ "$1" = quiet ] || say "Restarting dnsmasq (DNS and DHCP pause for a second)..."
@@ -688,7 +719,7 @@ EOF
 	[ ${#k} -ge 20 ] && [ ${#k} -le 128 ] || { FB_MSG="That doesn't look like a Fingerbank API key (it's ${#k} characters long). Nothing changed."; return 1; }
 	have curl || { FB_MSG="This router has no curl, which Fingerbank lookups need. Nothing changed."; return 1; }
 	tmpd
-	r=$(fb_query "$k" "1,3,6,15,119,252" ""); code=${r%% *}; note=""
+	r=$(fb_query "$k" "1,3,6,15,119,252;"); code=${r%% *}; note=""
 	case "$code" in
 		200|404) ;;
 		401|403) FB_MSG="Fingerbank turned this key down (HTTP $code). Check it on your account page at api.fingerbank.org. Nothing changed."; return 1 ;;
@@ -704,29 +735,68 @@ EOF
 	fb_hooks add
 	log "Fingerbank turned on"
 	if fb_restart_dnsmasq on; then
-		FB_MSG="Saved. Each device is recognised the next time it connects or renews its address. To recognise Wi-Fi devices now, use Recognise now (they reconnect for a few seconds).$note"
+		FB_MSG="Saved. Each device is recognised when it connects or renews its address. Recognise now asks the devices on the network what they are right away.$note"
 	else
 		FB_MSG="Saved, but dnsmasq hasn't picked up the change yet. It will at its next restart (a reboot, or saving a LAN setting).$note"
 	fi
 	return 0
 }
 
-fingerbank_cmd() {   # [off | now]
+# For deciding what's worth sending: each device that answered Recognise now, looked up four ways. Nothing is kept.
+fb_compare_one() {   # api-key question -> "device path (score)", or why not
+	r=$(fb_query "$1" "$2"); c=${r%% *}; b=${r#* }
+	case "$c" in
+		200) printf '%s (%s)' "$(printf '%s' "$b" | sed -n 's/.*"device_name": *"\([^"]*\)".*/\1/p' | head -n 1)" "$(printf '%s' "$b" | sed -n 's/.*"score": *\([0-9][0-9]*\).*/\1/p' | head -n 1)" ;;
+		404) printf 'not known' ;;
+		*) printf 'no answer (HTTP %s)' "${c:-000}" ;;
+	esac
+}
+fb_compare() {
+	fb_on || die "Fingerbank is off: run '$SCRIPT fingerbank' first."
+	have curl || die "This router has no curl."
+	[ -s "$DISC" ] || die "No device has said what it is yet: press Recognise now in Settings (or run '$SCRIPT fingerbank now') first."
+	tmpd; k=$(head -n 1 "$FB_KEY" 2>/dev/null | tr -cd 'A-Za-z0-9'); case $k in "") die "No key." ;; esac
+	say "Fingerbank's answer for each device that said what it is, four ways: its DHCP fingerprint alone (if it has one),"
+	say "+ the services it announced, + its maker (the first half of its MAC), + its whole MAC. Up to 4 lookups a device,"
+	say "100 at most. Nothing is saved. No names or IP addresses are shown or sent."
+	fb_keys > "$TMPD/cmp.keys"; n=0
+	while IFS="$(printf '\t')" read -r m q; do
+		grep -q "^$m|" "$DISC" || continue
+		[ $n -lt 97 ] || { say ""; say "(stopped at 100 lookups)"; break; }
+		case "$q" in *";"*";"*";"*) ;; *) q="$q;;" ;; esac
+		o=${q%%;*}; r=${q#*;}; v=${r%%;*}
+		say ""
+		say "...${m#????????????}  $(awk -F'|' -v m="$m" '$1 == m { print ($2 != "" ? $2 : "-") ($3 != "" ? "  [" $3 "]" : "") ($4 != "" ? "  [" $4 "]" : "") }' "$DISC" | head -n 1)"
+		[ -n "$o" ] && say "  DHCP only:   $(fb_compare_one "$k" "$o;$v")" && n=$((n + 1))
+		say "  + services:  $(fb_compare_one "$k" "$q")"
+		say "  + maker:     $(fb_compare_one "$k" "$q;${m%?????????}:00:00:00")"
+		say "  + whole MAC: $(fb_compare_one "$k" "$q;$m")"
+		n=$((n + 3))
+	done < "$TMPD/cmp.keys"
+	rm -f "$TMPD/cmp.keys"
+}
+
+fingerbank_cmd() {   # [off | now | compare]
+	[ "$1" = compare ] && { fb_compare; return 0; }
 	if [ "$1" = now ]; then
-		tmpd; say "Reconnecting each Wi-Fi device that has no fingerprint yet, one at a time (a few seconds off Wi-Fi each)..."
-		fb_nudge || die "$FB_MSG"; say "$FB_MSG"; return 0
+		tmpd
+		if [ -n "$(socat_bin)" ]; then say "Asking the devices on the network what they are (about 15 seconds), then Fingerbank..."
+		else say "Looking up every device with Fingerbank..."; fi
+		fb_recognise || die "$FB_MSG"; say "$FB_MSG"; return 0
 	fi
 	if [ "$1" = off ]; then
 		fb_off
-		say "Fingerbank is off: the key and Fingerbank's answers are deleted, and dnsmasq runs the router's own lease script directly again."
+		say "Fingerbank is off: the key, Fingerbank's answers and what devices said are deleted, and dnsmasq runs the router's own lease script directly again."
 		log "Fingerbank turned off"
 		return 0
 	fi
 	say "Device recognition with Fingerbank is optional: Arteria works fully without it."
-	say "Turned on, Arteria asks Fingerbank (fingerbank.org) what each device is from the DHCP options it asks for."
-	say "What is shared with Fingerbank: for each kind of device, that option list and its DHCP vendor class. Never a MAC"
-	say "address, device name or IP address on your network. Fingerbank sees your public IP address, as any website does,"
-	say "and adds combinations it doesn't know yet to its database. Its terms: https://www.fingerbank.org/"
+	say "Turned on, Arteria asks Fingerbank (fingerbank.org) what each device is from the DHCP options it asks for,"
+	say "and after Recognise now also from the services it announces on the network."
+	say "What is shared with Fingerbank: for each kind of device, that option list, its DHCP vendor class and the names of"
+	say "the services it announces (e.g. _googlecast._tcp) and its UPnP server string. Never a MAC address, device name or"
+	say "IP address on your network. Fingerbank sees your public IP address, as any website does, and adds combinations"
+	say "it doesn't know yet to its database. Its terms: https://www.fingerbank.org/"
 	say ""
 	say "Get a free key: open https://api.fingerbank.org , choose Login or Signup, then copy the API key from your account."
 	say "Keep the key to yourself: the free key allows 300 lookups an hour, and anyone using it uses up yours."
@@ -748,7 +818,7 @@ EOF
 	say "Checking the key with Fingerbank..."
 	fb_enable "$k" || die "$FB_MSG"
 	say "$FB_MSG"
-	say "To recognise Wi-Fi devices now (each reconnects for a few seconds): $SCRIPT fingerbank now"
+	say "To ask the devices on the network what they are right away: $SCRIPT fingerbank now"
 	say "To stop and delete the key and the answers: $SCRIPT fingerbank off (or the page's Settings)."
 }
 
@@ -773,8 +843,9 @@ fb_status() {   # -> fb.htm, for the page's Settings: never the key, only its la
 	dv=$(fb_devices); kn=$(awk -F'\t' '$2 == 200 { n++ } END { print n + 0 }' "$FB_CACHE" 2>/dev/null)
 	wt=0; fb_on && [ -d "$TMPD" ] && wt=$(fb_waiting | grep -c .)
 	ok=$(sed -n 1p "$TMPD/fb_msg" 2>/dev/null); case "$ok" in 1) ok=true ;; 0) ok=false ;; *) ok=null ;; esac
-	printf '{"on":%s,"tail":"%s","hooked":%s,"busy":%s,"devices":%s,"known":%s,"waiting":%s,"last":"%s","state":"%s","seq":%s,"ok":%s,"msg":"%s","prep":"%s"}' \
-		"$on" "$tl" "$hk" "$bz" "${dv:-0}" "${kn:-0}" "${wt:-0}" "$(cut -d' ' -f1 "$TMPD/fb_last" 2>/dev/null | tr -cd '0-9')" \
+	sc=false; [ -n "$(socat_bin)" ] && sc=true; as=$(grep -c . "$DISC" 2>/dev/null)
+	printf '{"on":%s,"tail":"%s","hooked":%s,"busy":%s,"devices":%s,"known":%s,"waiting":%s,"asked":%s,"socat":%s,"last":"%s","state":"%s","seq":%s,"ok":%s,"msg":"%s","prep":"%s"}' \
+		"$on" "$tl" "$hk" "$bz" "${dv:-0}" "${kn:-0}" "${wt:-0}" "${as:-0}" "$sc" "$(cut -d' ' -f1 "$TMPD/fb_last" 2>/dev/null | tr -cd '0-9')" \
 		"$(cut -d' ' -f1 "$TMPD/fb_state" 2>/dev/null | tr -cd 'a-z')" "$(cat "$TMPD/fb_seq" 2>/dev/null || echo 0)" "$ok" \
 		"$(js "$(sed -n '2,$p' "$TMPD/fb_msg" 2>/dev/null)")" "$(cat "$TMPD/fb_prep" 2>/dev/null)" | write_atomic "$d/fb.htm"
 }
@@ -796,72 +867,216 @@ fb_ui_save() {
 	if fb_enable "$k"; then fb_msg 1 "$FB_MSG"; else fb_msg 0 "$FB_MSG"; fi
 	rm -f "$TMPD/fb_busy"; fb_status
 }
-# A device that stays connected asks for its address again only when half its lease is over: about 12 hours on ASUS's
-# default lease. "Recognise now" disconnects each Wi-Fi device that has a lease from the router but no fingerprint yet,
-# one at a time, so it reconnects and asks right away (a few seconds off Wi-Fi each). Never the router, a node or a
-# node's backhaul. Wired devices can't be nudged: they show up at their next renewal.
-NUDGE_GAP="${AR_NUDGE_GAP:-3}"   # seconds between two devices (AR_NUDGE_GAP: test hook only)
-case "$NUDGE_GAP" in ''|*[!0-9]*) NUDGE_GAP=3 ;; esac
-fb_waiting() {   # MACs with a lease from the router and no fingerprint yet
+# ---- Recognise now: asking the devices what they are ----------------------------------------------------
+# A device's DHCP fingerprint often only tells Fingerbank its system ("Android", "Linux"). Most devices also say
+# what they are when asked, the way phones find printers and speakers: over mDNS (Bonjour) they list the services
+# they offer (_googlecast, _airplay, _spotify-connect, _matter...) and often their model, and over UPnP they send
+# a SERVER string and a description. Recognise now asks, with Entware's socat (opkg install socat), keeps the
+# answers by MAC in DISC (never names or addresses), and looks each device up again with them.
+# DISC: "MAC|services|model fields|UPnP description|UPnP SERVER strings|epoch", one line per device, newest last.
+socat_bin() { if have socat; then echo socat; elif [ -x /opt/bin/socat ]; then echo /opt/bin/socat; fi; }
+# Names travel as hex labels joined by dots ("5f736d62.5f746370.6c6f63616c" is _smb._tcp.local), so any byte in a name is safe.
+# hex names on stdin, one per line -> mDNS questions of type $1, as printf formats (octal escapes), several per packet
+disc_packets() {
+	awk -v qt="$1" 'function oc(n) { return sprintf("\\%03o", n) }
+	function hx(s, i) { return index("0123456789abcdef", substr(s, i, 1)) - 1 }
+	function flush() { if (nq) print oc(0) oc(0) oc(0) oc(0) oc(int(nq / 256)) oc(nq % 256) oc(0) oc(0) oc(0) oc(0) oc(0) oc(0) body; nq = 0; body = ""; len = 12 }
+	BEGIN { len = 12 }
+	/^[0-9a-f.]+$/ {
+		q = ""; n = split($0, lab, "."); ql = 0
+		for (i = 1; i <= n; i++) { l = length(lab[i]) / 2; q = q oc(l); for (j = 1; j < 2 * l; j += 2) q = q oc(hx(lab[i], j) * 16 + hx(lab[i], j + 1)); ql += l + 1 }
+		q = q oc(0) oc(int(qt / 256)) oc(qt % 256) oc(0) oc(1); ql += 5
+		if (len + ql > 1200) flush()
+		body = body q; len += ql; nq++
+	}
+	END { flush() }'
+}
+# Ask from an ordinary port ("legacy unicast"): devices answer straight back to it, and socat -x dumps each answer apart
+disc_ask() {   # qtype < hex names
+	disc_packets "$1" | while read -r f; do
+		printf "$f" | "$DS" -x -T2 - "UDP4-DATAGRAM:224.0.0.251:5353,bind=$DLAN:0" 2>> "$DT/x" > /dev/null
+	done
+}
+# The answers so far, decoded: "PTR owner target", "SRV owner host", "TXT owner k=v;k=v" (model fields only), "A host ip"
+disc_records() {
+	awk 'function hb(s) { return index("0123456789abcdef", substr(s, 1, 1)) * 16 + index("0123456789abcdef", substr(s, 2, 1)) - 17 }
+	function name(p,   out, l, c, jumped, g, lab) {
+		out = ""; jumped = 0
+		for (g = 0; g < 64; g++) {
+			l = B[p]
+			if (l == "") { NEXT = p + 1; return out }
+			if (l == 0) { if (!jumped) NEXT = p + 1; return out }
+			if (l >= 192) { if (!jumped) NEXT = p + 2; p = (l - 192) * 256 + B[p + 1]; jumped = 1; continue }
+			lab = ""; for (c = 1; c <= l; c++) lab = lab sprintf("%02x", B[p + c])
+			out = out (out == "" ? "" : ".") lab; p += l + 1
+		}
+		return out
+	}
+	function txt(p, end,   out, l, s, c, ch) {
+		out = ""
+		while (p < end) {
+			l = B[p]; s = ""
+			for (c = 1; c <= l; c++) { ch = B[p + c]; s = s ((ch >= 32 && ch < 127 && index(";|~<>\"\\", A[ch]) == 0) ? A[ch] : "?") }
+			if (s ~ /^(model|rpMd|md|mn|vn|ty|product|usb_MFG|usb_MDL|DT|modelid|am|mf|manufacturer)=./) out = out (out == "" ? "" : ";") substr(s, 1, 60)
+			p += l + 1
+		}
+		return out
+	}
+	function msg(   p, qd, nr, i, own, ty, rl, rp) {
+		if (N < 12) return
+		qd = B[4] * 256 + B[5]; nr = B[6] * 256 + B[7] + B[8] * 256 + B[9] + B[10] * 256 + B[11]
+		p = 12
+		for (i = 0; i < qd; i++) { name(p); p = NEXT + 4 }
+		for (i = 0; i < nr && p < N; i++) {
+			own = name(p); p = NEXT
+			ty = B[p] * 256 + B[p + 1]; rl = B[p + 8] * 256 + B[p + 9]; rp = p + 10
+			if (ty == 12) print "PTR\t" own "\t" name(rp)
+			else if (ty == 33) print "SRV\t" own "\t" name(rp + 6)
+			else if (ty == 16) print "TXT\t" own "\t" txt(rp, rp + rl)
+			else if (ty == 1 && rl == 4) print "A\t" own "\t" B[rp] "." B[rp + 1] "." B[rp + 2] "." B[rp + 3]
+			p = rp + rl
+		}
+	}
+	BEGIN { for (i = 32; i < 127; i++) A[i] = sprintf("%c", i) }
+	/^[<>] / { if (dir == "<") msg(); dir = substr($0, 1, 1); N = 0; split("", B); next }
+	/^ [0-9a-f][0-9a-f]( |$)/ { if (dir == "<") for (i = 1; i <= NF; i++) B[N++] = hb($i) }
+	END { if (dir == "<") msg() }' "$DT/x" 2>/dev/null | sort -u
+}
+disc_run() {   # socat -> DISC updated; DISC_N: how many devices answered
+	DS=$1; DLAN=$(nvram get lan_ipaddr); DT="$TMPD/disc.d"; DISC_N=0
+	rm -rf "$DT"; mkdir -m 700 "$DT" || return 1
+	case "$DLAN" in *[!0-9.]*|'') return 1 ;; esac
+	# mDNS: 1. which kinds of service are offered, 2. who offers each, 3. the details of each offer, 4. their hosts' addresses
+	st=5f7365727669636573.5f646e732d7364.5f756470.6c6f63616c   # _services._dns-sd._udp.local
+	echo "$st" | disc_ask 12
+	disc_records | awk -F'\t' '$1 == "PTR" { print $3 }' | sort -u | disc_ask 12
+	disc_records > "$DT/r"
+	awk -F'\t' -v st="$st" '$1 == "PTR" && $2 != st { inst[$3] = 1 } $1 == "SRV" { srv[$2] = 1 } $1 == "TXT" { txt[$2] = 1 }
+		END { for (i in inst) if (!(i in srv) || !(i in txt)) print i }' "$DT/r" | disc_ask 255
+	disc_records > "$DT/r"
+	awk -F'\t' '$1 == "SRV" { t[$3] = 1 } $1 == "A" { a[$2] = 1 } END { for (h in t) if (!(h in a)) print h }' "$DT/r" | disc_ask 1
+	disc_records > "$DT/r"
+	# UPnP: who's there (each reply's SERVER string), then each device's description (LOCATION holds its address)
+	printf 'M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: "ssdp:discover"\r\nMX: 2\r\nST: ssdp:all\r\n\r\n' \
+		| "$DS" -T3 - "UDP4-DATAGRAM:239.255.255.250:1900,bind=$DLAN:0" 2>/dev/null | tr -d '\r' > "$DT/ssdp"
+	awk 'function out() { if (ip != "" && sv != "") print "USRV\t" ip "\t" sv; ip = sv = "" }
+		/^HTTP\// { out() } { l = tolower($0) }
+		l ~ /^location:/ && match($0, /:\/\/[0-9.]+[:\/]/) { ip = substr($0, RSTART + 3, RLENGTH - 4) }
+		l ~ /^server:/ { sv = $0; sub(/^[^:]*: */, "", sv); gsub(/[^ -~]|["\\|~;<>]/, "", sv); sv = substr(sv, 1, 120) }
+		END { out() }' "$DT/ssdp" | sort -u >> "$DT/r"
+	sed -n 's/^[Ll][Oo][Cc][Aa][Tt][Ii][Oo][Nn]: *//p' "$DT/ssdp" | sort -u | head -n 40 | while read -r u; do
+		case "$u" in http://[0-9]*) ;; *) continue ;; esac
+		ip=$(printf '%s\n' "$u" | sed -n 's|^http://\([0-9.]*\)[:/].*|\1|p'); [ -n "$ip" ] || continue
+		# only from a device on the LAN (one in the ARP table): never the router itself, or anything a reply points elsewhere
+		awk -v ip="$ip" '$1 == ip && $3 != "0x0" { f = 1 } END { exit !f }' "$PROC/net/arp" 2>/dev/null || continue
+		curl -s --proto =http --max-redirs 0 -m 3 --max-filesize 65536 "$u" < /dev/null 2>/dev/null | tr -d '\r\n\t' > "$DT/desc"
+		f=""; for k in manufacturer modelName modelNumber; do
+			v=$(sed -n "s:.*<$k>\([^<]*\)</$k>.*:\1:p" "$DT/desc" | head -n 1 | tr -cd ' -~' | tr -d '|~;<>"\\' | cut -c1-60); [ -n "$v" ] && f="$f${f:+; }$k=$v"
+		done
+		[ -n "$f" ] && printf 'UPNP\t%s\t%s\n' "$ip" "$f"
+	done | sort -u >> "$DT/r"
+	# by address, then by MAC (the ARP table); merged into DISC: this round's answers replace a device's older ones
+	awk -F'\t' -v arp="$PROC/net/arp" -v now="$(now)" 'function txt(h,   n, i, l, s, j, x) {   # hex name -> text
+			n = split(h, l, "."); s = ""
+			for (i = 1; i <= n; i++) { x = ""; for (j = 1; j < length(l[i]); j += 2) x = x sprintf("%c", (index("0123456789abcdef", substr(l[i], j, 1)) - 1) * 16 + index("0123456789abcdef", substr(l[i], j + 1, 1)) - 1); s = s (s == "" ? "" : ".") x }
+			return s
+		}
+		function srt(str, sep,   a, n, i, j, x, o) {   # the parts in order, so a device always asks the same question
+			n = split(str, a, sep)
+			for (i = 2; i <= n; i++) { x = a[i]; for (j = i - 1; j >= 1 && a[j] > x; j--) a[j + 1] = a[j]; a[j + 1] = x }
+			o = ""; for (i = 1; i <= n; i++) if (a[i] != "" && a[i] != a[i - 1]) o = o (o == "" ? "" : sep) a[i]
+			return o
+		}
+		BEGIN { while ((getline line < arp) > 0) { split(line, f, " "); m = toupper(f[4]); if (f[3] != "0x0" && m ~ /^[0-9A-F:]+$/ && length(m) == 17 && m != "00:00:00:00:00:00") mac[f[1]] = m } }
+		$1 == "PTR" { svc[$3] = txt($2) } $1 == "SRV" { host[$2] = $3 } $1 == "A" { ip[$2] = $3 } $1 == "TXT" { tx[$2] = $3 }
+		$1 == "UPNP" { up[$2] = up[$2] (up[$2] == "" ? "" : "; ") $3; seen[$2] = 1 }
+		$1 == "USRV" { us[$2] = us[$2] (us[$2] == "" ? "" : "~") $3; seen[$2] = 1 }
+		END {
+			for (i in host) if ((host[i] in ip) && (i in svc)) {
+				d = ip[host[i]]; t = svc[i]
+				if (t !~ /^_[A-Za-z0-9-]+\._(tcp|udp)\.local$/) continue
+				seen[d] = 1; if (index(" " S[d] " ", " " t " ") == 0) S[d] = S[d] (S[d] == "" ? "" : " ") t
+				if (tx[i] != "") M[d] = M[d] (M[d] == "" ? "" : ";") tx[i]
+			}
+			for (d in seen) if (d in mac) print mac[d] "|" srt(S[d], " ") "|" substr(srt(M[d], ";"), 1, 200) "|" up[d] "|" us[d] "|" now
+		}' "$DT/r" | sort > "$DT/new"
+	DISC_N=$(grep -c . "$DT/new")
+	if [ "$DISC_N" -gt 0 ]; then
+		{ cat "$DISC" 2>/dev/null | awk -F'|' 'NR == FNR { n[$1] = 1; next } !($1 in n)' "$DT/new" - | tail -n 299; cat "$DT/new"; } > "$DT/all" \
+			&& mv -f "$DT/all" "$DISC"
+	fi
+	rm -rf "$DT"
+	return 0
+}
+# A device just joined (from dnsmasq's lease script): wait a minute, so it has settled and announced itself, then ask the
+# network once, for it and every device that joined meanwhile, and look up what they said.
+DISC_DELAY="${AR_DISC_DELAY:-60}"   # AR_DISC_DELAY: test hook only
+case "$DISC_DELAY" in ''|*[!0-9]*) DISC_DELAY=60 ;; esac
+disc_new() {
+	fb_on && tmpd && [ -n "$(socat_bin)" ] || return 0
+	( exec 8>&- 6>"$TMPD/disc.wait"; flock -n 6 || exit 0     # one wait at a time: devices joining meanwhile go along
+	  sleep "$DISC_DELAY"; flock -u 6
+	  exec 7>"$TMPD/disc.lock"; flock -w 120 7 || exit 0
+	  disc_run "$(socat_bin)" || exit 0
+	  [ "$DISC_N" -gt 0 ] && touch "$TMPD/fb_new"
+	  log "A device joined: $DISC_N device(s) answered over mDNS or UPnP"
+	  fb_tick wait ) < /dev/null > /dev/null 2>&1 &
+}
+# For the page: "MAC>services>model fields>UPnP description|" for each device that said what it is
+disc_export() {
+	cat "$DISC" 2>/dev/null | awk -F'|' '$1 ~ /^[0-9A-F:]+$/ && length($1) == 17 { printf "%s>%s>%s>%s|", $1, $2, $3, $4 }' | tr -d '\000-\037"\\<'
+}
+fb_waiting() {   # MACs with a lease from the router and no fingerprint yet (they're looked up when they next renew it)
 	{
 		own_macs
 		node_list | while read -r m ip model; do echo "$m"; node_stas "$m" | tr ' ' '\n'; done
 		cut -d' ' -f1 "$DHCP_FP" 2>/dev/null
-	} | tr 'a-f' 'A-F' | grep . > "$TMPD/nudge.skip"
+	} | tr 'a-f' 'A-F' | grep . > "$TMPD/wait.skip"
 	awk 'NR == FNR { skip[$1] = 1; next } { m = toupper($2) } length(m) == 17 && m ~ /^[0-9A-F:]+$/ && !(m in skip) && !seen[m]++ { print m }' \
-		"$TMPD/nudge.skip" "$ROOT/var/lib/misc/dnsmasq.leases" 2>/dev/null
-	rm -f "$TMPD/nudge.skip"
+		"$TMPD/wait.skip" "$ROOT/var/lib/misc/dnsmasq.leases" 2>/dev/null
+	rm -f "$TMPD/wait.skip"
 }
-node_nudge() {   # ip "MAC MAC ..." -> how many of them the node reconnected (key login only, never a password)
-	b=$(ssh_batch); [ -n "$b" ] || { echo 0; return 0; }
-	ssh_home_init; o="$TMPD/nudge.$$"
-	cmd="n=0; for m in $2; do for i in \$(nvram get wl0_ifname) \$(nvram get wl1_ifname) \$(nvram get wl2_ifname) \$(nvram get wl0_vifs) \$(nvram get wl1_vifs) \$(nvram get wl2_vifs); do if wl -i \$i assoclist 2>/dev/null | grep -qi \" \$m\$\"; then wl -i \$i deauthenticate \$m > /dev/null 2>&1; n=\$((n + 1)); sleep $NUDGE_GAP; break; fi; done; done; echo arteria-nudged \$n"
-	(HOME="$SSH_HOME" exec dbclient $b -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" "$cmd") < /dev/null > "$o" 2>&1 &
-	p=$!; i=0
-	while kill -0 "$p" 2>/dev/null; do [ $i -ge 180 ] && { kill "$p" 2>/dev/null; break; }; sleep 1; i=$((i + 1)); done
-	n=$(sed -n 's/^arteria-nudged \([0-9][0-9]*\)$/\1/p' "$o" 2>/dev/null | tail -n 1); rm -f "$o"
-	echo "${n:-0}"
+fb_recognised() {   # -> "recognised total": devices Fingerbank has an answer for, out of those Arteria asks about
+	fb_export | tr '|' '\n' | awk -F'>' 'NF >= 3 { t++; if ($3 != "") r++ } END { print r + 0, t + 0 }'
 }
-fb_nudge() {   # -> FB_MSG; status updates go to fb.htm as it goes
+fb_recognise() {   # -> FB_MSG; progress goes to fb.htm
 	fb_on || { FB_MSG="Fingerbank is off: add a key first."; return 1; }
-	w=$(fb_waiting); total=$(printf '%s\n' "$w" | grep -c .)
-	[ "$total" -gt 0 ] || { FB_MSG="Every device with an address from the router already has a fingerprint."; return 0; }
-	done_n=0; left=""
-	for m in $w; do
-		hit=0
-		for p in $(radio_list); do
-			x=${p%%:*}
-			if wl -i "$x" assoclist 2>/dev/null | grep -qi " $m$"; then wl -i "$x" deauthenticate "$m" > /dev/null 2>&1 && hit=1; break; fi
-		done
-		if [ $hit = 1 ]; then
-			done_n=$((done_n + 1)); fb_msg "" "Reconnecting Wi-Fi devices, one at a time: $done_n so far..."; fb_status; sleep "$NUDGE_GAP"
-		else left="$left $m"; fi
-	done
-	# the rest may be on an AiMesh node: each node reconnects those of them it has
-	if [ -n "$left" ] && [ "$NODES" = on ] && [ -s "$KEY" ] && have dbclient; then
-		node_list > "$TMPD/nudge.nodes"
-		while read -r nm ip model; do
-			[ -n "$ip" ] || continue
-			fb_msg "" "Reconnecting Wi-Fi devices on $model..."; fb_status
-			done_n=$((done_n + $(node_nudge "$ip" "$left")))
-		done < "$TMPD/nudge.nodes"
-		rm -f "$TMPD/nudge.nodes"
+	have curl || { FB_MSG="This router has no curl, which Fingerbank lookups need."; return 1; }
+	S=$(socat_bin); a=""
+	if [ -n "$S" ]; then
+		fb_msg "" "Asking the devices on the network what they are..."; fb_status
+		( exec 8>&- 7>"$TMPD/disc.lock"; flock -w 120 7; disc_run "$S"; echo "$DISC_N" > "$TMPD/disc_n" ) < /dev/null > /dev/null 2>&1
+		DISC_N=$(cat "$TMPD/disc_n" 2>/dev/null); rm -f "$TMPD/disc_n"
+		case "$DISC_N" in ''|*[!0-9]*) FB_MSG="Couldn't ask the network: the router's LAN address is missing."; return 1 ;; esac
+		a="$DISC_N device(s) answered. "
+		log "Recognise now: $DISC_N device(s) answered over mDNS or UPnP"
 	fi
-	rest=$((total - done_n))
-	FB_MSG="Reconnected $done_n Wi-Fi device(s): each is looked up as it gets its address again."
-	[ $rest -gt 0 ] && FB_MSG="$FB_MSG $rest more aren't on Wi-Fi right now (wired, or away): they're looked up when they next renew their address."
+	fb_msg "" "${a}Looking them up with Fingerbank..."; fb_status
+	# every unanswered question now, as far as the hourly limit allows (one round at a time, as in the background)
+	( exec 8>&- 7>"$TMPD/fb.lock"; flock -w 120 7 || exit 0
+	  i=0; while [ $i -lt 10 ] && [ -n "$(fb_next)" ]; do
+		fb_lookup; i=$((i + 1))
+		case "$(cat "$TMPD/fb_state" 2>/dev/null)" in badkey|"wait "*) break ;; esac
+	  done ) < /dev/null > /dev/null 2>&1
+	set -- $(fb_recognised)
+	FB_MSG="${a}Fingerbank recognises $1 of $2 device(s)."
+	case "$(cat "$TMPD/fb_state" 2>/dev/null)" in
+		badkey) FB_MSG="$FB_MSG Fingerbank turned the key down: save a new one." ;;
+		"wait "*) FB_MSG="$FB_MSG The rest are looked up when Fingerbank answers again (at most 100 lookups an hour)." ;;
+	esac
+	[ -n "$S" ] || FB_MSG="$FB_MSG To recognise more, let Arteria ask devices what they are: install Entware's socat (opkg install socat), then Recognise now again."
 	return 0
 }
 fb_ui_now() {
-	touch "$TMPD/fb_busy"; fb_msg "" "Reconnecting Wi-Fi devices, one at a time..."; fb_status
-	if fb_nudge; then fb_msg 1 "$FB_MSG"; else fb_msg 0 "$FB_MSG"; fi
+	touch "$TMPD/fb_busy"; fb_msg "" "Recognising devices..."; fb_status
+	if fb_recognise; then fb_msg 1 "$FB_MSG"; else fb_msg 0 "$FB_MSG"; fi
 	log "Fingerbank: $FB_MSG"
 	rm -f "$TMPD/fb_busy"; fb_status
 }
 fb_ui_off() {
 	touch "$TMPD/fb_busy"; fb_msg "" "Turning Fingerbank off..."; fb_status
 	fb_off quiet; log "Fingerbank turned off"
-	fb_msg 1 "Fingerbank is off. The key and its answers are deleted, and dnsmasq runs the router's own lease script directly again."
+	fb_msg 1 "Fingerbank is off. The key, its answers and what devices said are deleted, and dnsmasq runs the router's own lease script directly again."
 	rm -f "$TMPD/fb_busy"; fb_status
 }
 
@@ -1436,7 +1651,7 @@ install() {
 	[ -f "$CONF" ] || write_conf
 	hook_add services-start "$SCRIPT startup &"
 	hook_add service-event "$SCRIPT service_event \"\$@\" &"
-	fb_on && fb_hooks add
+	fb_on && fb_hooks add && fb_hooked && fb_rehook
 	startup
 
 	# AiMesh nodes: per-device counters need the router's key on each node
@@ -1582,9 +1797,10 @@ status() {
 	fi
 	say "amtm updates: $AMTM_UPDATE"
 }
-fb_counts() {   # "5 devices fingerprinted, 3 kinds of device known to Fingerbank, last reply 200"
-	d=$(fb_devices); a=$(awk -F'\t' '$2 == 200 { n++ } END { print n + 0 }' "$FB_CACHE" 2>/dev/null)
-	printf '%s devices fingerprinted, %s kinds of device known to Fingerbank' "${d:-0}" "${a:-0}"
+fb_counts() {   # "5 devices fingerprinted, 4 answered Recognise now, 3 kinds of device known to Fingerbank, last reply 200"
+	d=$(fb_devices); a=$(awk -F'\t' '$2 == 200 { n++ } END { print n + 0 }' "$FB_CACHE" 2>/dev/null); q=$(grep -c . "$DISC" 2>/dev/null)
+	printf '%s devices fingerprinted, ' "${d:-0}"; [ "${q:-0}" -gt 0 ] && printf '%s answered Recognise now, ' "$q"
+	printf '%s kinds of device known to Fingerbank' "${a:-0}"
 	l=$(cut -d' ' -f1 "$TMPD/fb_last" 2>/dev/null); [ -n "$l" ] && printf ', last reply %s' "$l"
 	case "$(cat "$TMPD/fb_state" 2>/dev/null)" in badkey) printf ', KEY TURNED DOWN: run fingerbank again' ;; "wait "*) printf ', waiting before the next lookup' ;; esac
 	return 0
@@ -1641,7 +1857,7 @@ debug() {
 			"$TMPD"/dhcp_hook.*) ls="Arteria's, then $(sed -n 's/^exec \([^ ]*\).*/\1/p' "$cur" 2>/dev/null | grep . || echo none)" ;;
 			'') ls="none" ;; *) ls="$cur, not Arteria's" ;;
 		esac
-		say "Fingerbank:     on; lease script: $ls; renewals: $(grep -q '^script-on-renewal' "$DNSMASQ_CONF" 2>/dev/null && echo yes || echo no); $(fb_counts)"
+		say "Fingerbank:     on; lease script: $ls; renewals: $(grep -q '^script-on-renewal' "$DNSMASQ_CONF" 2>/dev/null && echo yes || echo no); $(fb_counts); socat: $([ -n "$(socat_bin)" ] && echo yes || echo no)"
 	else
 		say "Fingerbank:     off"
 	fi
@@ -1676,7 +1892,7 @@ amtm_update() {   # [check]
 
 usage() {
 	say "Usage: $0 [menu] | install | check | update [force | dev [branch]] | uninstall | status |"
-	say "       nodes [test] | nodekey [node-ip | print] | fingerbank [off | now] | debug | sample | amtmupdate [check] | startup | version"
+	say "       nodes [test] | nodekey [node-ip | print] | fingerbank [off | now | compare] | debug | sample | amtmupdate [check] | startup | version"
 }
 menu_pause() { printf '\n Press Enter to go back to the menu '; read -r dummy || exit 0; }
 menu_uninstall() {   # true once removed
@@ -1764,6 +1980,7 @@ case "$1" in
 	fingerbank)    fingerbank_cmd "$2"; exit $? ;;
 	dnsmasq_conf)  dnsmasq_conf "$2" ;;
 	fblookup)      fb_on && tmpd && fb_tick wait ;;   # from dnsmasq's lease script, for a new fingerprint
+	discnew)       disc_new ;;                        # from dnsmasq's lease script, for a device that just joined
 	status)        status ;;
 	debug)         debug ;;
 	version)       say "$VERSION" ;;

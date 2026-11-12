@@ -13,7 +13,8 @@
 Needs Python 3 with Playwright (pip install playwright; the browser is the system's Chrome or Chromium).
 Usage: python3 .github/tests/page-browser.py [path to chrome]
 """
-import asyncio, os, shutil, subprocess, sys, time
+import asyncio
+import json, os, shutil, subprocess, sys, time
 from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -173,8 +174,16 @@ async def settings(b, port):
         check(await pg.evaluate(fits) and await pg.is_visible('#arFbNow') and not await pg.is_visible('#arFbHow'),
               'settings: on, it still fits without scrolling, with Recognise now instead of the sign-up line')
         await pg.click('#arFbNow')
-        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('Reconnected') === 0", timeout=15000)
-        check('2 not seen yet' in await pg.inner_text('#arFbSt') and await pg.evaluate(fits), 'settings: Recognise now reports what it did, and the panel still fits')
+        await pg.wait_for_function("document.getElementById('arFbMsg').textContent.indexOf('9 device(s) answered') === 0", timeout=15000)
+        st = await pg.inner_text('#arFbSt')
+        check('9 answered Recognise now' in st and '2 not seen yet' in st and await pg.evaluate(fits), 'settings: Recognise now reports what it did, and the panel still fits')
+        async def nosocat(route):   # the router without Entware's socat
+            r = await route.fetch(); j = json.loads(await r.text()); j['socat'] = False
+            await route.fulfill(response=r, body=json.dumps(j))
+        await pg.route('**/fb.htm*', nosocat)
+        await pg.wait_for_function("document.getElementById('arFbNowTx').textContent.indexOf('opkg install socat') > 0", timeout=15000)
+        check(await pg.evaluate(fits), 'settings: without socat, it says how to recognise more, and still fits')
+        await pg.unroute('**/fb.htm*', nosocat)
         await pg.click('#arFbOff')
         sure = await pg.inner_text('#arFbOff')
         await pg.click('#arFbOff')

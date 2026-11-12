@@ -364,4 +364,47 @@ const frep = T.buildReport({ router: { model: 'RT-AX86U' }, devs: [fdv] }), fcel
 ok(/smartspeaker +fingerbank .* Amazon Echo 87/.test(frep) && frep.indexOf('Kitchen') < 0 && frep.indexOf('00:00:5E') < 0, 'the device report shows what Fingerbank named and its score, still no names or MACs', frep);
 ok(fcells.some(c => c[0] === 'Shown as' && /recognised by Fingerbank \(Amazon Echo, 87\)/.test(c[2])), 'Details say Fingerbank recognised it', JSON.stringify(fcells.filter(c => c[0] === 'Shown as')));
 
+// ---- 14. What a device announced when asked (Recognise now): Apple model identifiers, models in mDNS records and UPnP
+// descriptions (read with the name rules), telling services. It comes after your icon and before Fingerbank and names.
+const AN = [   // [services, model fields, UPnP description, expected kind]
+	['_companion-link._tcp.local', 'rpMd=MacBookPro18,1', '', 'laptop'],
+	['_device-info._tcp.local', 'model=Mac14,2', '', 'laptop'],
+	['_device-info._tcp.local', 'model=Mac14,12', '', 'mac'],
+	['_device-info._tcp.local', 'model=iMac21,1', '', 'mac'],
+	['_companion-link._tcp.local', 'rpMd=iPhone14,2', '', 'phone'],
+	['_companion-link._tcp.local', 'rpMd=iPad13,4', '', 'tablet'],
+	['_airplay._tcp.local _raop._tcp.local', 'model=AppleTV11,1', '', 'streamer'],
+	['_airplay._tcp.local', 'model=AudioAccessory5,1', '', 'smartspeaker'],
+	['_meshcop._udp.local _spotify-connect._tcp.local', 'mn=Echo 4th Gen;vn=Amazon', '', 'smartspeaker'],
+	['_googlecast._tcp.local', 'md=Chromecast', '', 'stick'],
+	['_googlecast._tcp.local', 'md=Google Nest Mini', '', 'smartspeaker'],
+	['_googlecast._tcp.local', 'md=BRAVIA 4K VH2', '', 'tv'],
+	['_ipp._tcp.local _printer._tcp.local', 'product=(HP LaserJet Pro M404dn);ty=HP LaserJet Pro M404dn', '', 'printer'],
+	['_ipps._tcp.local', '', '', 'printer'],
+	['_sonos._tcp.local', '', '', 'speaker'],
+	['_hue._tcp.local', '', '', 'hub'],
+	['', '', 'manufacturer=Ugreen Group Limited; modelName=UGREEN; modelNumber=DXP2800', 'nas'],
+	['', '', 'manufacturer=Plex, Inc.; modelName=Plex Media Server', ''],
+	['_smb._tcp.local _home-assistant._tcp.local', '', '', ''],
+	['_spotify-connect._tcp.local', '', '', ''],
+];
+const anOf = r => AR.parseNames({ dc: FM + '>' + r[0] + '>' + r[1] + '>' + r[2] + '|' }).dc[FM];
+const anBad = AN.filter(r => ((T.announcedKind(anOf(r)) || [''])[0]) !== r[3]).map(r => (r[1] || r[2] || r[0]) + ' -> ' + ((T.announcedKind(anOf(r)) || ['none'])[0]) + ', expected ' + (r[3] || 'none'));
+ok(!anBad.length, 'what devices announce -> kinds: ' + AN.length + ' cases', anBad.join('; '));
+const anNames = (dc, custom, fb) => AR.parseNames({ custom: custom || '', dc: dc, fb: fb || '', nmp: { [FM]: { name: 'Kitchen Echo', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
+A.names = anNames(FM + '>_companion-link._tcp.local>rpMd=MacBookPro18,1>|', '', FM + '>87>Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo>1,3,6,15|');
+fr = T.classify(FM, 'Kitchen Echo', 'wifi');
+ok(fr.kind === 'laptop' && fr.rule === 'announced' && fr.tok === 'MacBookPro18,1', 'what a device announced comes before Fingerbank and its name', JSON.stringify(fr));
+A.names = anNames(FM + '>_companion-link._tcp.local>rpMd=MacBookPro18,1>|', '<Kitchen>' + FM + '>0>23>>');
+fr = T.classify(FM, 'Kitchen Echo', 'wifi');
+ok(fr.kind === 'tv' && fr.rule === 'your icon', 'your icon comes before what a device announced', JSON.stringify(fr));
+A.names = anNames(FM + '>_spotify-connect._tcp.local>>|' + 'junk|02:XX>a>b>c|' + FM.toLowerCase() + '>x>y>z|');
+fr = T.classify(FM, 'Kitchen Echo', 'wifi');
+ok(fr.kind === 'smartspeaker' && fr.rule === 'name' && Object.keys(A.names.dc).length === 1, 'nothing telling announced: the name decides; malformed entries are dropped', JSON.stringify(fr));
+A.names = anNames(FM + '>_meshcop._udp.local>mn=Echo 4th Gen;vn=Amazon>|');
+const adv = { id: FM, mac: FM, name: 'Kitchen Echo', link: 'wifi', band: '5' }; adv.why = T.classify(FM, adv.name, 'wifi'); adv.kind = adv.why.kind;
+const arep = T.buildReport({ router: { model: 'RT-AX86U' }, devs: [adv] }), acells = T.detailsFor({ epoch: 0 }, adv);
+ok(/smartspeaker +announced: Amazon Echo 4th Gen .*said/.test(arep) && arep.indexOf('Kitchen') < 0 && arep.indexOf('00:00:5E') < 0, 'the device report shows the announced model, still no names or MACs', arep);
+ok(acells.some(c => c[0] === 'Shown as' && /recognised by what it announced \(Amazon Echo 4th Gen\)/.test(c[2])), 'Details say what the device announced', JSON.stringify(acells.filter(c => c[0] === 'Shown as')));
+
 process.exit(fails ? 1 : 0);

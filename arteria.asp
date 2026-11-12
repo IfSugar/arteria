@@ -428,6 +428,7 @@ function renderFb() {
 	var st = A.fb, on = !!(st && st.on), el = $('arFbSt');
 	if (!on) el.innerHTML = '<span>Off</span> · devices are recognised by their names, the router\'s detection and their makers';
 	else el.innerHTML = '<span class="ok">On</span> · key …' + esc(st.tail) + ' · ' + (+st.devices || 0) + ' devices fingerprinted · ' + (+st.known || 0) + ' kinds known' +
+		(+st.asked ? ' · ' + (+st.asked) + ' answered Recognise now' : '') +
 		(+st.waiting ? ' · ' + (+st.waiting) + ' not seen yet' : '') +
 		(st.state === 'badkey' ? ' · <span class="bad">Fingerbank turned the key down: save a new one</span>' : st.state === 'wait' ? ' · waiting before the next lookups' : '') +
 		(st.hooked ? '' : ' · <span class="bad">dnsmasq hasn\'t picked it up yet</span>');
@@ -435,6 +436,8 @@ function renderFb() {
 	$('arFbOff').className = on ? 'ar-btn ar-btn-2' : 'ar-btn ar-btn-2 hide';
 	$('arFbHow').className = on ? 'hide' : '';
 	$('arFbNowRow').className = on ? 'ar-set-row' : 'ar-set-row hide';
+	$('arFbNowTx').innerHTML = st && st.socat === false ? 'To recognise more, install Entware\'s socat (<code>opkg install socat</code>): Recognise now then asks devices what they are.'
+		: 'New devices are recognised a minute after they join, page open or not.';
 	var busy = A.fbBusy || !!(st && st.busy);
 	$('arFbSave').disabled = busy; $('arFbOff').disabled = busy; $('arFbKey').disabled = busy; $('arFbNow').disabled = busy;
 }
@@ -468,7 +471,7 @@ function fbOff() {
 }
 function fbNow() {
 	var seq0 = +(A.fb || {}).seq || 0;
-	fbBusy(true); fbMsg('Reconnecting Wi-Fi devices, one at a time…');
+	fbBusy(true); fbMsg((A.fb || {}).socat === false ? 'Looking up every device…' : 'Asking the devices on the network what they are…');
 	post('start_arteriafbnow')
 		.then(function () { return fbWait(function (st) { if (st.busy && st.msg) fbMsg(st.msg); return +st.seq > seq0 && !st.busy && st.ok !== null; }, 300000); })
 		.then(fbDone, fbLate).then(function () { fbBusy(false); });
@@ -530,7 +533,7 @@ function suspend() {
 /* ---------------------------------------------------------------- names and device kinds */
 var JUNK_NAME = /^(dhcpcd|android-dhcp|udhcp|unknown|client|localhost|espressif|esp[_-]|wlan|\*|-)|:|^[0-9a-f]{10,}$/i;
 function parseNames(n) {
-	var out = { custom: {}, nmp: {}, lease: {}, cl: n && n.cl || {}, arp: {}, n6: {}, fixed: {}, fb: {} };
+	var out = { custom: {}, nmp: {}, lease: {}, cl: n && n.cl || {}, arp: {}, n6: {}, fixed: {}, fb: {}, dc: {} };
 	String(n && n.custom || '').split('<').forEach(function (e) {
 		var f = e.split('>');
 		if (f.length >= 2 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) out.custom[f[1].toUpperCase()] = { name: f[0], type: +f[3] || 0 };
@@ -553,6 +556,13 @@ function parseNames(n) {
 	String(n && n.fb || '').split('|').forEach(function (e) {
 		var f = e.split('>');
 		if (f.length === 4 && /^[0-9A-F:]{17}$/.test(f[0])) out.fb[f[0]] = { s: +f[1] || 0, n: f[2], o: f[3] };
+	});
+	/* what devices said about themselves when asked (Recognise now): "MAC>mDNS services>model fields>UPnP description|" */
+	String(n && n.dc || '').split('|').forEach(function (e) {
+		var f = e.split('>'), kv = {};
+		if (f.length !== 4 || !/^[0-9A-F:]{17}$/.test(f[0])) return;
+		(f[2] + ';' + f[3]).split(';').forEach(function (p) { var i = p.indexOf('='), k = p.slice(0, i).trim(); if (i > 0 && !kv[k]) kv[k] = p.slice(i + 1).trim(); });
+		out.dc[f[0]] = { s: f[1] ? f[1].split(' ') : [], f: kv };
 	});
 	return out;
 }
@@ -682,6 +692,38 @@ function fbKind(path) {
 	if (seg[0] === 'Phone, Tablet or Wearable' && seg.length >= (seg[1] === 'Generic Android' ? 4 : 3)) return 'phone';
 	return '';
 }
+/* What a device announced about itself (Recognise now): Apple's model identifiers ("MacBookPro18,1", "iPhone14,2",
+   "AudioAccessory5,1" for a HomePod), a model named in its mDNS records (a Thread device's vendor and model, a Cast
+   device's "md", a printer's "ty") or in its UPnP description, read with the same rules as names, or a service that
+   says what it is. Media-server software's UPnP descriptions (Plex, Kodi...) describe the software, not the device. */
+var APPLE_DESK = /^Mac(13,[12]|14,(3|8|1[234])|15,(4|5|14)|16,(2|3|9|1[01]))$/;   /* Apple silicon Macs that are desktops */
+function appleKind(id) {
+	if (/^(iPhone|iPod)\d/.test(id)) return 'phone';
+	if (/^iPad\d/.test(id)) return 'tablet';
+	if (/^Watch\d/.test(id)) return 'watch';
+	if (/^AppleTV\d/.test(id)) return 'streamer';
+	if (/^AudioAccessory\d/.test(id)) return 'smartspeaker';
+	if (/^AirPort\d/.test(id)) return 'switch';
+	if (/^MacBook(Pro|Air)?\d/.test(id)) return 'laptop';
+	if (/^(iMac(Pro)?|Macmini|MacPro)\d/.test(id)) return 'mac';
+	if (/^Mac\d+,\d+$/.test(id)) return APPLE_DESK.test(id) ? 'mac' : 'laptop';
+	return '';
+}
+var SVC_KIND = [['printer', /^_(ipps?|printer|pdl-datastream|scanner|uscans?)\._tcp\./], ['speaker', /^_sonos\._tcp\./], ['hub', /^_hue\._tcp\./]];
+var UPNP_SOFT = /media ?(server|player|renderer)|plex|kodi|jellyfin|emby|dlna|serviio|twonky|universal media|windows|microsoft|vlc|foobar/i;
+function announcedKind(d) {
+	if (!d) return null;
+	var f = d.f, i, j, k, t, id = f.rpMd || f.model || '';
+	if ((k = appleKind(id))) return [k, id];
+	var up = [f.manufacturer, f.modelName, f.modelNumber].filter(Boolean).join(' ');
+	var texts = [[f.vn, f.mn], [f.md], [f.model], [f.ty], [f.usb_MFG, f.usb_MDL], [f.product], [f.mf, f.am], [f.modelid], [UPNP_SOFT.test(up) ? '' : up]];
+	for (j = 0; j < texts.length; j++) {
+		t = texts[j].filter(Boolean).join(' ').replace(/^\((.*)\)$/, '$1');
+		if (t) for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(t)) return [KIND_STRONG[i][0], t.slice(0, 40)];
+	}
+	for (i = 0; i < SVC_KIND.length; i++) for (j = 0; j < d.s.length; j++) if (SVC_KIND[i][1].test(d.s[j])) return [SVC_KIND[i][0], d.s[j].replace(/\.local$/, '')];
+	return null;
+}
 /* Why a device got its kind: kept for the readout's Details and the classification report. */
 function classify(mac, name, link, al) {
 	var N = A.names, c = al ? { name: al.name, type: al.type || 0 } : N && N.custom[mac], m = N && N.nmp[mac], l = N && N.lease[mac];
@@ -689,20 +731,23 @@ function classify(mac, name, link, al) {
 	var res = function (kind, rule, tok) { return { kind: kind, rule: rule, tok: tok || '', ct: ct, nt: nt, os: os }; };
 	/* 1. the icon you picked in the router's client list (not one the router saved along with a nickname) */
 	if (ct && TYPE_KIND[ct] && (!TYPE_LOOSE[ct] || (nt && ct !== nt))) return res(TYPE_KIND[ct], 'your icon');
-	/* 2. Fingerbank, when you turned it on: a confident answer that names a kind of device (not just a system) */
+	/* 2. what the device itself announced when asked: its model, or a service that says what it is */
+	var ak = N && N.dc && announcedKind(N.dc[mac]);
+	if (ak) return res(ak[0], 'announced', ak[1]);
+	/* 3. Fingerbank, when you turned it on: a confident answer that names a kind of device (not just a system) */
 	var fb = N && N.fb && N.fb[mac], fk = fb && fb.s > 50 ? fbKind(fb.n) : '';
 	if (fk) return res(fk, 'fingerbank', fb.n.split('/').pop() + ', ' + fb.s);
-	/* 3. a name that says what it is: your nickname, then the names the device gave */
+	/* 4. a name that says what it is: your nickname, then the names the device gave */
 	var names = [c && c.name, name, l && l.host, m && m.name], i, j;
 	for (j = 0; j < names.length; j++) {
 		if (!names[j]) continue;
 		for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(names[j])) return res(KIND_STRONG[i][0], 'name', ['nickname', 'label', 'hostname', 'router name'][j] + ' #' + i);
 	}
-	/* 4. the router's own icon number */
+	/* 5. the router's own icon number */
 	var t = ct || nt;
 	if (t === 30 || (!TYPE_KIND[t] && os === 2)) return res(link === 'wired' ? 'desktop' : 'laptop', 'windows + link');
 	if (TYPE_KIND[t]) return res(TYPE_KIND[t], ct ? 'saved icon' : 'router icon');
-	/* 5. Android says so itself (before the maker: phones carry Wi-Fi chips from module makers), then maker and DHCP vendor class */
+	/* 6. Android says so itself (before the maker: phones carry Wi-Fi chips from module makers), then maker and DHCP vendor class */
 	if (/^android-dhcp/i.test(m && m.vendorclass || '') || os === 1) return res('phone', 'android');
 	var txt = [m && m.vendor, m && m.vendorclass].join(' ');
 	for (i = 0; i < KIND_WEAK.length; i++) if (KIND_WEAK[i][1].test(txt)) return res(KIND_WEAK[i][0], 'maker', '#' + i);
@@ -781,7 +826,7 @@ function ipOf(dv) {
 	return ip;
 }
 function detailsFor(net, dv) {
-	var N = A.names || { custom: {}, nmp: {}, lease: {}, arp: {}, n6: {}, fixed: {}, fb: {} }, mac = dv.mac, m = N.nmp[mac], l = N.lease[mac], al = dv.alias, w = dv.why || {};
+	var N = A.names || { custom: {}, nmp: {}, lease: {}, arp: {}, n6: {}, fixed: {}, fb: {}, dc: {} }, mac = dv.mac, m = N.nmp[mac], l = N.lease[mac], al = dv.alias, w = dv.why || {};
 	var ip = ipOf(dv);
 	var v6 = (N.n6 && N.n6[mac]) || [], now = (net && net.epoch) || Date.now() / 1000;   /* the router's clock: the browser's can differ */
 	var left = l && +l.exp ? +l.exp - now : 0;
@@ -790,7 +835,7 @@ function detailsFor(net, dv) {
 	var std = WIFI_STD[dv.std] ? WIFI_STD[dv.std].split(' (')[0].slice(6) + (dv.band === '6' && dv.std === 'ax' ? 'E' : '') : '';   /* "6", "6E": the label says Wi-Fi */
 	var kl = KIND_LABEL[dv.kind] || 'Device', why = { 'your icon': 'the icon you chose in the router\'s client list', name: 'its name', 'windows + link': 'Windows, and how it is connected',
 		'saved icon': 'the icon saved in the router\'s client list', 'router icon': 'the type the router detected', maker: 'its maker', android: 'Android',
-		fingerbank: 'Fingerbank (' + w.tok + ')' }[w.rule];
+		fingerbank: 'Fingerbank (' + w.tok + ')', announced: 'what it announced (' + w.tok + ')' }[w.rule];
 	var wifiTxt = (std || '—') + (dv.nss ? ' · ' + dv.nss + '×' + dv.nss : '') + (dv.bw ? ' · ' + dv.bw + ' MHz' : '');
 	/* four columns; the second is the widest, for the MAC, the Wi-Fi details and IPv6 */
 	var cells = [
@@ -2557,7 +2602,7 @@ function buildReport(net) {
 	(net ? net.devs : []).forEach(function (dv) {
 		if (!dv.mac) return;   /* a port with several devices behind it */
 		var w = dv.why || {}, mac = dv.mac, c = N.custom && N.custom[mac], m = N.nmp && N.nmp[mac], l = N.lease && N.lease[mac];
-		var has = [c && c.name ? 'nick' : '', dv.alias ? 'matched' : '', l && l.host ? 'host' : '', m && m.vendor ? 'maker' : '', m && m.vendorclass ? 'vc' : ''].filter(Boolean).join(',') || '-';
+		var has = [c && c.name ? 'nick' : '', dv.alias ? 'matched' : '', l && l.host ? 'host' : '', m && m.vendor ? 'maker' : '', m && m.vendorclass ? 'vc' : '', N.dc && N.dc[mac] ? 'said' : ''].filter(Boolean).join(',') || '-';
 		var fb = N.fb && N.fb[mac], fbt = !fb ? '-' : (fb.n ? fb.n.split('/').pop() + ' ' + fb.s : 'asked: ' + fb.o);
 		rows.push(pad(dv.kind, 11) + pad((w.rule || '?') + (w.tok && w.rule !== 'fingerbank' ? ': ' + w.tok : ''), 24) + pad((w.ct || 0) + '/' + (w.nt || 0), 8) + pad(w.os || 0, 4)
 			+ pad(dv.link === 'wired' ? 'wired' : (dv.band || '?') + ' GHz', 9) + pad(isPrivate(mac) ? 'yes' : 'no', 8) + pad(has, 22) + fbt);
@@ -2566,7 +2611,8 @@ function buildReport(net) {
 	return ['Arteria ' + VERSION + ' · ' + ((net && net.router.model) || 'router') + ' · ' + rows.length + ' devices',
 		pad('kind', 11) + pad('rule', 24) + pad('icon', 8) + pad('os', 4) + pad('link', 9) + pad('private', 8) + pad('has', 22) + 'fingerbank'].concat(rows,
 		['', 'icon: the ASUS icon number saved in the client list / found by the router.', 'os: 1 Android, 2 Windows, 3 Linux, 4 ASUS, 5 Apple.',
-		'has: which name sources exist (nickname, host name, maker, DHCP vendor class), never their text.',
+		'has: which name sources exist (nickname, host name, maker, DHCP vendor class, what it announced when asked), never their text.',
+		'announced: the model a device announced about itself (Recognise now), or the service that says what it is.',
 		'fingerbank: the model Fingerbank named and its score, or the DHCP options a device asked for while Fingerbank had no answer.']).join('\n');
 }
 /* Map: the busiest devices right now. Flow: the internet over the last two minutes. */
@@ -2821,7 +2867,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { fbKind: fbKind, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { fbKind: fbKind, announcedKind: announcedKind, appleKind: appleKind, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
@@ -2904,18 +2950,18 @@ window.Arteria = { _t: { fbKind: fbKind, objDevice: objDevice, objNode: objNode,
 			<div class="ar-set-body">
 				<h3>Device recognition with Fingerbank <span class="ar-tag">optional</span></h3>
 				<p class="ar-set-st" id="arFbSt">Off</p>
-				<p><a href="https://www.fingerbank.org" target="_blank" rel="noopener noreferrer">Fingerbank</a> tells devices apart by the DHCP options they ask for, such as an iPhone from an Echo, even without a name. Arteria works fully without it. Its answer comes after the icon you chose and before the name.</p>
-				<div class="ar-set-box"><b>Adding a key shares data with Fingerbank:</b> each kind of device's DHCP options and vendor class (e.g. <code>android-dhcp-14</code>), never a MAC address, name or IP address on your network. Fingerbank sees your public IP, like any website, and keeps combinations it doesn't know.</div>
+				<p><a href="https://www.fingerbank.org" target="_blank" rel="noopener noreferrer">Fingerbank</a> tells devices apart by the DHCP options they ask for, such as an iPhone from an Echo, even without a name. Arteria works fully without it. Its answer comes after the icon you chose and the model a device announces, and before the name.</p>
+				<div class="ar-set-box"><b>Adding a key shares data with Fingerbank:</b> each kind of device's DHCP options and vendor class (e.g. <code>android-dhcp-14</code>) and the services it announces (e.g. <code>_googlecast._tcp</code>), never a MAC address, name or IP address on your network. Fingerbank sees your public IP, like any website, and keeps combinations it doesn't know.</div>
 				<p id="arFbHow"><b>Get a free key:</b> sign up at <a href="https://api.fingerbank.org" target="_blank" rel="noopener noreferrer">api.fingerbank.org</a> (<i>Login or Signup</i>), copy the <b>API key</b> from your account page and paste it here.</p>
 				<div class="ar-set-box ar-warn"><b>Keep your key to yourself.</b> Don't post it anywhere: the free key allows 300 lookups an hour, anyone using it uses yours up, and Fingerbank can block a misused key.</div>
 				<div class="ar-set-row">
 					<input type="password" id="arFbKey" autocomplete="off" spellcheck="false" maxlength="128" placeholder="Fingerbank API key" aria-label="Fingerbank API key">
 					<button type="button" class="ar-btn" id="arFbSave" title="Checks the key with Fingerbank, then restarts the router's DNS and DHCP service (about a second)">Save</button>
-					<button type="button" class="ar-btn ar-btn-2 hide" id="arFbOff" title="Deletes the key and Fingerbank's answers">Turn off</button>
+					<button type="button" class="ar-btn ar-btn-2 hide" id="arFbOff" title="Deletes the key, Fingerbank's answers and what devices said">Turn off</button>
 				</div>
 				<div class="ar-set-row hide" id="arFbNowRow">
-					<span class="ar-set-now" id="arFbNowTx">Devices are recognised when they connect or renew their address, page open or not.</span>
-					<button type="button" class="ar-btn ar-btn-2" id="arFbNow" title="Reconnects each Wi-Fi device that has no fingerprint yet, one at a time, so it asks for its address now (a few seconds off Wi-Fi each). Wired devices show up when they renew their address.">Recognise now</button>
+					<span class="ar-set-now" id="arFbNowTx">New devices are recognised a minute after they join, page open or not.</span>
+					<button type="button" class="ar-btn ar-btn-2" id="arFbNow" title="Asks the devices on the network what they are, the way phones find printers and speakers (mDNS and UPnP, with Entware's socat), then looks them up with Fingerbank. Nothing is disconnected.">Recognise now</button>
 				</div>
 				<p class="ar-set-msg" id="arFbMsg" role="status" aria-live="polite"></p>
 			</div>

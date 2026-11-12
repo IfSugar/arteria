@@ -626,26 +626,148 @@ if grep -q '^Fingerbank:  on, 2 devices fingerprinted, 1 kinds of device known t
 	&& grep -q "^Fingerbank:     on; lease script: Arteria's, then $t/dhcpc_lease; renewals: yes; 2 devices" "$t/dbg.out" \
 	&& ! grep -qi "$FBK\|02:cc:00" "$t/st.out" "$t/dbg.out"; then ok "status and debug: Fingerbank's state in counts, no key or MAC"
 else bad "status/debug:"; grep -i fingerbank "$t/st.out" "$t/dbg.out"; fi
-# Recognise now: each Wi-Fi device with a lease and no fingerprint yet is disconnected once, on the router or its node, so it
-# asks for its address now. Never the router, the node or its backhaul, nor a device that has a fingerprint already.
-export AR_NUDGE_GAP=0
-cp "$R/var/lib/misc/dnsmasq.leases" "$t/leases.before"
+# Recognise now: asks the devices on the network what they are (mDNS and UPnP, through socat), keeps what they said by
+# MAC (never names or addresses), and asks Fingerbank again with it. Nothing is disconnected. A stand-in socat answers
+# as a small network would: a speaker that needs every round of questions, a laptop (a name with an apostrophe, its
+# answers compressed) with a UPnP description, a printer that isn't in the ARP table (so it can't be told apart),
+# and UPnP replies pointing at the router itself and at 127.0.0.1, which are never fetched.
+cp "$R/var/lib/misc/dnsmasq.leases" "$t/leases.before"; cp "$t/proc/net/arp" "$t/arp.before"
 for m in 01 03 05 12 13 99; do echo "1794400000 02:cc:00:00:00:$m 192.168.50.1$m h$m *"; done > "$R/var/lib/misc/dnsmasq.leases"
 printf '1794400000 02:10:00:00:00:80 192.168.50.10 node *\n1794400000 02:10:00:00:00:81 192.168.50.11 bh *\n' >> "$R/var/lib/misc/dnsmasq.leases"
-for d in "$B" "$N"; do mv "$d/wl" "$d/wl.real"; w=router; [ "$d" = "$N" ] && w=node
-	printf '#!%s sh
-[ "$3" = deauthenticate ] && { echo "%s $2 $4" >> "%s/deauth.log"; exit 0; }
-exec "%s/wl.real" "$@"
-' "$bb" "$w" "$t" "$d" > "$d/wl"; chmod +x "$d/wl"; done
-: > "$t/deauth.log"
+printf '192.168.50.130   0x1         0x2         02:cc:00:00:00:01     *        br0\n192.168.50.131   0x1         0x2         02:CC:00:00:00:05     *        br0\n' >> "$t/proc/net/arp"
+for d in "$B" "$N"; do mv "$d/wl" "$d/wl.real"; printf '#!%s sh\n[ "$3" = deauthenticate ] && echo "$*" >> "%s/deauth.log"\nexec "%s/wl.real" "$@"\n' "$bb" "$t" "$d" > "$d/wl"; chmod +x "$d/wl"; done
+: > "$t/deauth.log"; : > "$t/socat.log"
+cat > "$B/socat" <<EOF
+#!$py
+import sys, struct
+open("$t/socat.log", "a").write(" ".join(sys.argv[1:]) + "\n")
+DEV = [  # address, host, [(service type, instance, TXT, extras with the PTR answer)]
+    ("192.168.50.130", "Kitchen-Speaker.local", [("_spotify-connect._tcp.local", "Kitchen Speaker._spotify-connect._tcp.local", ["VERSION=1.0"], False),
+                                                ("_meshcop._udp.local", "Speaker #1A2B._meshcop._udp.local", ["vn=Amazon", "mn=Echo 4th Gen", "nn=Home"], False)]),
+    ("192.168.50.131", "Jos-Laptop.local", [("_companion-link._tcp.local", "Jo’s Laptop._companion-link._tcp.local", ["rpMd=MacBookPro18,1", "rpHN=ab12"], True),
+                                           ("_http._tcp.local", "Jo’s Laptop._http._tcp.local", ["path=/"], True)]),
+    ("192.168.50.140", "Printer.local", [("_printer._tcp.local", "Printer._printer._tcp.local", ["ty=Made Up LaserJet 1000"], True)]),
+]
+class Pk:   # a DNS answer, its names compressed
+    def __init__(s): s.b = bytearray(12); s.off = {}; s.n = 0
+    def name(s, n):
+        labs = n.split(".")
+        for i in range(len(labs)):
+            suf = ".".join(labs[i:]).lower()
+            if suf in s.off: s.b += struct.pack(">H", 0xC000 | s.off[suf]); return
+            s.off[suf] = len(s.b); e = labs[i].encode(); s.b += bytes([len(e)]) + e
+        s.b += b"\0"
+    def rr(s, owner, typ, rdata):
+        s.name(owner); s.b += struct.pack(">HHI", typ, 0x8001, 120); lp = len(s.b); s.b += b"\0\0"; rdata(); struct.pack_into(">H", s.b, lp, len(s.b) - lp - 2); s.n += 1
+    def ptr(s, o, t): s.rr(o, 12, lambda: s.name(t))
+    def srv(s, o, h): s.rr(o, 33, lambda: (s.b.extend(struct.pack(">HHH", 0, 0, 80)), s.name(h)))
+    def txt(s, o, t): s.rr(o, 16, lambda: [s.b.extend(bytes([len(x.encode())]) + x.encode()) for x in t])
+    def a(s, o, ip): s.rr(o, 1, lambda: s.b.extend(bytes(int(x) for x in ip.split("."))))
+def dump(d, way):
+    sys.stderr.write("%s 2026/11/12 23:00:00.000000  length=%d from=0 to=%d\n" % (way, len(d), len(d) - 1))
+    for i in range(0, len(d), 16): sys.stderr.write(" " + " ".join("%02x" % x for x in d[i:i + 16]) + "\n")
+    sys.stderr.write("--\n")
+if "5353" in " ".join(sys.argv):
+    q = sys.stdin.buffer.read(); dump(q, ">")
+    qs = []; p = 12
+    for _ in range(struct.unpack(">H", q[4:6])[0]):
+        labs = []
+        while q[p]: labs.append(q[p + 1:p + 1 + q[p]].decode()); p += 1 + q[p]
+        qs.append((".".join(labs).lower(), struct.unpack(">H", q[p + 1:p + 3])[0])); p += 5
+    for ip, host, svcs in DEV:
+        r = Pk()
+        for n, t in qs:
+            for typ, inst, tx, extra in svcs:
+                if n == "_services._dns-sd._udp.local" and t == 12: r.ptr(n, typ)
+                elif n == typ.lower() and t == 12:
+                    r.ptr(typ, inst)
+                    if extra: r.srv(inst, host); r.txt(inst, tx); r.a(host, ip)
+                elif n == inst.lower() and t == 255: r.srv(inst, host); r.txt(inst, tx)
+            if n == host.lower() and t == 1: r.a(host, ip)
+        if r.n:
+            struct.pack_into(">HHHHHH", r.b, 0, 0, 0x8400, 0, r.n, 0, 0); dump(bytes(r.b), "<")
+else:
+    sys.stdin.read()
+    for loc, srv in (("http://192.168.50.131:8099/desc.xml", "Linux/5.10 UPnP/1.0 MadeUp/1.0"), ("http://192.168.50.1:80/rootDesc.xml", "AsusWRT/3004 UPnP/1.1 MiniUPnPd/2.3"), ("http://127.0.0.1:80/x", "Evil/1.0")):
+        sys.stdout.write("HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nLOCATION: %s\r\nSERVER: %s\r\nST: upnp:rootdevice\r\n\r\n" % (loc, srv))
+EOF
+chmod +x "$B/socat"
+# Fingerbank, asked with what the devices said, knows them better (the stand-in curl answers these questions)
+mv "$B/curl" "$t/curl.fb"
+cat > "$B/curl" <<EOF
+#!$bb sh
+case "\$*" in *desc.xml*) echo "\$*" >> "$t/upnp.args"; printf '<?xml version="1.0"?><root><device><friendlyName>Jo</friendlyName><manufacturer>Made Up Inc</manufacturer><modelName>Laptop</modelName></device></root>'; exit 0 ;;
+	*http://*) echo "\$*" >> "$t/upnp.args"; exit 0 ;; esac
+for a in "\$@"; do case "\$a" in
+	*'"mdns_services":["_meshcop._udp.local","_spotify-connect._tcp.local"]'*) cat > /dev/null; echo "\$*" >> "$t/fbcurl.args"
+		printf '{"device_name":"Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo","score":73}\n200'; exit 0 ;;
+	*'"mdns_services":["_companion-link._tcp.local","_http._tcp.local"],"upnp_server_strings":["Linux/5.10 UPnP/1.0 MadeUp/1.0"]'*) cat > /dev/null; echo "\$*" >> "$t/fbcurl.args"
+		printf '{"device_name":"Computer/Apple Mac/MacBook Pro","score":80}\n200'; exit 0 ;;
+esac; done
+exec "$t/curl.fb" "\$@"
+EOF
+chmod +x "$B/curl"; : > "$t/fbcurl.args"; : > "$t/upnp.args"
 runi service_event start arteriafbnow
-if [ "$(sort "$t/deauth.log")" = "$(printf 'node wl1.1 02:CC:00:00:00:13\nrouter eth6 02:CC:00:00:00:01\nrouter eth7 02:CC:00:00:00:03')" ] \
-	&& [ "$(fbst ok)" = true ] && fbst msg | grep -q "^Reconnected 3 Wi-Fi device(s).* 1 more aren't on Wi-Fi right now"; then
-	ok "recognise now: Wi-Fi devices without a fingerprint reconnect once, on the router and the node; never the node, its backhaul or a known device"
-else bad "recognise now:"; cat "$t/deauth.log" "$W/fb.htm"; fi
+disc="$R/jffs/addons/arteria/discovered"
+if [ "$(cut -d'|' -f1-5 "$disc")" = "$(printf '%s\n' '02:CC:00:00:00:01|_meshcop._udp.local _spotify-connect._tcp.local|mn=Echo 4th Gen;vn=Amazon||' \
+	'02:CC:00:00:00:05|_companion-link._tcp.local _http._tcp.local|rpMd=MacBookPro18,1|manufacturer=Made Up Inc; modelName=Laptop|Linux/5.10 UPnP/1.0 MadeUp/1.0')" ] \
+	&& [ "$(cut -d'|' -f6 "$disc" | grep -c '^1[0-9]\{9\}$')" = 2 ]; then
+	ok "recognise now: each device's services, model and UPnP details kept by MAC (none without one), with no name or address"
+else bad "recognise now, what devices said:"; cat "$disc" "$t/socat.log"; fi
+grep -qi "Jo\|Kitchen\|Speaker\|192\.168\|ab12\|friendly" "$disc" && bad "a name or address was kept: $(cat "$disc")" || ok "recognise now keeps no names, host names or addresses"
+[ "$(cat "$t/upnp.args")" = "-s --proto =http --max-redirs 0 -m 3 --max-filesize 65536 http://192.168.50.131:8099/desc.xml" ] \
+	&& ok "recognise now: UPnP descriptions only from devices on the LAN, never the router itself or 127.0.0.1" || { bad "UPnP fetches:"; cat "$t/upnp.args"; }
+[ ! -s "$t/deauth.log" ] && ok "recognise now disconnects nothing" || { bad "something was disconnected:"; cat "$t/deauth.log"; }
+if grep -q '^1,3,6,15,31,33,43,44,46,47,119,121,249,252;dhcpcd-9.4.1:Linux:armv7l x;_companion-link._tcp.local,_http._tcp.local;Linux/5.10 UPnP/1.0 MadeUp/1.0	200	80	Computer/Apple Mac/MacBook Pro	' "$R/jffs/addons/arteria/fingerbank" \
+	&& grep -q '^;;_meshcop._udp.local,_spotify-connect._tcp.local;	200	73	' "$R/jffs/addons/arteria/fingerbank" \
+	&& [ "$(fbst ok)" = true ] && fbst msg | grep -q '^2 device(s) answered\. Fingerbank recognises 2 of 3 device(s)\.$' && [ "$(fbst asked)" = 2 ] && [ "$(fbst socat)" = true ]; then
+	ok "recognise now: Fingerbank asked again with each device's services and UPnP SERVER string, and the page told"
+else bad "recognise now, Fingerbank:"; cat "$R/jffs/addons/arteria/fingerbank" "$W/fb.htm"; fi
+grep -qi '02:cc\|"mac"\|Jo\|Kitchen\|rpMd\|192\.168' "$t/fbcurl.args" && bad "Fingerbank got more than it should: $(cat "$t/fbcurl.args")" || ok "Fingerbank gets services and SERVER strings only: no MAC, name, model field or address"
+# the page gets the better answers (the one from the DHCP fingerprint alone stands in until there is one)
+rm -f "$W/names.htm"; runi service_event start arteria
+fb_better() { grep -q 'MacBook Pro' "$W/names.htm" 2>/dev/null; }; waitfor 15 fb_better
+python3 - "$W/names.htm" <<'EOF' && ok "the page gets each device's answer to its fullest question, and what each device announced" || fail=1
+import json, sys
+n = json.load(open(sys.argv[1])); fb = n['fb']; dc = n['dc']
+assert fb == '02:CC:00:00:00:05>80>Computer/Apple Mac/MacBook Pro>1,3,6,15,31,33,43,44,46,47,119,121,249,252|02:CC:00:00:00:12>>>1,3,6,15,119,252,95|02:CC:00:00:00:01>73>Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo>|', fb
+assert dc == '02:CC:00:00:00:01>_meshcop._udp.local _spotify-connect._tcp.local>mn=Echo 4th Gen;vn=Amazon>|02:CC:00:00:00:05>_companion-link._tcp.local _http._tcp.local>rpMd=MacBookPro18,1>manufacturer=Made Up Inc; modelName=Laptop|', dc
+EOF
+runi service_event start arteriastop; waitfor 6 sampler_gone
 [ "$(fbst waiting)" = 4 ] && ok "fb.htm counts the devices not seen yet" || { bad "waiting count:"; cat "$W/fb.htm"; }
+# compare: each device that answered, looked up four ways (with its maker, then its whole MAC); nothing is kept
+cp "$R/jffs/addons/arteria/fingerbank" "$t/fbcache.before"; : > "$t/fbcurl.args"
+runi fingerbank compare > "$t/cmp.out" 2>&1 || { bad "fingerbank compare failed:"; cat "$t/cmp.out"; }
+if grep -q '^\.\.\.00:05  _companion-link._tcp.local _http._tcp.local  \[rpMd=MacBookPro18,1\]' "$t/cmp.out" \
+	&& grep -q '^  DHCP only:   Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo (87)$' "$t/cmp.out" \
+	&& [ "$(grep -c '^  + whole MAC: ' "$t/cmp.out")" = 2 ] && [ "$(grep -c '^  DHCP only: ' "$t/cmp.out")" = 1 ] \
+	&& grep -q '"mac":"02:CC:00:00:00:05"' "$t/fbcurl.args" && grep -q '"mac":"02:CC:00:00:00:00"' "$t/fbcurl.args" \
+	&& ! grep -qi 'Jo\|Kitchen\|192\.168\|friendly' "$t/cmp.out" && cmp -s "$R/jffs/addons/arteria/fingerbank" "$t/fbcache.before"; then
+	ok "fingerbank compare: each device four ways (DHCP, + services, + maker, + whole MAC), nothing kept, no names or addresses"
+else bad "fingerbank compare:"; cat "$t/cmp.out"; fi
+grep -q "$FBK" "$t/fbcurl.args" && bad "the key was in curl's command line (compare)" || true
+# a device that joins is asked about after a minute (here at once): it and any that joined meanwhile, once until a reboot
+printf '192.168.50.140   0x1         0x2         02:cc:00:00:00:14     *        br0\n' >> "$t/proc/net/arp"
+export AR_DISC_DELAY=0; PATH="$B" service restart_dnsmasq; hook=$(sed -n 's/^dhcp-script=//p' "$R/etc/dnsmasq.conf")
+n0=$(grep -c 5353 "$t/socat.log")
+lease '1,3,6,15,44,47' '' add 02:cc:00:00:00:14
+joined() { grep -q '^02:CC:00:00:00:14|_printer._tcp.local|ty=Made Up LaserJet 1000|' "$disc" 2>/dev/null; }; waitfor 15 joined
+sleep 1; n1=$(grep -c 5353 "$t/socat.log")
+lease '1,3,6,15,44,47' '' add 02:cc:00:00:00:14; lease '1,3,6,15,119,252' '' add 02:cc:00:00:00:05; lease '1,3,6,15' '' old 02:cc:00:00:00:77
+sleep 2; n2=$(grep -c 5353 "$t/socat.log")
+if joined && [ "$n1" -gt "$n0" ] && [ "$n2" = "$n1" ]; then ok "a device that joins is asked what it is, once; not one that said already, nor a renewal"
+else bad "a device joining: $n0 $n1 $n2"; cat "$disc"; fi
+unset AR_DISC_DELAY; PATH="$B" service restart_dnsmasq; hook=$(sed -n 's/^dhcp-script=//p' "$R/etc/dnsmasq.conf")
+# without socat: Fingerbank still looks every device up, and the page says how to recognise more
+mv "$B/socat" "$t/socat.off"; runi service_event start arteriafbnow
+[ "$(fbst ok)" = true ] && [ "$(fbst socat)" = false ] && fbst msg | grep -q "Fingerbank recognises [0-9]* of [0-9]* device(s)\. To recognise more.*opkg install socat" \
+	&& ok "recognise now without socat: lookups only, and says how to recognise more" || { bad "recognise now, no socat:"; cat "$W/fb.htm"; }
+: > "$t/socat.log"; lease '1,3,6,15,44,48' '' add 02:cc:00:00:00:15; sleep 2
+[ ! -s "$t/socat.log" ] && ok "without socat, a device joining asks nothing" || bad "a join without socat ran socat" 
+mv "$t/socat.off" "$B/socat"
 for d in "$B" "$N"; do mv -f "$d/wl.real" "$d/wl"; done
-cp "$t/leases.before" "$R/var/lib/misc/dnsmasq.leases"; unset AR_NUDGE_GAP
+mv -f "$t/curl.fb" "$B/curl"; rm -f "$B/socat"
+cp "$t/leases.before" "$R/var/lib/misc/dnsmasq.leases"; cp "$t/arp.before" "$t/proc/net/arp"
 printf 'BADKEY0123456789BADKEY01\n' > "$fbk"; lease '1,3,6,15,44' '' add 02:cc:00:00:00:01
 runi service_event start arteria; fb_refused() { grep -q badkey "$R/tmp/arteria/fb_state" 2>/dev/null; }; waitfor 10 fb_refused
 runi service_event start arteriastop; waitfor 6 sampler_gone
@@ -799,6 +921,11 @@ else bad "update after update dev:"; cat "$t/upd.out"; fi
 printf 'abcdef0123456789abcdef0123456789abcdef01\n' > "$R/jffs/addons/arteria/fingerbank_key"
 printf '#!/bin/sh\n%s dnsmasq_conf "$1" # arteria\n' "$R/jffs/addons/arteria/arteria.sh" > "$R/jffs/scripts/dnsmasq.postconf"; chmod 755 "$R/jffs/scripts/dnsmasq.postconf"
 PATH="$B" service restart_dnsmasq; grep -q "^dhcp-script=$R/tmp/arteria/dhcp_hook" "$R/etc/dnsmasq.conf" || bad "the Fingerbank hook didn't take before uninstall"
+# an update (a reinstall) rewrites the lease script dnsmasq is running, still handing on to the router's own
+h=$(sed -n 's/^dhcp-script=//p' "$R/etc/dnsmasq.conf"); grep -v discnew "$h" > "$t/oldhook"; cat "$t/oldhook" > "$h"
+AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$script" install < /dev/null > "$t/reinst.out" 2>&1 || { bad "reinstall failed:"; cat "$t/reinst.out"; }
+grep -q ' discnew ' "$h" && grep -q "^exec $t/dhcpc_lease \"\$@\"$" "$h" && [ "$(sed -n 's/^dhcp-script=//p' "$R/etc/dnsmasq.conf")" = "$h" ] \
+	&& ok "an update rewrites dnsmasq's running lease script in place, still handing on to the router's" || { bad "rewriting the lease script:"; cat "$h"; }
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/scripts/dnsmasq.postconf" ] && cmp -s "$R/etc/dnsmasq.conf" "$t/dnsmasq.base" && ok "uninstall with Fingerbank on: dnsmasq gets its own lease script back" || { bad "uninstall, Fingerbank:"; cat "$R/etc/dnsmasq.conf"; }
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
