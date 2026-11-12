@@ -156,8 +156,8 @@ node_alias() { sed -n 's/.*"cfg_alias":"\([^"]*\)".*/\1/p' "$ROOT/tmp/$1.json" 2
 node_stas() {
 	sed -n "s/.*\"$1\":{\([^}]*\)}.*/\1/p" "$ROOT/tmp/relist.json" 2>/dev/null | grep -o '[0-9A-Fa-f:]\{17\}' | tr a-f A-F | tr '\n' ' '
 }
-# Only when missing: on JFFS even a chmod that changes nothing is a write to flash, and the sampler calls this.
 node_models() { printf '%s\n' "$1" | awk '{ $1 = ""; $2 = ""; sub(/^ +/, ""); printf "%s%s", (c++ ? ", " : ""), $0 }'; }   # node list -> "RP-AX56, ..."
+# Only when missing: on JFFS even a chmod that changes nothing is a write to flash, and the sampler calls this.
 ssh_home() { [ -d "$SSH_HOME/.ssh" ] || { mkdir -p "$SSH_HOME/.ssh" && chmod 700 "$SSH_HOME/.ssh"; } 2>/dev/null; }
 node_file() { printf '%s/node.%s' "$TMPD" "$(printf '%s' "$1" | tr -d :)"; }
 
@@ -544,7 +544,7 @@ mount_webui() {
 	# Menu: edit a copy, and only swap it in if the result is exactly our new lines at known anchors.
 	# A broken menuTree.js would break the router's whole menu, so never risk it.
 	[ -f "$TMP_MENUTREE" ] || cp -f "$MENUTREE" "$TMP_MENUTREE"
-	new="$TMP_MENUTREE.$NAME.$$"
+	new="$TMPD/menuTree.$$"   # in our own folder: a name in /tmp could be a link someone planted
 	sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$new"
 	before=$(wc -l < "$new")
 	entry="{url: \"$am_webui_page\", tabName: \"$TITLE\"},"

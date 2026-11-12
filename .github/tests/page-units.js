@@ -93,6 +93,15 @@ const fbad = FORMS.filter(f => T.formOf(f[0], 'x').form !== f[1]).map(f => f[0] 
 ok(!fbad.length, 'model shapes: ' + FORMS.length + ' models', fbad.join('; '));
 ok(T.formOf('Mystery-1', 'tower').form === 'tower' && T.formOf('Mystery-1', 'router').form === 'router', 'an unknown model keeps today\'s look');
 ok(T.formOf('RP-AC1900', 'x').ant && !T.formOf('RP-AX56', 'x').ant, 'plug-in repeaters with antennas get them');
+// every shape draws, as a node and as the main router, and says where its Wi-Fi arcs meet
+const sbad = [];
+['RP-AX56', 'RP-AC1900', 'ZenWiFi_XT8', 'ZenWiFi_XD4', 'Lyra', 'GT-AX11000', 'RT-AX58U', 'Mystery-1'].forEach(m => {
+	try {
+		const n = T.objNode('node:x', 12, 2, m), r = T.objRouter(m);
+		[n, r].forEach((o, i) => { if (!/<polygon|<path/.test(o.svg.join('')) || !(o.bbox()[2] > o.bbox()[0]) || (i === 0 && !o.hub)) sbad.push(m + (i ? ' as router' : ' as node')); });
+	} catch (e) { sbad.push(m + ': ' + e.message); }
+});
+ok(!sbad.length, 'every shape draws as a node and as the main router', sbad.join('; '));
 
 // ---- 4. a private address that changed takes over its old nickname only when it is unambiguous
 const NEW = '0A:00:00:00:00:01', OLD = '06:00:00:00:00:09', NEW2 = '0E:00:00:00:00:02';

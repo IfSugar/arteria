@@ -599,9 +599,9 @@ function detailsFor(net, dv) {
 	var ip = ipOf(dv);
 	var v6 = (N.n6 && N.n6[mac]) || [], now = (net && net.epoch) || Date.now() / 1000;   /* the router's clock: the browser's can differ */
 	var left = l && +l.exp ? +l.exp - now : 0;
-	var lease = N.fixed && N.fixed[mac] ? 'Reserved' : (l ? (left > 0 ? 'DHCP · ' + ago(left) + ' left' : 'DHCP') : (ip ? 'Static' : '—'));
+	var lease = N.fixed && N.fixed[mac] ? 'Reserved' : (l ? (left > 0 ? 'DHCP · ' + (left >= 5400 ? Math.round(left / 3600) + ' h' : ago(left)) + ' left' : 'DHCP') : (ip ? 'Static' : '—'));
 	var priv = mac && isPrivate(mac), wifi = dv.link === 'wifi';
-	var std = WIFI_STD[dv.std] ? WIFI_STD[dv.std].split(' (')[0] + (dv.band === '6' && dv.std === 'ax' ? 'E' : '') : '';
+	var std = WIFI_STD[dv.std] ? WIFI_STD[dv.std].split(' (')[0].slice(6) + (dv.band === '6' && dv.std === 'ax' ? 'E' : '') : '';   /* "6", "6E": the label says Wi-Fi */
 	var kl = KIND_LABEL[dv.kind] || 'Device', why = { 'your icon': 'the icon you chose in the router\'s client list', name: 'its name', 'windows + link': 'Windows, and how it is connected',
 		'saved icon': 'the icon saved in the router\'s client list', 'router icon': 'the type the router detected', maker: 'its maker', android: 'Android' }[w.rule];
 	var wifiTxt = (std || '—') + (dv.nss ? ' · ' + dv.nss + '×' + dv.nss : '') + (dv.bw ? ' · ' + dv.bw + ' MHz' : '');
@@ -614,10 +614,10 @@ function detailsFor(net, dv) {
 		['System', osOf(m)],
 		wifi ? ['Wi-Fi', wifiTxt, (WIFI_STD[dv.std] || 'Wi-Fi') + (dv.nss ? ', ' + dv.nss + ' spatial streams' : '') + (dv.bw ? ', ' + dv.bw + ' MHz channel' : '')] : ['Port', (dv.portLabel || '—') + (dv.speed ? ' · ' + speedTxt(dv.speed) : '')],
 		['Shown as', kl, kl + (why ? ': recognised by ' + why : '')],
-		wifi ? ['Link ↓ / ↑', (dv.phy || '—') + ' / ' + (dv.phyUp || '—') + ' Mb/s'] : ['Devices on it', String(dv.count || 1)],
+		wifi ? ['Link ↓ / ↑ Mb/s', (dv.phy || '—') + ' / ' + (dv.phyUp || '—'), 'Link rate: ' + (dv.phy || '—') + ' Mb/s down, ' + (dv.phyUp || '—') + ' Mb/s up'] : ['Devices on it', String(dv.count || 1)],
 		wifi ? ['Connected', ago(dv.conn), 'Connected for ' + ago(dv.conn) + (dv.idle > 0 ? ', idle for ' + ago(dv.idle) : '') + (dv.node ? ' (restarts when it roams between the router and a node)' : '')] : ['Connected', '—'],
 		['IPv6', v6.length ? v6[0] + (v6.length > 1 ? ' +' + (v6.length - 1) : '') : '—', v6.join('\n')],
-		['Address', lease],
+		['Address', lease, l && left > 0 ? 'DHCP lease, ' + ago(left) + ' left' : ''],
 		al ? ['Matched', 'by host name', 'This private address has no name of its own. It uses the host name of the device you named "' + al.name + '", which is not connected now, so it is shown under that name.']
 			: ['Name from', (N.custom[mac] && N.custom[mac].name) ? 'your client list' : ((l && l.host) || (m && m.name) ? 'the device' : 'its maker or kind')]
 	];
@@ -1653,7 +1653,7 @@ function chainOf(net, id) {
 	if (id.indexOf('more') === 0) return ['more'];
 	var n = net.byId[id];
 	if (!n) return null;
-	if (n.mac && id.indexOf('node:') === 0) return [id].concat(n.devs.map(function (dv) { return dv.id; }));
+	if (n.mac && id.indexOf('node:') === 0) return [id].concat(n.devs.map(function (dv) { return dv.id; }), n.devs.some(function (dv) { return inTray(dv.id); }) ? ['more'] : []);   /* its clients on the tray light the tray */
 	var end = inTray(id) ? 'more' : id;   /* a device on the tray is traced to the tray */
 	return n.node ? [n.node.id, end] : [end];
 }
@@ -2093,7 +2093,7 @@ function renderFlow(net) {
 				c2 = wired ? (dv.count > 1 ? dv.count + ' devices' : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
 			}
 		} else if (r.more) { name = '+' + r.more.length + ' more'; icon = 'more'; sub = r.more.slice(0, 3).map(function (dv) { return dv.name; }).join(', '); }
-		else { name = r.nodeOnly.name; icon = 'mesh'; sub = 'No clients right now'; }
+		else { name = r.nodeOnly.name; icon = FORM_ICON[formOf(r.nodeOnly.model, 'tower').form] || 'mesh'; sub = 'No clients right now'; }
 		if (g.node && agg(g)) { st = g.node.online ? 'nodata' : 'off'; if (r.dev) sub = g.node.online ? 'Not reported' : 'Offline'; }
 		var v = st === 'ok' ? rowVal(r, f) : null, fm = fmt(v);
 		var isOn = rowSel(r);
@@ -2135,7 +2135,7 @@ function readoutFor(net) {
 	/* Whole network: everything your devices received and sent. That's the internet plus local traffic:
 	   between your own devices, and to or from the router itself (its pages, DNS, a USB share). The bar
 	   shows the internet part solid and the local part lighter. */
-	var id = A.sel, d = { icon: 'router', badge: 'Router', name: 'Whole network', link: (net.router.model || 'Router') + ' · all your devices, internet and local' };
+	var id = A.sel, d = { icon: FORM_ICON[formOf(net.router.model, 'router').form] || 'router', badge: 'Router', name: 'Whole network', link: (net.router.model || 'Router') + ' · all your devices, internet and local' };
 	var dn = net.total.dn, up = net.total.up;
 	var sdn = full(net.wan.dn) + ' internet + ' + full(net.local.dn) + ' local', sup = full(net.wan.up) + ' internet + ' + full(net.local.up) + ' local';
 	var k1 = 'Clients', v1 = net.clients + ' online', k2 = 'Local traffic', v2 = full(net.local.dn), path = 'Through the router';
@@ -2476,7 +2476,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>

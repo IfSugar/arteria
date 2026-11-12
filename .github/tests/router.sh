@@ -383,6 +383,14 @@ kill -0 "$other" 2>/dev/null && ok "stale pid files never signal another process
 kill "$other" 2>/dev/null; wait "$other" 2>/dev/null || true
 rm -rf "$R/tmp/arteria" "$W" "$R/tmp/menuTree.js" "$R/jffs/addons/arteria/webui_page" "$R"/www/user/user*
 
+# /tmp/arteria planted as a link by someone else: Arteria won't use it, so nothing runs or is written through it
+mkdir -p "$t/planted"; ln -s "$t/planted" "$R/tmp/arteria"
+runi service_event start arteria > "$t/planted.out" 2>&1 || true
+sleep 2
+if [ -z "$(ls -A "$t/planted")" ] && ! pgrep -f "$script sampler" > /dev/null; then ok "a planted /tmp/arteria link is refused: no sampler, nothing written through it"
+else bad "planted /tmp/arteria:"; ls -la "$t/planted"; cat "$t/planted.out"; fi
+rm -f "$R/tmp/arteria"
+
 # ---- 4: install and uninstall ----------------------------------------------------------------
 printf '#!/bin/sh\n/some/other/script startup &\n' > "$R/jffs/scripts/services-start"
 cp "$R/jffs/scripts/services-start" "$t/ss.before"
@@ -442,7 +450,7 @@ release() {   # dir version: a whole release of this script and page, renumbered
 upd() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" "$@" < /dev/null > "$t/upd.out" 2>&1; }
 inst_ver() { sed -n 's/^VERSION="\([0-9.]*\)".*/\1/p' "$R/jffs/addons/arteria/arteria.sh"; }
 printf '{"tag_name": "%s"}' "$cur" > "$srv/api/latest"; release "$cur" "$cur"
-upd update; grep -q 'Already up to date' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] && ok "update: the same version changes nothing" || { bad "update, same version:"; cat "$t/upd.out"; }
+upd update || true; grep -q 'Already up to date' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] && ok "update: the same version changes nothing" || { bad "update, same version:"; cat "$t/upd.out"; }
 printf '{"tag_name": "9.9.9"}' > "$srv/api/latest"; release 9.9.9 9.9.9
 sed -i '/^# Keep this dispatch last/,$d' "$srv/raw/9.9.9/arteria.sh"   # cut off before the dispatch: still passes sh -n
 upd update || true
@@ -454,13 +462,13 @@ release 9.9.9 9.9.9; sed -i 's/arteria-version: 9.9.9 /arteria-version: 9.9.8 /'
 upd update || true
 grep -q 'matching web page' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] && ok "update: a page of another version is refused" || { bad "update, page version:"; cat "$t/upd.out"; }
 release 9.9.9 9.9.9; sed -i 's/^INTERVAL=.*/INTERVAL=3/' "$R/jffs/addons/arteria/config"
-upd update
+upd update || true
 if [ "$(inst_ver)" = 9.9.9 ] && grep -q 'arteria-version: 9.9.9 ' "$R/jffs/addons/arteria/arteria.asp" && grep -q '^INTERVAL=3' "$R/jffs/addons/arteria/config" \
 	&& [ "$(grep -c '# arteria$' "$R/jffs/scripts/services-start")" = 1 ] && [ "$(grep -c '# arteria$' "$R/jffs/scripts/service-event")" = 1 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
 	ok "update: a newer release is installed, settings kept, one hook line each"
 else bad "update to 9.9.9:"; cat "$t/upd.out"; fi
 printf '{"tag_name": "%s"}' "$cur" > "$srv/api/latest"
-upd update; grep -q 'newer than the latest release' "$t/upd.out" && [ "$(inst_ver)" = 9.9.9 ] && ok "update: never goes back to an older release unless forced" || { bad "update, older:"; cat "$t/upd.out"; }
+upd update || true; grep -q 'newer than the latest release' "$t/upd.out" && [ "$(inst_ver)" = 9.9.9 ] && ok "update: never goes back to an older release unless forced" || { bad "update, older:"; cat "$t/upd.out"; }
 : > "$t/curl.log"; badnames=""
 for br in 'a..b' '-x' 'refs/heads/main' 'a b' 'pull/1/head' '/x' 'x/'; do
 	upd update dev "$br" || true
@@ -469,11 +477,17 @@ done
 [ -z "$badnames" ] && [ ! -s "$t/curl.log" ] && ok "update dev: refuses what isn't a branch name, before any download" || { bad "update dev names:$badnames"; cat "$t/curl.log"; }
 sha=0123456789abcdef0123456789abcdef01234567
 mkdir -p "$srv/api/branches/fix"; printf '{"name": "fix/menu", "commit": {"sha": "%s"}}' "$sha" > "$srv/api/branches/fix/menu"; release "$sha" 9.9.10
-upd update dev fix/menu
+upd update dev fix/menu || true
 if [ "$(inst_ver)" = 9.9.10 ] && grep -q "^dev fix/menu 0123456 " "$R/jffs/addons/arteria/build" 2>/dev/null \
 	&& ! grep -v "/$sha/\|branches/fix/menu" "$t/curl.log" | grep -q .; then
 	ok "update dev <branch>: that branch's newest commit, fetched by its commit id, marked as a development version"
 else bad "update dev fix/menu:"; cat "$t/upd.out" "$t/curl.log"; fi
+# back to a release from a development version: the same number is installed again, and install takes the mark away
+printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"; release 9.9.10 9.9.10
+upd update || true
+if grep -q "Updating" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
+	ok "update: from a development version back to the release, the mark is gone"
+else bad "update after update dev:"; cat "$t/upd.out"; fi
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
 cmp -s "$R/jffs/scripts/services-start" "$t/ss.before" && ok "other scripts' hook lines untouched" || { bad "services-start changed:"; cat "$R/jffs/scripts/services-start"; }

@@ -13,7 +13,7 @@ The first release: a live, animated map of how traffic flows between the interne
 - **AiMesh nodes drawn as what they are**: plug-in extenders, towers, cubes, pucks, gaming routers and classic routers, by model.
 - **The *+N more* tray opens a list**: tap it to see the grouped devices, busiest first, and tap any of them to trace it.
 - **Private Wi-Fi addresses** are marked as such, and a device whose private address changed is recognised by its host name when that's unambiguous, so it keeps its name and icon.
-- **Expanded view**: a button opens a bigger view that fills the window (or the screen), with a stand for every device on a typical home network, a third line on each label, Flow rows with address, signal and link rate, and the readout's traffic and details side by side.
+- **Expanded view**: a button opens a bigger view that fills the window (or the screen), with a stand for every device on a typical home network, a third line on each label, Flow rows with address, signal and link rate, and the readout's traffic and details together.
 - A **Device report** (at the bottom of the page) shows how each device was recognised, without names or addresses, for issues about a device drawn as the wrong thing.
 - **AiMesh nodes, per device.** The router reads each node's own clients over a single SSH session per node, with a key only the router holds (`arteria.sh nodekey` sets it up). Without the key, the map still shows each node's backhaul total.
 - **Only while the page is open.** Sampling starts when you open the page and stops about 20 seconds after you close it or switch to another tab. Nothing runs in the background, there are no cron jobs, and samples stay in RAM.
