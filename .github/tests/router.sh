@@ -377,6 +377,21 @@ runi service_event start arteriastop
 waitfor 6 sampler_gone; waitfor 6 no_session
 rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 
+# nodes test: key login, then one round of the page's own node script: how many devices, how long. A node where that
+# round fails (the session drops) says so, with addresses and user names taken out of the message.
+run nodes test > "$t/nt.out" 2>&1 || true
+grep -q 'key login OK, reads [0-9][0-9]* device(s), one round takes about [0-9][0-9]* s$' "$t/nt.out" \
+	&& ok "nodes test: key login, then the node's devices read by the page's own script, with the time it takes" \
+	|| { bad "nodes test:"; cat "$t/nt.out"; }
+printf 'echo "dbclient: Connection to admin@192.168.50.10:2222 exited: Remote closed the connection" >&2\nexit 1\n' > "$t/node-hostile"
+run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
+grep -q 'key login OK, reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection' "$t/nt.out" \
+	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
+	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+run debug > "$t/debug2.out" 2>&1 || true
+grep -q 'state=(page closed)' "$t/debug2.out" && ! grep -q '192\.168\.' "$t/debug2.out" \
+	&& ok "debug: no node state while the page is closed (it would read 'down')" || { bad "debug, nodes:"; grep -A2 '^Nodes' "$t/debug2.out"; }
+
 # Which nodes: the router's AiMesh list, never the router itself. Saving a setting empties that list for minutes while
 # the nodes stay online: nodes then says so, rather than "no nodes".
 run nodes > "$t/nodes.out" 2>&1

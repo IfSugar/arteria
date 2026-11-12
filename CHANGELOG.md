@@ -2,6 +2,10 @@
 
 What changed in each release of Arteria. The release workflow copies a version's section into its GitHub release notes, so write for people running the addon.
 
+## Unreleased
+
+- **`nodes test` shows whether the page can read each node.** Besides key login, it runs one round of the script the page runs on each node, and reports how many devices it read and how long that took, or why it failed (with addresses and user names taken out). A node that is too slow for the page says so. `debug` no longer lists nodes as down while the page is closed, and shows each node's last SSH message.
+
 ## 1.0.0
 
 The first release: a live, animated map of how traffic flows between the internet, your router, its AiMesh nodes and every device.
