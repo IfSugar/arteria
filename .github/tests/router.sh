@@ -759,7 +759,8 @@ if joined && [ "$n1" -gt "$n0" ] && [ "$n2" = "$n1" ]; then ok "a device that jo
 else bad "a device joining: $n0 $n1 $n2"; cat "$disc"; fi
 unset AR_DISC_DELAY; PATH="$B" service restart_dnsmasq; hook=$(sed -n 's/^dhcp-script=//p' "$R/etc/dnsmasq.conf")
 # without socat: Fingerbank still looks every device up, and the page says how to recognise more
-mv "$B/socat" "$t/socat.off"; runi service_event start arteriafbnow
+: > "$t/fbcurl.args"; mv "$B/socat" "$t/socat.off"; runi service_event start arteriafbnow
+[ "$(grep -c interrogate "$t/fbcurl.args")" -ge 3 ] && ok "recognise now asks Fingerbank again about every device, also those it answered before" || { bad "recognise now didn't ask again:"; cat "$t/fbcurl.args"; }
 [ "$(fbst ok)" = true ] && [ "$(fbst socat)" = false ] && fbst msg | grep -q "Fingerbank has an answer for [0-9]* of [0-9]* device(s)\. To recognise more.*opkg install socat" \
 	&& ok "recognise now without socat: lookups only, and says how to recognise more" || { bad "recognise now, no socat:"; cat "$W/fb.htm"; }
 : > "$t/socat.log"; lease '1,3,6,15,44,48' '' add 02:cc:00:00:00:15; sleep 2

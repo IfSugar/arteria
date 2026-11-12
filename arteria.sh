@@ -637,9 +637,11 @@ fb_keys() {
 			if (t u != "") { x[$1] = t ";" u; if (!($1 in d)) o[++c] = $1 } }
 		END { for (i = 1; i <= c; i++) { m = o[i]; if (!(m in d) && !(m in x)) continue; q = (m in d) ? d[m] : ";"; if (m in x) q = q ";" x[m]; print m "\t" q } }'
 }
-# The first question Fingerbank hasn't answered: never asked, or not known to it more than 30 days ago.
+# The first question Fingerbank hasn't answered: never asked, or not known to it more than 30 days ago; with FB_SINCE
+# (Recognise now), also any answered before that moment, so every device is asked again (its old answer stays until then).
+FB_SINCE=0
 fb_next() {
-	fb_keys | awk -F'\t' -v c="$FB_CACHE" -v now="$(now)" 'BEGIN { while ((getline l < c) > 0) { split(l, f, "\t"); if (f[2] == 200 || now - f[5] < 2592000) done[f[1]] = 1 } }
+	fb_keys | awk -F'\t' -v c="$FB_CACHE" -v now="$(now)" -v since="$FB_SINCE" 'BEGIN { while ((getline l < c) > 0) { split(l, f, "\t"); if ((f[2] == 200 || now - f[5] < 2592000) && f[5] >= since) done[f[1]] = 1 } }
 		!($2 in done) { print $2; exit }'
 }
 
@@ -1052,7 +1054,8 @@ fb_recognise() {   # -> FB_MSG; progress goes to fb.htm
 		log "Recognise now: $DISC_N device(s) answered over mDNS or UPnP"
 	fi
 	fb_msg "" "${a}Looking them up with Fingerbank..."; fb_status
-	# every unanswered question now, as far as the hourly limit allows (one round at a time, as in the background)
+	# every device's question again, as far as the hourly limit allows (one round at a time, as in the background)
+	FB_SINCE=$(now)
 	( exec 8>&- 7>"$TMPD/fb.lock"; flock -w 120 7 || exit 0
 	  i=0; while [ $i -lt 10 ] && [ -n "$(fb_next)" ]; do
 		fb_lookup; i=$((i + 1))

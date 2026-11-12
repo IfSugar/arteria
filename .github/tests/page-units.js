@@ -356,6 +356,11 @@ fr = kOf(FM + '>50>Audio, Imaging or Video Equipment/Video Player and Recorder/D
 ok(fr.kind === 'smartspeaker' && fr.rule === 'name', 'a score of 50 or less leaves it to the name', JSON.stringify(fr));
 fr = kOf(FM + '>92>Phone, Tablet or Wearable/Generic Android/Amazon Android>1,3,6,15|');
 ok(fr.kind === 'smartspeaker' && fr.rule === 'name', 'an answer that names only a system leaves it to the name', JSON.stringify(fr));
+fr = kOf(FM + '>57>Internet of Things (IoT)/Generic IoT/Espressif>1,3,6,15|');
+ok(fr.kind === 'smartspeaker' && fr.rule === 'name', 'a Fingerbank answer that only says "smart device" comes after the name', JSON.stringify(fr));
+A.names = AR.parseNames({ fb: FM + '>57>Internet of Things (IoT)/Generic IoT/Espressif>1,3,6,15|', nmp: { [FM]: { name: '', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
+fr = T.classify(FM, '', 'wifi');
+ok(fr.kind === 'iot' && fr.rule === 'fingerbank', '... and still decides when nothing else says what it is', JSON.stringify(fr));
 fr = kOf(FM + '>>>1,3,6,15|' + 'junk|02:XX>1>2>3|');
 ok(fr.kind === 'smartspeaker' && A.names.fb[FM].o === '1,3,6,15' && Object.keys(A.names.fb).length === 1, 'no answer yet: the fingerprint is kept, the name decides; malformed entries are dropped', JSON.stringify(A.names.fb));
 A.names = fbNames(FM + '>87>Internet of Things (IoT)/Home Assistant/Amazon Alexa/Amazon Echo>1,3,6,15|');

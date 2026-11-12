@@ -736,9 +736,10 @@ function classify(mac, name, link, al) {
 	/* 2. what the device itself announced when asked: its model, or a service that says what it is */
 	var ak = N && N.dc && announcedKind(N.dc[mac]);
 	if (ak) return res(ak[0], 'announced', ak[1]);
-	/* 3. Fingerbank, when you turned it on: a confident answer that names a kind of device (not just a system) */
+	/* 3. Fingerbank, when you turned it on: a confident answer that names a kind of device (not just a system).
+	   One that only says "a smart device" (Internet of Things, Generic IoT) comes after the name and the router's icon. */
 	var fb = N && N.fb && N.fb[mac], fk = fb && fb.s > 50 ? fbKind(fb.n) : '';
-	if (fk) return res(fk, 'fingerbank', fb.n.split('/').pop() + ', ' + fb.s);
+	if (fk && fk !== 'iot') return res(fk, 'fingerbank', fb.n.split('/').pop() + ', ' + fb.s);
 	/* 4. a name that says what it is: your nickname, then the names the device gave */
 	var names = [c && c.name, name, l && l.host, m && m.name], i, j;
 	for (j = 0; j < names.length; j++) {
@@ -749,6 +750,7 @@ function classify(mac, name, link, al) {
 	var t = ct || nt;
 	if (t === 30 || (!TYPE_KIND[t] && os === 2)) return res(link === 'wired' ? 'desktop' : 'laptop', 'windows + link');
 	if (TYPE_KIND[t]) return res(TYPE_KIND[t], ct ? 'saved icon' : 'router icon');
+	if (fk) return res(fk, 'fingerbank', fb.n.split('/').pop() + ', ' + fb.s);
 	/* 6. Android says so itself (before the maker: phones carry Wi-Fi chips from module makers), then maker and DHCP vendor class */
 	if (/^android-dhcp/i.test(m && m.vendorclass || '') || os === 1) return res('phone', 'android');
 	var txt = [m && m.vendor, m && m.vendorclass].join(' ');
