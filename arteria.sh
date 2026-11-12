@@ -824,7 +824,10 @@ nodekey() {   # [node-ip | print]
 	list=$(node_list)
 	[ -n "$1" ] && list=$(printf '%s\n' "$list" | awk -v ip="$1" '$2 == ip')
 	if [ -z "$list" ]; then [ -n "$1" ] && die "No AiMesh node at $1 found."; nodes_none_why; exit 1; fi
-	fails=0
+	fails=0; sync=0
+	# With password login off (Administration > System > Allow Password Login), a node takes no password, but
+	# AiMesh still copies the router's key list (which has the key now, see above) to it at its next settings sync.
+	nopass=0; [ "$(nvram get sshd_pass)" = "0" ] && nopass=1
 	# the remote side: add the key unless it's there, then restart its SSH server (after we've disconnected)
 	cmd="k='$pub'; c=\$(nvram get sshd_authkeys); case \"\$c\" in *'$b64'*) echo arteria-had-key ;; *) nvram set sshd_authkeys=\"\${c:+\$c
 }\$k\"; nvram commit; echo arteria-added-key; (sleep 2; service restart_sshd) > /dev/null 2>&1 & ;; esac"
@@ -840,6 +843,7 @@ nodekey() {   # [node-ip | print]
 		if [ "$TRY_HOSTKEY" = 1 ] || [ "$TRY_NEW" = 1 ]; then   # trusted now: the key may already be there (an AiMesh sync)
 			node_try "$ip" pin && { say "  Key login works."; node_keep_key "$ip"; continue; }
 		fi
+		if [ $nopass = 1 ]; then say "  Password login over SSH is off on the router, so the key reaches this node with the next AiMesh sync."; sync=$((sync + 1)); continue; fi
 		say "  Enter the node's password (your router's admin password). It goes to the node only and isn't stored."
 		out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1)
 		case "$out" in *[Hh]ost\ key\ mismatch*)   # only seen here when the key couldn't be tried first (an older dbclient)
@@ -848,6 +852,7 @@ nodekey() {   # [node-ip | print]
 		case "$out" in
 			*arteria-had-key*)   say "  The node already listed the key." ;;
 			*arteria-added-key*) say "  Key added."; sleep 4 ;;
+			*[Nn]o\ auth\ methods*) say "  The node doesn't take passwords over SSH, so the key reaches it with the next AiMesh sync."; sync=$((sync + 1)); continue ;;
 			*) say "  Couldn't log in: $(printf '%s' "$out" | tail -1 | tr -cd '\040-\176' | cut -c1-120)"; fails=$((fails + 1)); continue ;;
 		esac
 		node_try "$ip"; rc=$?
@@ -858,6 +863,14 @@ nodekey() {   # [node-ip | print]
 	done < "$TMPD/nodekey.list"
 	rm -f "$TMPD/nodekey.list" "$TMPD"/node.*.fail
 	say ""
+	if [ $sync -gt 0 ]; then
+		say "$sync node(s) will get the key from the router: it is in the router's Authorized Keys (Administration >"
+		say "System), and AiMesh copies that list to the nodes when it syncs settings. Start a sync by saving a setting"
+		say "in the router's web page (saving Wireless > General works; Wi-Fi restarts briefly), wait a few minutes"
+		say "until the node is back in the AiMesh list, then run '$SCRIPT nodes test'."
+		[ $fails -eq 0 ] && return 0
+		say ""
+	fi
 	[ $fails -eq 0 ] && say "Done. Reopen the page to see each node's devices." && return 0
 	say "$fails node(s) not set up. Check that SSH is on and the password is right."
 	say ""

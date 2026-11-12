@@ -53,6 +53,7 @@ cat > "$B/nvram" <<EOF
 [ "\$1" = get ] || exit 0
 case "\$2" in
 	sshd_authkeys) cat "$t/router-authkeys" 2>/dev/null ;;
+	sshd_pass) cat "$t/sshd-pass" 2>/dev/null || echo 1 ;;   # Allow Password Login (a test turns it off)
 	productid) echo RT-AX86U ;; buildno) echo 388.13 ;; extendno) echo 0 ;; firmver) echo 3.0.0.4 ;;
 	wl0_ifname) echo eth6 ;; wl1_ifname) echo eth7 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
 	lan_ifnames) echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7" ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
@@ -471,6 +472,14 @@ if "$py" -c 'import pty' 2>/dev/null; then
 		&& [ "$(grep -c 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' "$t/node-authkeys")" = 1 ] && [ ! -f "$t/dbclient.pw" ]; then
 		ok "nodekey: a node that takes the key but doesn't list it gets it in its own list, once, with no password"
 	else bad "nodekey, key works but the node doesn't list it:"; cat "$t/nk-keep.out" "$t/nk-keep2.out"; cat "$t/node-authkeys"; fi
+	# password login off on the router (and so on the nodes): no password is asked for; the key waits in the router's
+	# list for the next AiMesh sync, and nodekey says how to start one
+	rm -rf "$R/jffs/addons/arteria/.ssh" "$t/dbclient.pw"; echo PASSKEY > "$t/node-identity"; : > "$t/node-authkeys"; echo 0 > "$t/sshd-pass"
+	nk y > "$t/nk-nopass.out"; rm -f "$t/sshd-pass"
+	if grep -q "Password login over SSH is off on the router" "$t/nk-nopass.out" && grep -q "saving a setting" "$t/nk-nopass.out" && grep -q "nodes test" "$t/nk-nopass.out" \
+		&& [ ! -f "$t/dbclient.pw" ] && grep -q 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' "$t/router-authkeys"; then
+		ok "nodekey with password login off: no password asked, the key waits in the router's list for the AiMesh sync"
+	else bad "nodekey with password login off:"; cat "$t/nk-nopass.out"; fi
 else echo "skip  nodekey at a terminal (python3 has no pty module here)"; fi
 # The sampler never pins a node itself: one seen for the first time is "nokey" (run nodekey) and stays unpinned
 rm -rf "$R/jffs/addons/arteria/.ssh" "$R/tmp/arteria"; echo FIRSTKEY > "$t/node-identity"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"

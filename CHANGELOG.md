@@ -5,6 +5,7 @@ What changed in each release of Arteria. The release workflow copies a version's
 ## Unreleased
 
 - **`nodes test` shows whether the page can read each node.** Besides key login, it runs one round of the script the page runs on each node, and reports how many devices it read and how long that took, or why it failed (with addresses and user names taken out). A node that is too slow for the page says so. `debug` no longer lists nodes as down while the page is closed, and shows each node's last SSH message.
+- **`nodekey` with SSH password login turned off** (*Allow Password Login: No*): it no longer tries a password the nodes won't take. The key goes into the router's own Authorized Keys, which AiMesh copies to the nodes at its next settings sync, and `nodekey` says how to start one: save a setting (the Wireless page works), wait a few minutes, then run `nodes test`. The same when a node turns down passwords on its own.
 
 ## 1.0.0
 
