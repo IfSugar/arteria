@@ -189,7 +189,7 @@ node_file() { printf '%s/node.%s' "$TMPD" "$(printf '%s' "$1" | tr -d :)"; }
 
 # Key logins must never fall back to a password: when a node refuses the key, dbclient asks for one on
 # the terminal, and a password typed there would make a refused key look like it works. Dropbear 2024.84
-# and later (Merlin 3004.388.13 has 2026.94) have -o BatchMode=yes, which turns password and
+# and later (Merlin 3004.388.13 has it) have -o BatchMode=yes, which turns password and
 # keyboard-interactive logins off. Prints that option, or nothing on an older dbclient.
 ssh_batch() { dbclient -o help 2>&1 | grep -q BatchMode && printf '%s' '-o BatchMode=yes'; }
 # True if this process can reach a terminal (dbclient opens /dev/tty itself to ask for a password,
