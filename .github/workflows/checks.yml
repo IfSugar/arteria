@@ -12,8 +12,11 @@ on:
 permissions:
   contents: read
 
+# Two jobs side by side, so the run takes as long as the slower one: the script on a stand-in router,
+# and the page (its JavaScript, then the browser test).
 jobs:
-  checks:
+  script:
+    name: Script (stand-in router)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0, pinned to its commit
@@ -33,7 +36,8 @@ jobs:
 
       - name: Check the script runs on a router shell
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq busybox > /dev/null
+          # the runner's package lists are usually fresh enough; refresh them only if the install fails
+          sudo apt-get install -y -qq busybox > /dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq busybox > /dev/null; }
           busybox ash -n arteria.sh   # the router's shell
           sh -n arteria.sh            # dash, a strict POSIX shell
           if grep -n 'command -v' arteria.sh; then
@@ -46,6 +50,21 @@ jobs:
         # programs (no shell builtins), like the router. The AiMesh node is emulated too.
         run: bash .github/tests/router.sh
 
+      - name: Changelog entry
+        run: |
+          v=$(sed -n 's/^VERSION="\([0-9][0-9.]*\)".*/\1/p' arteria.sh | head -1)
+          if ! grep -q "^## $v\( \|$\)" CHANGELOG.md; then
+            echo "::warning file=CHANGELOG.md::No '## $v' section; its release notes would list commit titles instead."
+          fi
+
+  page:
+    name: Page (JavaScript and browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0, pinned to its commit
+        with:
+          persist-credentials: false   # the checks never push
+
       - name: Check the page's JavaScript
         # It must parse, and stay inside its private (function () { ... })(); scope: a global $ or
         # store() replaces the firmware's own and breaks the router's menu.
@@ -57,9 +76,3 @@ jobs:
           python3 -m venv /tmp/pw && /tmp/pw/bin/pip install --quiet playwright
           /tmp/pw/bin/python .github/tests/page-browser.py "$(command -v google-chrome || command -v chromium)"
 
-      - name: Changelog entry
-        run: |
-          v=$(sed -n 's/^VERSION="\([0-9][0-9.]*\)".*/\1/p' arteria.sh | head -1)
-          if ! grep -q "^## $v\( \|$\)" CHANGELOG.md; then
-            echo "::warning file=CHANGELOG.md::No '## $v' section; its release notes would list commit titles instead."
-          fi

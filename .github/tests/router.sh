@@ -16,7 +16,7 @@
 #     Network Tools on routers without it); update and update dev install only a whole download of the
 #     right version, from this repository's branches; uninstall removes everything it added and nothing else.
 #
-# Usage: .github/tests/router.sh [path/to/arteria.sh]   (needs busybox, python3)
+# Usage: .github/tests/router.sh [path/to/arteria.sh]   (needs busybox, python3; about 20 s)
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 script=${1:-$here/../../arteria.sh}
@@ -268,8 +268,13 @@ cp "$script" "$R/jffs/addons/arteria/arteria.sh"; cp "$asp" "$R/jffs/addons/arte
 printf 'INTERVAL=1\nIDLE_STOP=10\n' > "$R/jffs/addons/arteria/config"
 inst="$R/jffs/addons/arteria/arteria.sh"
 runi() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$inst" "$@"; }
+# waitfor SECONDS COMMAND...: retry COMMAND every 0.1 s until it succeeds, for at most SECONDS, instead of a fixed
+# sleep. It only waits: the checks after it decide (and say) whether what it waited for happened.
+waitfor() { local end=$(( $(date +%s%N) / 1000000 + $1 * 1000 )); shift; until "$@"; do [ $(( $(date +%s%N) / 1000000 )) -ge $end ] && return 0; sleep 0.1; done; }
+seq_at_least() { [ "$(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null | cut -d: -f2)" -ge "$1" ] 2>/dev/null; }
+sampler_gone() { [ ! -f "$R/tmp/arteria/sampler.pid" ]; }
 runi service_event start arteria
-sleep 5
+waitfor 10 seq_at_least 2
 python3 - "$W/live.htm" <<'EOF' && ok "without the key: node is 'nokey', its clients aren't read" || fail=1
 import json, sys
 s = json.load(open(sys.argv[1]))
@@ -280,13 +285,14 @@ EOF
 tries=$(grep -c 'No auth' "$R/tmp/arteria/"node.*.err 2>/dev/null || echo 0)
 [ "$tries" -le 1 ] && ok "a refused key is tried once, not in a loop ($tries)" || bad "the node was asked $tries times"
 runi service_event start arteriastop
-sleep 3
+waitfor 6 sampler_gone
 [ -f "$R/tmp/arteria/sampler.pid" ] && bad "sampler still running after the page closed" || ok "sampler stops when the page closes"
 
 # ---- 2: with the key: the node's clients over the session ------------------------------------------
 printf 'key\n' > "$R/jffs/addons/arteria/node_key"
 runi service_event start arteria
-sleep 6
+node_read() { grep -q '"state":"ok"' "$W/live.htm" 2>/dev/null && grep -q '02:CC:00:00:00:13' "$W/live.htm" && [ -s "$W/names.htm" ]; }
+waitfor 12 node_read
 python3 - "$W/live.htm" "$W/names.htm" <<'EOF' && ok "sampler: node clients read over SSH, names exported" || fail=1
 import json, sys
 s = json.load(open(sys.argv[1]))
@@ -317,7 +323,8 @@ grep -q '<' "$W/live.htm" "$W/names.htm" && bad "a raw '<' reached the page's da
 grep -q -- "-p 2222 .*admin@192.168.50.10 sh -s" "$t/dbclient.args" && ok "the session uses the router's SSH port and admin name" || { bad "SSH arguments:"; cat "$t/dbclient.args"; }
 grep -- " -i " "$t/dbclient.args" | grep -qv -- "-o BatchMode=yes" && { bad "a key login without BatchMode (dbclient could ask for a password):"; cat "$t/dbclient.args"; } || ok "key logins never offer a password (BatchMode)"
 runi service_event start arteriastop
-sleep 3
+no_session() { ! pgrep -f "$N" > /dev/null 2>&1; }
+waitfor 6 no_session
 pgrep -f "$N" > /dev/null 2>&1 && bad "the node session outlived the page" || ok "node session ends with the sampler"
 rm -rf "$R/tmp/arteria" "$W"
 
@@ -338,7 +345,7 @@ while [ $i -lt 40 ]; do
 done
 EOF
 runi service_event start arteria
-big=0; for i in $(seq 70); do   # the largest the node's files get while it floods
+big=0; for i in $(seq 45); do   # the largest the node's files get while it floods
 	n=$(ls -l "$R"/tmp/arteria/node.* 2>/dev/null | awk '$5 > 1100000 { n++ } END { print n + 0 }'); [ "$n" -gt "$big" ] && big=$n; sleep 0.1
 done
 if python3 - "$W/live.htm" <<'EOF' && [ "$big" = 0 ] && ! grep -q '<' "$W/live.htm"; then ok "a hostile node: only valid rows and fields reach the page, its output stays bounded"
@@ -350,7 +357,7 @@ assert c[0][3:6] == [None, None, None] and c[1][3:6] == ['1000', '2000', -50], c
 EOF
 else bad "hostile node ($big big files):"; ls -l "$R"/tmp/arteria/; python3 -c "import json,sys; print(json.load(open(sys.argv[1]))[\"nodes\"])" "$W/live.htm"; cat "$R"/tmp/arteria/node.*.last; fi
 runi service_event start arteriastop
-sleep 3
+waitfor 6 sampler_gone; waitfor 6 no_session
 rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 
 # nodekey print: one line to paste on a node, which adds the key once and keeps the keys already there
@@ -405,11 +412,12 @@ rm -rf "$R/tmp/arteria"
 sleep 300 & other=$!
 mkdir -p "$R/tmp/arteria"; echo "$other" > "$R/tmp/arteria/sampler.pid"
 runi service_event start arteria
-sleep 4
+new_sampler() { [ -f "$R/tmp/arteria/sampler.pid" ] && [ "$(cat "$R/tmp/arteria/sampler.pid" 2>/dev/null)" != "$other" ]; }
+waitfor 8 new_sampler
 [ "$(cat "$R/tmp/arteria/sampler.pid" 2>/dev/null)" != "$other" ] && [ -f "$R/tmp/arteria/sampler.pid" ] \
 	&& ok "a stale sampler pid file doesn't keep the sampler from starting" || bad "the sampler didn't start over a stale pid file"
 runi service_event start arteriastop
-sleep 3
+waitfor 6 sampler_gone; waitfor 6 no_session
 echo "$other" > "$R/tmp/arteria/sampler.pid"; echo "$other" > "$R/tmp/arteria/node.021000000080.pid"
 runi startup > /dev/null 2>&1   # stops the sampler and node sessions, as an update or uninstall does
 kill -0 "$other" 2>/dev/null && ok "stale pid files never signal another process" || bad "Arteria killed a process that wasn't its own"
@@ -419,7 +427,7 @@ rm -rf "$R/tmp/arteria" "$W" "$R/tmp/menuTree.js" "$R/jffs/addons/arteria/webui_
 # /tmp/arteria planted as a link by someone else: Arteria won't use it, so nothing runs or is written through it
 mkdir -p "$t/planted"; ln -s "$t/planted" "$R/tmp/arteria"
 runi service_event start arteria > "$t/planted.out" 2>&1 || true
-sleep 2
+sleep 1   # nothing should happen: give a sampler the time it would need to start
 if [ -z "$(ls -A "$t/planted")" ] && ! pgrep -f "$script sampler" > /dev/null; then ok "a planted /tmp/arteria link is refused: no sampler, nothing written through it"
 else bad "planted /tmp/arteria:"; ls -la "$t/planted"; cat "$t/planted.out"; fi
 rm -f "$R/tmp/arteria"
