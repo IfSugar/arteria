@@ -261,13 +261,14 @@ EOF
 
 # ---- AiMesh node sessions ----------------------------------------------------------
 # While the page is open the router keeps one SSH session to each node. Key login only: the sampler
-# has no terminal, so dbclient can never ask for (or send) a password. Host keys are pinned in $SSH_HOME.
+# has no terminal, so dbclient can never ask for (or send) a password. Host keys are pinned in $SSH_HOME,
+# only by nodekey (no -y here): a node seen for the first time isn't trusted until you say so there.
 node_start() {   # mac ip
 	f=$(node_file "$1")
 	: > "$f.out"; : > "$f.err"; now > "$f.start"; rm -f "$f.fail" "$f.last"
 	# ulimit -f: a session that writes more than about 1 MB between two trims is ended (nodes_tick trims at 128 KB),
 	# so a node that floods its output can't fill the router's RAM; it is reconnected like any dropped session.
-	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
 		< "$TMPD/node.sh" >> "$f.out" 2>> "$f.err" 8>&- &
 	echo $! > "$f.pid"
 }
@@ -296,6 +297,7 @@ node_state() {   # file-base -> state
 	fi
 	e=$(tail -c 2048 "$f.err" 2>/dev/null | tr -d '\000')
 	case "$e" in
+		*trusted\ hosts*) echo nokey ;;   # never trusted yet: nodekey asks
 		*[Hh]ost\ key*|*[Mm]ismatch*|*[Ii]dentification*) echo hostkey ;;
 		*[Pp]ermission\ denied*|*[Aa]uth*|*[Pp]assword*|*publickey*) echo nokey ;;
 		*) echo down ;;
@@ -644,14 +646,29 @@ make_key() {
 }
 pub_key() { dropbearkey -y -f "$KEY" 2>/dev/null | awk '/^ssh-/ { print $1, $2, "arteria"; exit }'; }
 
+# AiMesh copies the router's own list of authorized SSH keys to every node whenever it syncs settings (saving
+# a Wi-Fi or system page does), replacing the node's list: a key added only on a node is gone after the next
+# sync. So the key is kept in the router's list too, and every sync carries it to the nodes. On the router
+# itself it only lets in whoever holds node_key, which only root on this router can read.
+router_key_add() {   # public-key-line base64 -> 0 if it was added now
+	c=$(nvram get sshd_authkeys)
+	case "$c" in *"$2"*) return 1 ;; esac
+	nvram set sshd_authkeys="$(printf '%s\n%s\n' "$c" "$1" | sed '/^$/d')" && nvram commit
+}
+router_key_del() {   # base64: take Arteria's line out of the router's list (uninstall)
+	c=$(nvram get sshd_authkeys)
+	case "$c" in *"$1"*) ;; *) return 0 ;; esac
+	nvram set sshd_authkeys="$(printf '%s\n' "$c" | grep -vF "$1")" && nvram commit
+}
+
 # Try the key on a node: key only, never a password (see ssh_batch). Gives up after 8 s.
 # Returns 0 if the key works, 1 if not, 2 if it can't be tried without risking a password prompt
 # (an older dbclient, run from a terminal).
-node_try() {   # ip
-	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0
+node_try() {   # ip [pin]   pin: also trust and pin the identity that answers (only after the person said yes)
+	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0; TRY_NEW=0; TRY_FP=""; y=""; [ "$2" = pin ] && y=-y
 	b=$(ssh_batch)
 	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
-	(HOME="$SSH_HOME" exec dbclient $b -y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
+	(HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
 		< /dev/null > "$o" 2>&1 &
 	p=$!; i=0
 	while kill -0 "$p" 2>/dev/null; do
@@ -660,6 +677,8 @@ node_try() {   # ip
 	done
 	grep -q '^arteria-ok' "$o" 2>/dev/null; rc=$?
 	grep -qi 'host key mismatch' "$o" 2>/dev/null && TRY_HOSTKEY=1
+	grep -qi 'not in the trusted hosts' "$o" 2>/dev/null && TRY_NEW=1   # first contact: nothing pinned for this address yet
+	TRY_FP=$(grep -o '[A-Za-z0-9-]* fingerprint [A-Za-z0-9:+/=]*' "$o" 2>/dev/null | head -1)
 	TRY_ERR=$(grep -v '^arteria-ok' "$o" 2>/dev/null | tail -1 | tr -cd '\040-\176' | cut -c1-120)
 	rm -f "$o"
 	return $rc
@@ -679,6 +698,7 @@ nodes_cmd() {   # [test]
 				node_try "$ip"; rc=$?
 				if [ $rc -eq 0 ]; then line="$line: key login OK"
 				elif [ $rc -eq 2 ]; then line="$line: can't test here ($TRY_ERR); open the page, it shows whether the node answers"
+				elif [ "$TRY_NEW" = 1 ]; then line="$line: not trusted yet (Arteria hasn't connected to it before); run '$SCRIPT nodekey', which shows its fingerprint first"
 				else line="$line: key login failed${TRY_ERR:+ ($TRY_ERR)}; run '$SCRIPT nodekey'"
 				fi
 			fi
@@ -721,6 +741,17 @@ trust_new_identity() {   # ip -> 0 if the old identity was forgotten
 	return 0
 }
 
+# The first time Arteria reaches a node there is no pinned identity to check it against: whatever answers at the
+# address would get the admin password. Say so, show what answered, and go on only if the person says yes.
+trust_first_contact() {   # ip -> 0 to go ahead
+	say "  Arteria hasn't connected to $1 before, so it can't tell the node from something else answering there."
+	say "  It answered with ${TRY_FP:-an SSH identity}. Go on only if the node is up and nothing else is on the network"
+	say "  that shouldn't be (or answer n and use '$SCRIPT nodekey print' from your own computer instead)."
+	printf '  Trust it? (y/n) '
+	read -r a < /dev/tty || a=n
+	case "$a" in [yY]*) return 0 ;; *) say "  Left alone."; return 1 ;; esac
+}
+
 # Give each node the router's Arteria key. Asks for the node's password once (the router's admin
 # password, which AiMesh nodes share); it goes to the node only and is never stored. The key is
 # added to the node's authorized keys, keeping any that are already there.
@@ -734,6 +765,10 @@ nodekey() {   # [node-ip | print]
 	pub=$(pub_key); b64=$(printf '%s' "$pub" | cut -d' ' -f2)
 	[ -n "$b64" ] || die "Couldn't read the public key from $KEY"
 	ssh_home_init
+	if router_key_add "$pub" "$b64"; then
+		say "Added the key to the router's own SSH key list too (Administration > System > Authorized Keys): AiMesh"
+		say "copies that list to the nodes whenever it syncs settings, so they keep the key."
+	fi
 	list=$(node_list)
 	[ -n "$1" ] && list=$(printf '%s\n' "$list" | awk -v ip="$1" '$2 == ip')
 	[ -n "$list" ] || die "No AiMesh node${1:+ at $1} found."
@@ -749,6 +784,10 @@ nodekey() {   # [node-ip | print]
 		node_try "$ip"; rc=$?
 		if [ $rc -eq 0 ]; then say "  Already has the key."; continue; fi
 		if [ "$TRY_HOSTKEY" = 1 ] && ! trust_new_identity "$ip"; then fails=$((fails + 1)); continue; fi
+		if [ "$TRY_NEW" = 1 ] && ! trust_first_contact "$ip"; then fails=$((fails + 1)); continue; fi
+		if [ "$TRY_HOSTKEY" = 1 ] || [ "$TRY_NEW" = 1 ]; then   # trusted now: the key may already be there (an AiMesh sync)
+			node_try "$ip" pin && { say "  Key login works."; continue; }
+		fi
 		say "  Enter the node's password (your router's admin password). It goes to the node only and isn't stored."
 		out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1)
 		case "$out" in *[Hh]ost\ key\ mismatch*)   # only seen here when the key couldn't be tried first (an older dbclient)
@@ -1085,9 +1124,11 @@ uninstall() {
 	unmount_webui
 	hook_del services-start
 	hook_del service-event
+	b64=$([ -s "$KEY" ] && pub_key | cut -d' ' -f2)
+	[ -n "$b64" ] && router_key_del "$b64"
 	rm -rf "$(web_dir)" "$TMPD" "$ADDON_DIR"
-	say "Removed. The router's key for the nodes was deleted with it; the copy each node lists under"
-	say "its authorized keys no longer opens anything and goes away if the node is reset."
+	say "Removed. The router's key for the nodes was deleted with it, and taken out of the router's own SSH key"
+	say "list; the copy each node lists goes at the next AiMesh sync, and no longer opens anything anyway."
 }
 
 status() {

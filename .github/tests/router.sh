@@ -48,8 +48,11 @@ printf '#!%s sh\n[ "$1" = -o ] && echo ASUSWRT-Merlin || echo Linux\n' "$bb" > "
 NODE=02:10:00:00:00:80; S2=02:10:00:00:00:81; S5=02:10:00:00:00:84
 cat > "$B/nvram" <<EOF
 #!$bb sh
+# the router's own authorized SSH keys are kept in a file, so a test can see what Arteria adds and removes
+[ "\$1" = set ] && case "\$2" in sshd_authkeys=*) printf '%s' "\${2#sshd_authkeys=}" > "$t/router-authkeys" ;; esac
 [ "\$1" = get ] || exit 0
 case "\$2" in
+	sshd_authkeys) cat "$t/router-authkeys" 2>/dev/null ;;
 	productid) echo RT-AX86U ;; buildno) echo 388.13 ;; extendno) echo 0 ;; firmver) echo 3.0.0.4 ;;
 	wl0_ifname) echo eth6 ;; wl1_ifname) echo eth7 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
 	lan_ifnames) echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7" ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
@@ -184,10 +187,6 @@ define(function(){
 EOF
 
 # ---- the node: its own nvram and wl, reached through a stand-in dbclient ----------------------------
-cat > "$N/nvram" <<EOF
-#!$bb sh
-case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;; esac
-EOF
 cat > "$F/node-assoc" <<'EOF'
 eth1 00:00:5E:00:53:FC 1000 2000
 eth2 00:00:5E:00:53:FD 3000 4000
@@ -196,20 +195,35 @@ wl1.1 02:CC:00:00:00:12 5000000 60000
 wl1.1 02:CC:00:00:00:13 800000 90000
 EOF
 sed "s#$F/assoc#$F/node-assoc#" "$B/wl" > "$N/wl"
+cat > "$N/nvram" <<EOF
+#!$bb sh
+# the node's own authorized SSH keys, in a file: nodekey adds the router's key here
+case "\$1 \$2" in
+	'get sshd_authkeys') cat "$t/node-authkeys" 2>/dev/null ;;
+	'set sshd_authkeys='*) printf '%s' "\${2#sshd_authkeys=}" > "$t/node-authkeys" ;;
+	'commit '*) ;;
+	*) case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;; esac ;;
+esac
+EOF
 cat > "$B/dbclient" <<EOF
 #!$bb sh
 # a node that accepts only the router's Arteria key
 [ "\$1 \$2" = "-o help" ] && { printf 'Available options:\\n\\tBatchMode\\n\\tPort\\n' >&2; exit 0; }
 echo "\$*" >> "$t/dbclient.args"
+y=0; for a in "\$@"; do [ "\$a" = -y ] && y=1; done
 key=""; while [ \$# -gt 1 ]; do [ "\$1" = -i ] && key=\$2; shift; done
-# the node's identity (host key), pinned on first contact like dbclient -y does; only when a test sets one
+# the node's identity (host key), only when a test sets one. Like Dropbear's dbclient: a host seen for the first
+# time is pinned only with -y; without it, it prints the fingerprint and refuses (no terminal, or BatchMode).
 if [ -f "$t/node-identity" ]; then
 	kh="\$HOME/.ssh/known_hosts"; id=\$(cat "$t/node-identity")
 	if grep -q "^192.168.50.10 " "\$kh" 2>/dev/null; then
 		grep -qx "192.168.50.10 ssh-ed25519 \$id" "\$kh" || { printf 'dbclient: Connection to admin@192.168.50.10:2222 exited:\\n\\nHost key mismatch for 192.168.50.10 !\\nIf you know that the host key is correct you can\\nremove the bad entry from ~/.ssh/known_hosts\\n' >&2; exit 1; }
-	else mkdir -p "\$HOME/.ssh"; echo "192.168.50.10 ssh-ed25519 \$id" >> "\$kh"; fi
+	elif [ \$y = 1 ]; then mkdir -p "\$HOME/.ssh"; echo "192.168.50.10 ssh-ed25519 \$id" >> "\$kh"
+	else printf "\\nHost '192.168.50.10' is not in the trusted hosts file.\\n(ssh-ed25519 fingerprint SHA256:%s)\\n\\ndbclient: Connection to admin@192.168.50.10:2222 exited: Didn't validate host key\\n" "\$id" >&2; exit 1; fi
 	# a password typed at a terminal (nodekey): the right one, always
 	if [ -z "\$key" ] && [ -t 0 ]; then echo "password login to \$id" >> "$t/dbclient.pw"; exec env PATH="$N:$B" "$bb" sh -c "\$1"; fi
+	# the key works only once the node lists it
+	grep -q AAAAC3NzaC1lZDI1NTE5AAAAITEST "$t/node-authkeys" 2>/dev/null || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
 fi
 [ -n "\$key" ] && [ -s "\$key" ] || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
 echo "\$1" >> "$t/dbclient.cmds"
@@ -402,8 +416,36 @@ if "$py" -c 'import pty' 2>/dev/null; then
 		&& ! grep -q "OLDKEY" "$R/jffs/addons/arteria/.ssh/known_hosts" && [ "$(grep -c . "$t/dbclient.pw")" = 1 ]; then
 		ok "nodekey: after a yes the new identity is pinned and the key is added with one password login"
 	else bad "nodekey with a changed identity, answer y:"; cat "$t/nk-y.out"; fi
+	# first contact: nothing pinned yet, so nodekey shows what answered and asks before any password is sent
+	rm -rf "$R/jffs/addons/arteria/.ssh" "$t/dbclient.pw" "$t/node-authkeys"; echo FIRSTKEY > "$t/node-identity"
+	nk n > "$t/nk-first-n.out"
+	if grep -q "hasn't connected to 192.168.50.10 before" "$t/nk-first-n.out" && grep -q "SHA256:FIRSTKEY" "$t/nk-first-n.out" \
+		&& [ ! -f "$t/dbclient.pw" ] && ! grep -q FIRSTKEY "$R/jffs/addons/arteria/.ssh/known_hosts" 2>/dev/null; then
+		ok "nodekey: a node seen for the first time shows its fingerprint, and no password is sent when the answer is no"
+	else bad "nodekey, first contact, answer n:"; cat "$t/nk-first-n.out"; fi
+	nk y > "$t/nk-first-y.out"
+	if grep -q "Key login works" "$t/nk-first-y.out" && grep -q "FIRSTKEY" "$R/jffs/addons/arteria/.ssh/known_hosts" && [ "$(grep -c . "$t/dbclient.pw")" = 1 ]; then
+		ok "nodekey: after a yes the first identity is pinned and the key is added with one password login"
+	else bad "nodekey, first contact, answer y:"; cat "$t/nk-first-y.out"; fi
+	# a node that already got the key from an AiMesh sync: trusted, then the key works, no password at all
+	rm -rf "$R/jffs/addons/arteria/.ssh" "$t/dbclient.pw"; echo SYNCEDKEY > "$t/node-identity"
+	nk y > "$t/nk-synced.out"
+	if grep -q "Key login works" "$t/nk-synced.out" && grep -q SYNCEDKEY "$R/jffs/addons/arteria/.ssh/known_hosts" && [ ! -f "$t/dbclient.pw" ]; then
+		ok "nodekey: a node that already has the key (an AiMesh sync) is trusted with no password at all"
+	else bad "nodekey, node already has the key:"; cat "$t/nk-synced.out"; fi
+	[ "$(grep -c 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' "$t/router-authkeys" 2>/dev/null)" = 1 ] \
+		&& ok "nodekey keeps the key in the router's own list too, once (AiMesh copies that list to the nodes)" || { bad "router's key list:"; cat "$t/router-authkeys"; }
 else echo "skip  nodekey at a terminal (python3 has no pty module here)"; fi
-rm -f "$t/node-identity" "$t/dbclient.pw"; rm -rf "$R/jffs/addons/arteria/.ssh"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
+# The sampler never pins a node itself: one seen for the first time is "nokey" (run nodekey) and stays unpinned
+rm -rf "$R/jffs/addons/arteria/.ssh" "$R/tmp/arteria"; echo FIRSTKEY > "$t/node-identity"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
+runi service_event start arteria
+node_tried() { grep -q "trusted hosts" "$R"/tmp/arteria/node.*.err 2>/dev/null && seq_at_least 2; }
+waitfor 10 node_tried
+if grep -q '"state":"nokey"' "$W/live.htm" 2>/dev/null && ! grep -q FIRSTKEY "$R/jffs/addons/arteria/.ssh/known_hosts" 2>/dev/null; then
+	ok "the sampler doesn't pin a node it has never seen: it says to run nodekey"
+else bad "sampler and an unknown node:"; head -c 400 "$W/live.htm"; cat "$R"/tmp/arteria/node.*.err; fi
+runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
+rm -f "$t/node-identity" "$t/dbclient.pw" "$t/node-authkeys"; rm -rf "$R/jffs/addons/arteria/.ssh"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
 rm -rf "$R/tmp/arteria"
 
 # ---- 3: stale pid files never touch someone else's process ----------------------------------------
@@ -537,6 +579,7 @@ if grep -q "Updating" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/j
 else bad "update after update dev:"; cat "$t/upd.out"; fi
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
+grep -q 'arteria' "$t/router-authkeys" 2>/dev/null && { bad "uninstall left the key in the router's list:"; cat "$t/router-authkeys"; } || ok "uninstall takes the key out of the router's own list"
 cmp -s "$R/jffs/scripts/services-start" "$t/ss.before" && ok "other scripts' hook lines untouched" || { bad "services-start changed:"; cat "$R/jffs/scripts/services-start"; }
 grep -q Arteria "$m" && bad "menu line left behind" || ok "menu line removed"
 
