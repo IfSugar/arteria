@@ -715,6 +715,8 @@ function announcedKind(d) {
 	if (!d) return null;
 	var f = d.f, i, j, k, t, id = f.rpMd || f.model || '';
 	if ((k = appleKind(id))) return [k, id];
+	if (/^(MacSamba|Xserve|TimeCapsule\d)/.test(id)) return ['nas', id];   /* how Samba and NAS file servers present themselves to Macs */
+	if (/border ?router/i.test(f.mn || '')) return ['hub', [f.vn, f.mn].filter(Boolean).join(' ').slice(0, 40)];   /* a Thread border router */
 	var up = [f.manufacturer, f.modelName, f.modelNumber].filter(Boolean).join(' ');
 	var texts = [[f.vn, f.mn], [f.md], [f.model], [f.ty], [f.usb_MFG, f.usb_MDL], [f.product], [f.mf, f.am], [f.modelid], [UPNP_SOFT.test(up) ? '' : up]];
 	for (j = 0; j < texts.length; j++) {

@@ -766,7 +766,7 @@ fb_compare() {
 		case "$q" in *";"*";"*";"*) ;; *) q="$q;;" ;; esac
 		o=${q%%;*}; r=${q#*;}; v=${r%%;*}
 		say ""
-		say "...${m#????????????}  $(awk -F'|' -v m="$m" '$1 == m { print ($2 != "" ? $2 : "-") ($3 != "" ? "  [" $3 "]" : "") ($4 != "" ? "  [" $4 "]" : "") }' "$DISC" | head -n 1)"
+		say "...${m#????????????}  $(awk -F'|' -v m="$m" '$1 == m { gsub(/~/, " / ", $5); print ($2 != "" ? $2 : "-") ($3 != "" ? "  [" $3 "]" : "") ($4 != "" ? "  [" $4 "]" : "") ($5 != "" ? "  [" $5 "]" : "") }' "$DISC" | head -n 1)"
 		[ -n "$o" ] && say "  DHCP only:   $(fb_compare_one "$k" "$o;$v")" && n=$((n + 1))
 		say "  + services:  $(fb_compare_one "$k" "$q")"
 		say "  + maker:     $(fb_compare_one "$k" "$q;${m%?????????}:00:00:00")"
@@ -1059,7 +1059,7 @@ fb_recognise() {   # -> FB_MSG; progress goes to fb.htm
 		case "$(cat "$TMPD/fb_state" 2>/dev/null)" in badkey|"wait "*) break ;; esac
 	  done ) < /dev/null > /dev/null 2>&1
 	set -- $(fb_recognised)
-	FB_MSG="${a}Fingerbank recognises $1 of $2 device(s)."
+	FB_MSG="${a}Fingerbank has an answer for $1 of $2 device(s)."
 	case "$(cat "$TMPD/fb_state" 2>/dev/null)" in
 		badkey) FB_MSG="$FB_MSG Fingerbank turned the key down: save a new one." ;;
 		"wait "*) FB_MSG="$FB_MSG The rest are looked up when Fingerbank answers again (at most 100 lookups an hour)." ;;

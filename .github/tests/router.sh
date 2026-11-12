@@ -720,7 +720,7 @@ grep -qi "Jo\|Kitchen\|Speaker\|192\.168\|ab12\|friendly" "$disc" && bad "a name
 [ ! -s "$t/deauth.log" ] && ok "recognise now disconnects nothing" || { bad "something was disconnected:"; cat "$t/deauth.log"; }
 if grep -q '^1,3,6,15,31,33,43,44,46,47,119,121,249,252;dhcpcd-9.4.1:Linux:armv7l x;_companion-link._tcp.local,_http._tcp.local;Linux/5.10 UPnP/1.0 MadeUp/1.0	200	80	Computer/Apple Mac/MacBook Pro	' "$R/jffs/addons/arteria/fingerbank" \
 	&& grep -q '^;;_meshcop._udp.local,_spotify-connect._tcp.local;	200	73	' "$R/jffs/addons/arteria/fingerbank" \
-	&& [ "$(fbst ok)" = true ] && fbst msg | grep -q '^2 device(s) answered\. Fingerbank recognises 2 of 3 device(s)\.$' && [ "$(fbst asked)" = 2 ] && [ "$(fbst socat)" = true ]; then
+	&& [ "$(fbst ok)" = true ] && fbst msg | grep -q '^2 device(s) answered\. Fingerbank has an answer for 2 of 3 device(s)\.$' && [ "$(fbst asked)" = 2 ] && [ "$(fbst socat)" = true ]; then
 	ok "recognise now: Fingerbank asked again with each device's services and UPnP SERVER string, and the page told"
 else bad "recognise now, Fingerbank:"; cat "$R/jffs/addons/arteria/fingerbank" "$W/fb.htm"; fi
 grep -qi '02:cc\|"mac"\|Jo\|Kitchen\|rpMd\|192\.168' "$t/fbcurl.args" && bad "Fingerbank got more than it should: $(cat "$t/fbcurl.args")" || ok "Fingerbank gets services and SERVER strings only: no MAC, name, model field or address"
@@ -760,7 +760,7 @@ else bad "a device joining: $n0 $n1 $n2"; cat "$disc"; fi
 unset AR_DISC_DELAY; PATH="$B" service restart_dnsmasq; hook=$(sed -n 's/^dhcp-script=//p' "$R/etc/dnsmasq.conf")
 # without socat: Fingerbank still looks every device up, and the page says how to recognise more
 mv "$B/socat" "$t/socat.off"; runi service_event start arteriafbnow
-[ "$(fbst ok)" = true ] && [ "$(fbst socat)" = false ] && fbst msg | grep -q "Fingerbank recognises [0-9]* of [0-9]* device(s)\. To recognise more.*opkg install socat" \
+[ "$(fbst ok)" = true ] && [ "$(fbst socat)" = false ] && fbst msg | grep -q "Fingerbank has an answer for [0-9]* of [0-9]* device(s)\. To recognise more.*opkg install socat" \
 	&& ok "recognise now without socat: lookups only, and says how to recognise more" || { bad "recognise now, no socat:"; cat "$W/fb.htm"; }
 : > "$t/socat.log"; lease '1,3,6,15,44,48' '' add 02:cc:00:00:00:15; sleep 2
 [ ! -s "$t/socat.log" ] && ok "without socat, a device joining asks nothing" || bad "a join without socat ran socat" 

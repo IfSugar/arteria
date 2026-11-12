@@ -189,7 +189,7 @@ def router_action(f):
                       msg='Saved. Each device is recognised when it connects or renews its address. Recognise now asks the devices on the network what they are right away.')
     elif act == 'start_arteriafbnow':
         FB.update(devices=6, known=8, waiting=2, asked=9, seq=FB['seq'] + 2, ok=True,
-                  msg="9 device(s) answered. Fingerbank recognises 12 of 14 device(s).")
+                  msg="9 device(s) answered. Fingerbank has an answer for 12 of 14 device(s).")
     elif act == 'start_arteriafboff':
         FB.update(on=False, tail='', hooked=False, devices=0, known=0, waiting=0, asked=0, last='', seq=FB['seq'] + 2, ok=True,
                   msg="Fingerbank is off. The key, its answers and what devices said are deleted, and dnsmasq runs the router's own lease script directly again.")

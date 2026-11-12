@@ -387,6 +387,13 @@ const AN = [   // [services, model fields, UPnP description, expected kind]
 	['', '', 'manufacturer=Plex, Inc.; modelName=Plex Media Server', ''],
 	['_smb._tcp.local _home-assistant._tcp.local', '', '', ''],
 	['_spotify-connect._tcp.local', '', '', ''],
+	['_meshcop._udp.local _spotify-connect._tcp.local', 'mn=echo;vn=amazon', '', 'smartspeaker'],
+	['_meshcop._udp.local', 'mn=BorderRouter;vn=OpenThread', '', 'hub'],
+	['_airplay._tcp.local _ghp._tcp.local', 'manufacturer=LG;model=OLED42C41LA.DEUQLJP', '', 'tv'],
+	['_device-info._tcp.local _smb._tcp.local _nut._tcp.local', 'model=MacSamba', '', 'nas'],
+	['_device-info._tcp.local _smb._tcp.local', 'model=Xserve', '', 'nas'],
+	['_companion-link._tcp.local', '', '', ''],
+	['_http._tcp.local _telnet._tcp.local', '', '', ''],
 ];
 const anOf = r => AR.parseNames({ dc: FM + '>' + r[0] + '>' + r[1] + '>' + r[2] + '|' }).dc[FM];
 const anBad = AN.filter(r => ((T.announcedKind(anOf(r)) || [''])[0]) !== r[3]).map(r => (r[1] || r[2] || r[0]) + ' -> ' + ((T.announcedKind(anOf(r)) || ['none'])[0]) + ', expected ' + (r[3] || 'none'));
