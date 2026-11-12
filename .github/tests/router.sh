@@ -213,6 +213,7 @@ if [ -f "$t/node-identity" ]; then
 fi
 [ -n "\$key" ] && [ -s "\$key" ] || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
 echo "\$1" >> "$t/dbclient.cmds"
+[ "\$1" = 'sh -s' ] && [ -f "$t/node-hostile" ] && exec "$bb" sh "$t/node-hostile"   # a node that sends anything but counters
 case "\$1" in 'sh -s') exec env PATH="$N:$B" "$bb" sh -s ;; *) exec env PATH="$N:$B" "$bb" sh -c "\$1" ;; esac
 EOF
 printf '#!%s sh\nf=""; while [ $# -gt 0 ]; do [ "$1" = -f ] && f=$2; shift; done\n[ -n "$f" ] && printf "key\\n" > "$f"\necho "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST admin@router"\n' "$bb" > "$B/dropbearkey"
@@ -319,6 +320,38 @@ runi service_event start arteriastop
 sleep 3
 pgrep -f "$N" > /dev/null 2>&1 && bad "the node session outlived the page" || ok "node session ends with the sampler"
 rm -rf "$R/tmp/arteria" "$W"
+
+# A hostile node: rows with bad fields, markup, junk on stderr, and a flood. Only valid rows reach the page,
+# the files stay small (the session is cut at about 1 MB, then trimmed), and the sample is still valid JSON.
+cat > "$t/node-hostile" <<'EOF'
+i=0
+while [ $i -lt 40 ]; do
+	printf '#B 1234.5\n'
+	printf 'S eth1;reboot 5 02:CC:00:00:00:41 1 2 -50 100 100 10 0 ax 2 80\n'
+	printf 'S wl1.1 5 "><img/src=x> 1 2 -50 100 100 10 0 ax 2 80\n'
+	printf 'S wl1.1 5 02:CC:00:00:00:42 1e999 "x" -50<b> 100 100 10 0 ax 2 80\n'
+	printf 'S wl1.1 5 02:CC:00:00:00:43 1000 2000 -50 100 100 10 0 ax 2 80\n'
+	printf '#E\n'
+	echo 'junk on stderr <script>' >&2
+	[ $i -eq 1 ] && head -c 3000000 /dev/zero | tr '\0' 'x'
+	i=$((i + 1)); sleep 1
+done
+EOF
+runi service_event start arteria
+big=0; for i in $(seq 70); do   # the largest the node's files get while it floods
+	n=$(ls -l "$R"/tmp/arteria/node.* 2>/dev/null | awk '$5 > 1100000 { n++ } END { print n + 0 }'); [ "$n" -gt "$big" ] && big=$n; sleep 0.1
+done
+if python3 - "$W/live.htm" <<'EOF' && [ "$big" = 0 ] && ! grep -q '<' "$W/live.htm"; then ok "a hostile node: only valid rows and fields reach the page, its output stays bounded"
+import json, sys
+s = json.load(open(sys.argv[1]))
+c = s['nodes'][0]['c']
+assert [r[2] for r in c] == ['02:CC:00:00:00:42', '02:CC:00:00:00:43'], c   # a bad interface or MAC: the row is dropped
+assert c[0][3:6] == [None, None, None] and c[1][3:6] == ['1000', '2000', -50], c   # a bad number: that field is null
+EOF
+else bad "hostile node ($big big files):"; ls -l "$R"/tmp/arteria/; python3 -c "import json,sys; print(json.load(open(sys.argv[1]))[\"nodes\"])" "$W/live.htm"; cat "$R"/tmp/arteria/node.*.last; fi
+runi service_event start arteriastop
+sleep 3
+rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 
 # nodekey print: one line to paste on a node, which adds the key once and keeps the keys already there
 line=$(run nodekey print 2>&1 | grep "^k='ssh-")

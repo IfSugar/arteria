@@ -158,7 +158,7 @@ node_stas() {
 }
 node_models() { printf '%s\n' "$1" | awk '{ $1 = ""; $2 = ""; sub(/^ +/, ""); printf "%s%s", (c++ ? ", " : ""), $0 }'; }   # node list -> "RP-AX56, ..."
 # Only when missing: on JFFS even a chmod that changes nothing is a write to flash, and the sampler calls this.
-ssh_home() { [ -d "$SSH_HOME/.ssh" ] || { mkdir -p "$SSH_HOME/.ssh" && chmod 700 "$SSH_HOME/.ssh"; } 2>/dev/null; }
+ssh_home_init() { [ -d "$SSH_HOME/.ssh" ] || { mkdir -p "$SSH_HOME/.ssh" && chmod 700 "$SSH_HOME/.ssh"; } 2>/dev/null; }
 node_file() { printf '%s/node.%s' "$TMPD" "$(printf '%s' "$1" | tr -d :)"; }
 
 # Key logins must never fall back to a password: when a node refuses the key, dbclient asks for one on
@@ -251,7 +251,9 @@ EOF
 node_start() {   # mac ip
 	f=$(node_file "$1")
 	: > "$f.out"; : > "$f.err"; now > "$f.start"; rm -f "$f.fail" "$f.last"
-	(HOME="$SSH_HOME" exec dbclient $BATCH -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
+	# ulimit -f: a session that writes more than about 1 MB between two trims is ended (nodes_tick trims at 128 KB),
+	# so a node that floods its output can't fill the router's RAM; it is reconnected like any dropped session.
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
 		< "$TMPD/node.sh" >> "$f.out" 2>> "$f.err" 8>&- &
 	echo $! > "$f.pid"
 }
@@ -366,7 +368,7 @@ sample_init() {
 	FW=$(fw_version)
 	OWN=$(own_macs | awk '{ printf "%s\"%s\"", (c++ ? "," : ""), $1 }')
 	PORT=$(ssh_port); SSHUSER=$(ssh_user); BATCH=$(ssh_batch)
-	ssh_home
+	ssh_home_init
 	NODE_LIST=""
 	[ "$NODES" = on ] && NODE_LIST=$(node_list)
 	PORTS_JSON=$(printf '%s' "$PORTS" | awk '{ for (i = 1; i <= NF; i++) printf "%s\"%s\"", (i > 1 ? "," : ""), $i }')
@@ -621,7 +623,7 @@ pub_key() { dropbearkey -y -f "$KEY" 2>/dev/null | awk '/^ssh-/ { print $1, $2, 
 # Returns 0 if the key works, 1 if not, 2 if it can't be tried without risking a password prompt
 # (an older dbclient, run from a terminal).
 node_try() {   # ip
-	tmpd; ssh_home; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0
+	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0
 	b=$(ssh_batch)
 	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
 	(HOME="$SSH_HOME" exec dbclient $b -y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
@@ -706,7 +708,7 @@ nodekey() {   # [node-ip | print]
 	[ -s "$KEY" ] || make_key || die "Couldn't create the key in $KEY"
 	pub=$(pub_key); b64=$(printf '%s' "$pub" | cut -d' ' -f2)
 	[ -n "$b64" ] || die "Couldn't read the public key from $KEY"
-	ssh_home
+	ssh_home_init
 	list=$(node_list)
 	[ -n "$1" ] && list=$(printf '%s\n' "$list" | awk -v ip="$1" '$2 == ip')
 	[ -n "$list" ] || die "No AiMesh node${1:+ at $1} found."
@@ -909,8 +911,8 @@ install() {
 		if ! asp_matches "$asp"; then   # missing, or left over from another version
 			say "Downloading the web page from GitHub..."
 			asp="$TMPD/$NAME.asp.dl"; got=0
-			if [ -n "$AR_RAW_URL" ]; then bases="$RAW_URL"; else bases="$RAW_BASE/$VERSION $RAW_URL"; fi
-			for base in $bases release; do
+			if [ -n "$AR_RAW_URL" ]; then bases="$RAW_URL"; else bases="$RAW_BASE/$VERSION release $RAW_URL"; fi
+			for base in $bases; do
 				[ "$base" = release ] && { base=$(release_url); [ -n "$base" ] || continue; }
 				if fetch "$base/$NAME.asp" "$asp" quiet; then
 					asp_matches "$asp" && { got=1; break; }
@@ -971,16 +973,35 @@ install() {
 	say "Arteria samples only while that page is open, and stops about $IDLE_STOP seconds after you leave it."
 }
 
-update() {   # [force]  fetch the latest release from GitHub and reinstall over this one
+# update and update dev: download the script from base URL $1 into a fresh folder of ours ($dl) and check
+# it is whole; $new is its version. $2 names the source in messages, $3 is fetch's "quiet".
+get_script() {   # base source [quiet]
 	tmpd; dl="$TMPD/update.$$"; rm -rf "$dl"; mkdir "$dl" || die "Couldn't create $dl"
-	say "Checking GitHub for updates..."
-	rel=$(release_url)
-	[ -n "$rel" ] || { rm -rf "$dl"; die "Couldn't find the latest release on GitHub (no connection to github.com?); nothing was changed."; }
-	fetch "$rel/$NAME.sh" "$dl/$NAME.sh" || { rm -rf "$dl"; die "Couldn't download the update; nothing was changed."; }
+	fetch "$1/$NAME.sh" "$dl/$NAME.sh" $3 || { rm -rf "$dl"; die "Couldn't download $NAME.sh from $2; nothing was changed."; }
 	new=$(script_version "$dl/$NAME.sh")
 	if [ -z "$new" ] || ! whole_script "$dl/$NAME.sh"; then
-		rm -rf "$dl"; die "The downloaded script looks incomplete; nothing was changed."
+		rm -rf "$dl"; die "The script from $2 looks incomplete; nothing was changed."
 	fi
+}
+# ...then its page, which must be whole and the same version.
+get_page() {   # base source [quiet]
+	if ! fetch "$1/$NAME.asp" "$dl/$NAME.asp" $3 || ! whole_page "$dl/$NAME.asp" || ! grep -q "arteria-version: $new " "$dl/$NAME.asp"; then
+		rm -rf "$dl"; die "Couldn't download the matching web page from $2; nothing was changed."
+	fi
+}
+# ...and install them over this one. Settings and node access are kept; install writes the development-
+# version mark from AR_BUILD ($1), or removes it for a release.
+install_dl() {   # [build]
+	AR_BUILD="$1" sh "$dl/$NAME.sh" install < /dev/null; rc=$?
+	rm -rf "$dl"
+	return $rc
+}
+
+update() {   # [force]  fetch the latest release from GitHub and reinstall over this one
+	say "Checking GitHub for updates..."
+	rel=$(release_url)
+	[ -n "$rel" ] || die "Couldn't find the latest release on GitHub (no connection to github.com?); nothing was changed."
+	get_script "$rel" "the latest release"
 	if [ "$new" = "$VERSION" ] && [ "$1" != "force" ] && [ ! -f "$BUILD_FILE" ]; then
 		rm -rf "$dl"; say "Already up to date ($VERSION)."; return 0
 	fi
@@ -989,13 +1010,9 @@ update() {   # [force]  fetch the latest release from GitHub and reinstall over 
 		say "This is $VERSION$( [ -f "$BUILD_FILE" ] && printf ' (a development version)'), newer than the latest release ($new). Nothing was changed; 'update force' installs $new."
 		return 0
 	fi
-	if ! fetch "$rel/$NAME.asp" "$dl/$NAME.asp" || ! whole_page "$dl/$NAME.asp" || ! grep -q "arteria-version: $new " "$dl/$NAME.asp"; then
-		rm -rf "$dl"; die "Couldn't download the matching web page; nothing was changed."
-	fi
+	get_page "$rel" "the latest release"
 	say "Updating $VERSION -> $new (settings and node access are kept)"
-	sh "$dl/$NAME.sh" install < /dev/null; rc=$?   # install removes the development-version mark
-	rm -rf "$dl"
-	return $rc
+	install_dl
 }
 
 build_text() {   # "" for a release; "development version: main @ 1a2b3c4, installed 2026-11-11 23:30"
@@ -1007,28 +1024,20 @@ ver_line() { printf '%s %s' "$TITLE" "$VERSION"; b=$(build_text); [ -n "$b" ] &&
 update_dev() {   # [branch]
 	br=${1:-main}
 	case "$br" in ''|[-./]*|*..*|*//*|*/|*[!A-Za-z0-9._/-]*|refs/*|pull/*) die "'$br' isn't a branch name; nothing was changed." ;; esac
-	tmpd; dl="$TMPD/update.$$"; rm -rf "$dl"; mkdir "$dl" || die "Couldn't create $dl"
 	say "Looking up the newest commit on $br..."
 	# Only a branch of this repository, by its commit. GitHub also serves commits and pull requests
 	# from other people's forks under this repository's addresses, and those aren't reviewed here.
 	sha=$(curl -fsL --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
 		"https://api.github.com/repos/$REPO/branches/$br" 2>/dev/null \
 		| grep -o '"sha": *"[0-9a-f]\{40\}"' | head -1 | grep -o '[0-9a-f]\{40\}')
-	[ -n "$sha" ] || { rm -rf "$dl"; die "GitHub has no branch '$br' in $REPO, or couldn't be reached; nothing was changed."; }
-	fetch "$RAW_BASE/$sha/$NAME.sh" "$dl/$NAME.sh" quiet || { rm -rf "$dl"; die "Couldn't download $NAME.sh from '$br'; nothing was changed."; }
-	new=$(script_version "$dl/$NAME.sh")
-	if [ -z "$new" ] || ! whole_script "$dl/$NAME.sh"; then
-		rm -rf "$dl"; die "The script on '$br' looks incomplete; nothing was changed."
-	fi
-	if ! fetch "$RAW_BASE/$sha/$NAME.asp" "$dl/$NAME.asp" quiet || ! whole_page "$dl/$NAME.asp" || ! grep -q "arteria-version: $new " "$dl/$NAME.asp"; then
-		rm -rf "$dl"; die "Couldn't download the matching web page from '$br'; nothing was changed."
-	fi
+	[ -n "$sha" ] || die "GitHub has no branch '$br' in $REPO, or couldn't be reached; nothing was changed."
+	get_script "$RAW_BASE/$sha" "'$br'" quiet
+	get_page "$RAW_BASE/$sha" "'$br'" quiet
 	short=$(printf '%s' "$sha" | cut -c1-7)
 	say "Installing the development version of $br ($new, commit $short). Settings and node access are kept;"
 	say "'$SCRIPT update' goes back to the latest release."
 	b="dev $br $short $(date '+%Y-%m-%d %H:%M')"
-	AR_BUILD="$b" sh "$dl/$NAME.sh" install < /dev/null; rc=$?   # install writes the mark (build)
-	rm -rf "$dl"
+	install_dl "$b"; rc=$?
 	[ $rc -eq 0 ] && log "development version installed: $br @ $short ($new)"
 	return $rc
 }
@@ -1097,7 +1106,7 @@ debug() {
 	if [ -f "$f" ]; then
 		say "Detected types: $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"type": *"\{0,1\}\([0-9][0-9]*\).*/\1/p' | sort -n | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
 		say "Detected OS:    $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"os_type": *"\{0,1\}\([0-9][0-9]*\).*/\1/p' | sort -n | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
-		say "Vendor classes: $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"vendorclass": *"\([A-Za-z]*\).*/\1/p' | sort | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
+		say "Vendor classes: $(tr -d '\000-\037' < "$f" | tr '{' '\n' | sed -n 's/.*"vendorclass": *"\([A-Za-z]*\).*/\1/p' | cut -c1-12 | sort | uniq -c | awk '{ printf "%sx%d ", $2, $1 }')"
 	fi
 	say "Private MACs:   $(for p in $(radio_list); do wl -i "${p%%:*}" assoclist 2>/dev/null; done | awk '$2 ~ /^.[26AEae]/ { n++ } END { print n + 0, "of", NR }')"
 	live="$(web_dir)/live.htm"

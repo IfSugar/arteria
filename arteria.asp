@@ -362,6 +362,8 @@ function poke(action) {
 	} catch (e) { /* old browser: the poll will notice */ }
 }
 function stopBeacon() {
+	try { localStorage.removeItem('arteria.open.' + TAB_ID); } catch (e) { /* no storage: nothing to clean up */ }
+	if (otherTabLive()) return;   /* another Arteria tab is still watching: let it keep the router sampling */
 	try { if (navigator.sendBeacon) navigator.sendBeacon('/start_apply.htm', new Blob([pokeBody('start_arteriastop')], { type: 'application/x-www-form-urlencoded' })); }
 	catch (e) { /* the router stops by itself */ }
 }
@@ -375,7 +377,24 @@ function heartbeat() {
 	clearTimeout(A.timers.hb);
 	if (!running()) return;
 	poke('start_arteria');
+	store('open.' + TAB_ID, String(Date.now()));   /* "this tab is sampling", for the other Arteria tabs of this browser */
 	A.timers.hb = setTimeout(heartbeat, 8000);
+}
+/* Two Arteria tabs open: when one closes, it mustn't stop the sampling the other one is watching. Each tab notes
+   its last heartbeat in this browser's storage; a tab that goes away only says "stop" if no other one is live. */
+var TAB_ID = Math.random().toString(36).slice(2, 10);
+function otherTabLive() {
+	var live = false;
+	try {
+		for (var i = localStorage.length - 1; i >= 0; i--) {
+			var k = localStorage.key(i);
+			if (!k || k.indexOf('arteria.open.') !== 0 || k === 'arteria.open.' + TAB_ID) continue;
+			var age = Date.now() - (+localStorage.getItem(k) || 0);
+			if (age < 12000) live = true;
+			else if (age > 120000) localStorage.removeItem(k);   /* a tab that closed without saying so */
+		}
+	} catch (e) { return false; }
+	return live;
 }
 function poll() {
 	clearTimeout(A.timers.poll);
@@ -637,7 +656,7 @@ function rate(key, t, dnBytes, upBytes) {
 }
 function smooth(key, r) {
 	var s = A.sm[key];
-	if (!r) { if (s) s.age++; return s || { dn: 0, up: 0, sdn: 0, sup: 0, ok: false, age: 0 }; }
+	if (!r) { if (s) s.age++; if (s) return s; s = zeroRate(); s.age = 0; return s; }
 	if (!s) s = A.sm[key] = { dn: r.dn, up: r.up, sdn: r.dn, sup: r.up };
 	else { s.dn += 0.6 * (r.dn - s.dn); s.up += 0.6 * (r.up - s.up); s.sdn += 0.2 * (r.dn - s.sdn); s.sup += 0.2 * (r.up - s.sup); }
 	s.ok = true; s.age = 0;
@@ -646,6 +665,7 @@ function smooth(key, r) {
 function measure(key, t, d, u) { return smooth(key, rate(key, t, d, u)); }
 
 /* ---------------------------------------------------------------- the network, from one sample */
+function zeroRate() { return { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }; }   /* a rate that hasn't been measured yet */
 function speedTxt(mbps) { return mbps >= 1000 ? mbps / 1000 + ' GbE' : mbps + ' Mb/s'; }   /* a port's link speed */
 function dbm(v, none) { return v !== null && v !== undefined && v !== '' ? v + ' dBm' : (none === undefined ? '—' : none); }
 function bandName(b) { return b === '2.4' ? '2.4 GHz' : (b === '6' ? '6 GHz' : (b === '5' ? '5 GHz' : 'Wi-Fi')); }
@@ -683,12 +703,12 @@ function buildNet(d) {
 	(d.ifs || []).forEach(function (r) { ifs[r[0]] = r; });
 	/* internet */
 	var w = ifs[d.wan];
-	net.wan = w ? measure('wan', t, w[1], w[2]) : { dn: 0, up: 0, sdn: 0, sup: 0, ok: false };
+	net.wan = w ? measure('wan', t, w[1], w[2]) : zeroRate();
 	net.wanIf = d.wan; net.wanSpeed = linkOf(d, d.wan).speed;
 	/* AiMesh nodes and the addresses they use to reach the router */
 	(d.nodes || []).forEach(function (n, i) {
 		var node = { id: 'node:' + n.mac, mac: n.mac, ip: n.ip, model: n.model || 'AiMesh node', alias: n.alias || '', state: n.state, nup: n.up,
-			rows: n.c || [], sta: String(n.sta || '').split(/\s+/).filter(Boolean), bh: { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }, bhRows: [], devs: [], idx: i };
+			rows: n.c || [], sta: String(n.sta || '').split(/\s+/).filter(Boolean), bh: zeroRate(), bhRows: [], devs: [], idx: i };
 		node.name = node.alias || node.model;
 		node.sta.forEach(function (m) { bh[m] = node; });
 		net.nodes.push(node);
@@ -703,7 +723,7 @@ function buildNet(d) {
 		seen[mac] = { ap: 'router', ifn: r[0], band: r[1], mac: mac, rssi: r[5], phy: r[6], phyUp: r[7], conn: r[8], idle: r[9], std: r[10], nss: r[11], bw: r[12], s: s, st: 'ok' };
 	});
 	net.nodes.forEach(function (node) {
-		var b = { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }, best = null;
+		var b = zeroRate(), best = null;
 		node.bhRows.forEach(function (x) {
 			b.dn += x.s.dn; b.up += x.s.up; b.sdn += x.s.sdn; b.sup += x.s.sup; b.ok = b.ok || x.s.ok;
 			if (!best || x.s.sdn + x.s.sup > best.s.sdn + best.s.sup || (x.r[1] !== '2.4' && best.r[1] === '2.4' && x.s.sdn + x.s.sup >= best.s.sdn + best.s.sup)) best = x;
@@ -735,7 +755,7 @@ function buildNet(d) {
 				Object.keys(cl[bk[0]] || {}).forEach(function (k) {
 					var m = k.toUpperCase();
 					if (!isMac(m) || seen[m] || own[m] || bh[m]) return;
-					seen[m] = { ap: node.mac, node: node, band: bk[1], mac: m, rssi: +((cl[bk[0]][k] || {}).rssi) || null, phy: null, s: { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }, st: node.online ? 'nodata' : 'off' };
+					seen[m] = { ap: node.mac, node: node, band: bk[1], mac: m, rssi: +((cl[bk[0]][k] || {}).rssi) || null, phy: null, s: zeroRate(), st: node.online ? 'nodata' : 'off' };
 				});
 			});
 		}
@@ -778,7 +798,7 @@ function buildNet(d) {
 		if (dv.node) dv.node.devs.push(dv);
 	});
 	/* totals: everything the router delivered = its own clients + the nodes' backhaul */
-	var tot = { dn: 0, up: 0, sdn: 0, sup: 0 };
+	var tot = zeroRate();
 	net.devs.forEach(function (dv) { if (!dv.node && dv.st === 'ok') { tot.dn += dv.dn; tot.up += dv.up; tot.sdn += dv.sdn; tot.sup += dv.sup; } });
 	net.nodes.forEach(function (n) {
 		tot.dn += n.bh.dn; tot.up += n.bh.up; tot.sdn += n.bh.sdn; tot.sup += n.bh.sup;
@@ -933,6 +953,10 @@ function objRouter(model) {
 		o.box(ax, 5.96, 0.78, 0.15, 0.15, 1.22, M_DARK);
 		o.face('L', 0, 0.9, 1, 1, 'fill:' + ACC + ';opacity:.8');
 	});
+	if (f.form === 'gaming') [[5.56, 7.9], [8.5, 7.9], [8.5, 6.9]].forEach(function (a) {   /* a gaming router: three more antennas, front and side */
+		o.box(a[0], a[1], 0.64, 0.15, 0.15, 1.22, M_DARK);
+		o.face('L', 0, 0.9, 1, 1, 'fill:' + ACC + ';opacity:.8');
+	});
 	routerCollars(o);
 	return o;
 }
@@ -1032,243 +1056,328 @@ function objNode(id, cx, cy, model) {
 	o.form = f.form;
 	return o;
 }
-/* Clients: one generic form per kind, built around the slot's centre. */
-function objDevice(id, kind, cx, cy, face) {
-	var o, b, g;
-	if (kind === 'tv' && face === 'R') {
-		o = new Obj(id, cx, cy, 1.92);
-		o.box(cx - 0.4, cy - 0.5, 0, 0.5, 1.0, 0.08, M_DARK, { shadow: true });
-		o.box(cx - 0.18, cy - 0.08, 0.08, 0.12, 0.16, 0.36, M_BLACK, { rim: false });
-		o.box(cx - 0.06, cy - 1.35, 0.42, 0.12, 2.7, 1.5, M_BLACK, { shadow: true });
-		o.screen('R', 'ar-scr2', true);
-		o.target = P(cx, cy, 1.96);
-	} else if (kind === 'tv') {
-		o = new Obj(id, cx, cy, 1.97);
-		o.box(cx - 0.5, cy - 0.25, 0, 1.0, 0.5, 0.08, M_DARK, { shadow: true });
-		o.box(cx - 0.08, cy - 0.16, 0.08, 0.16, 0.12, 0.36, M_BLACK, { rim: false });
-		o.box(cx - 1.4, cy - 0.06, 0.42, 2.8, 0.12, 1.55, M_BLACK, { shadow: true });
-		o.screen('L', 'ar-scr1', true);
-		o.led('L', 0.5, 0.035, BAD, 0, 0, 0.9);
-		o.target = P(cx, cy, 1.99);
-	} else if (kind === 'laptop') {
-		o = new Obj(id, cx, cy, 1.07);
-		o.box(cx - 0.8, cy - 0.52, 0.07, 1.6, 0.07, 1.0, M_BLACK, { shadow: true });
-		o.screen('L', 'ar-scr3', false);
-		o.face('L', 0.1, 0.5, 0.6, 0.84, 'fill:#ffffff;opacity:.16');
-		o.face('L', 0.66, 0.3, 0.9, 0.84, 'fill:#ffffff;opacity:.1');
-		o.box(cx - 0.8, cy - 0.45, 0, 1.6, 1.05, 0.07, M_ALU, { shadow: true });
-		o.face('T', 0.07, 0.1, 0.93, 0.58, 'fill:#59646a');
-		[0.22, 0.34, 0.46].forEach(function (v) { o.line('T', 0.09, v, 0.91, v, '#8b969b', 0.7); });
-		o.face('T', 0.36, 0.66, 0.64, 0.93, 'fill:#c9d0d3;stroke:#8f999e;stroke-width:.5');
-		o.target = P(cx, cy - 0.49, 1.14);
-	} else if (kind === 'phone') {
-		o = new Obj(id, cx, cy, 1.0);
-		o.box(cx - 0.35, cy - 0.18, 0, 0.7, 0.42, 0.07, M_DARK, { shadow: true });
-		o.box(cx - 0.25, cy - 0.05, 0.07, 0.5, 0.1, 0.95, M_BLACK);
-		o.face('L', 0.09, 0.04, 0.91, 0.96, 'fill:url(#ar-scr4)');
-		o.face('L', 0.36, 0.9, 0.64, 0.93, 'fill:#0d1214');
-		o.face('L', 0.18, 0.5, 0.82, 0.62, 'fill:#ffffff;opacity:.2');
-		o.target = P(cx, cy, 1.07);
-	} else if (kind === 'tablet') {
-		o = new Obj(id, cx, cy, 0.6);
-		[[cx - 0.6, cy + 0.45], [cx + 0.48, cy + 0.45], [cx + 0.48, cy - 0.55]].forEach(function (l) { o.box(l[0], l[1], 0, 0.12, 0.12, 0.45, M_DARK, { rim: false }); });
-		o.box(cx - 0.65, cy - 0.6, 0.45, 1.3, 1.2, 0.09, M_TABLE, { shadow: true });
-		o.box(cx - 0.45, cy - 0.4, 0.54, 0.9, 0.75, 0.05, M_BLACK);
-		o.face('T', 0.06, 0.07, 0.94, 0.93, 'fill:url(#ar-scr5)');
-		o.face('T', 0.14, 0.18, 0.5, 0.5, 'fill:#ffffff;opacity:.16');
-		o.target = P(cx, cy, 0.64);
-	} else if (kind === 'nas') {
-		o = new Obj(id, cx, cy, 2.0);
-		o.box(cx - 0.9, cy - 0.8, 0, 1.8, 1.6, 0.07, M_BLACK, { rim: false, shadow: true });
-		o.box(cx - 0.85, cy - 0.75, 0.07, 1.7, 1.5, 1.93, M_BODY, { ao: true, shadow: true });
-		[[0.08, 0.47], [0.53, 0.92]].forEach(function (u) {
-			o.face('L', u[0], 0.1, u[1], 0.76, 'fill:#20282b;stroke:#141a1d;stroke-width:.8');
-			o.line('L', u[0] + 0.06, 0.68, u[1] - 0.06, 0.68, '#5f6d73', 1.6);
-			o.line('L', u[0] + 0.06, 0.2, u[1] - 0.06, 0.2, 'rgba(255,255,255,.1)', 0.8);
-		});
-		o.led('L', 0.16, 0.87, '#3ddc97', 0.42, 0);
-		o.led('L', 0.28, 0.87, '#3ddc97', 0.31, -0.1);
-		o.led('L', 0.88, 0.87, DN, 0, 0, 1.3);
-		[0.3, 0.38, 0.46, 0.54, 0.62].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#1f2629', 1.3); });
-		o.target = P(cx, cy, 2.05);
-	} else if (kind === 'desktop') {   /* a tower PC with its monitor and keyboard */
-		o = new Obj(id, cx, cy, 1.22);
-		o.box(cx - 0.95, cy - 0.5, 0, 0.5, 1.0, 1.15, M_DARK, { ao: true, shadow: true });
-		b = o.last;
-		o.face('L', 0.16, 0.72, 0.84, 0.9, 'fill:#141b1e;stroke:#0d1214;stroke-width:.6', b);
-		o.line('L', 0.16, 0.62, 0.84, 0.62, 'rgba(255,255,255,.14)', 0.8, b);
-		o.led('L', 0.28, 0.5, '#3ddc97', 0, 0, 1.1, b);
-		o.line('L', 0.46, 0.5, 0.84, 0.5, DN, 1.2, b);
-		[0.3, 0.38, 0.46, 0.54, 0.62].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#1f2629', 1.3, b); });
-		o.box(cx + 0.1, cy - 0.5, 0, 0.5, 0.3, 0.05, M_DARK, { shadow: true });
-		o.box(cx + 0.3, cy - 0.38, 0.05, 0.1, 0.07, 0.3, M_BLACK, { rim: false });
-		o.box(cx - 0.25, cy - 0.34, 0.3, 1.2, 0.07, 0.8, M_BLACK, { shadow: true });
-		o.screen('L', 'ar-scr3', false);
-		o.face('L', 0.1, 0.5, 0.6, 0.84, 'fill:#ffffff;opacity:.16');
-		o.face('L', 0.66, 0.3, 0.9, 0.84, 'fill:#ffffff;opacity:.1');
-		o.box(cx - 0.1, cy + 0.2, 0, 0.9, 0.3, 0.04, M_ALU);
-		o.face('T', 0.05, 0.14, 0.95, 0.86, 'fill:#59646a');
-		o.target = P(cx + 0.35, cy - 0.3, 1.12);
-	} else if (kind === 'mac') {   /* a compact aluminium desktop (Mac Studio, Mac mini) with its display */
-		o = new Obj(id, cx, cy, 1.24);
-		o.box(cx - 0.55, cy - 0.52, 0, 0.6, 0.34, 0.04, M_ALU, { shadow: true });
-		o.box(cx - 0.31, cy - 0.4, 0.04, 0.12, 0.06, 0.3, M_ALU, { rim: false });
-		o.box(cx - 0.95, cy - 0.36, 0.3, 1.4, 0.06, 0.92, M_ALU, { shadow: true });
-		o.face('L', 0, 0, 1, 1, 'fill:#11181b');
-		o.screen('L', 'ar-scr2', false);
-		o.face('L', 0.1, 0.5, 0.6, 0.84, 'fill:#ffffff;opacity:.16');
-		o.box(cx + 0.02, cy + 0.02, 0, 0.74, 0.74, 0.36, M_ALU, { ao: true, shadow: true });
-		o.face('L', 0.12, 0.34, 0.2, 0.54, 'fill:#59646a');
-		o.face('L', 0.26, 0.34, 0.34, 0.54, 'fill:#59646a');
-		o.face('L', 0.46, 0.38, 0.74, 0.5, 'fill:#59646a');
-		o.led('L', 0.88, 0.44, '#f0efec', 0, 0, 0.8);
-		o.face('T', 0.3, 0.3, 0.7, 0.7, 'fill:#c9d0d3;stroke:#8f999e;stroke-width:.5');
-		o.target = P(cx - 0.25, cy - 0.33, 1.24);
-	} else if (kind === 'light') {   /* a lit bulb on a small lamp foot */
-		o = new Obj(id, cx, cy, 0.95);
-		o.box(cx - 0.2, cy - 0.2, 0, 0.4, 0.4, 0.08, M_DARK, { shadow: true });
-		o.box(cx - 0.09, cy - 0.09, 0.08, 0.18, 0.18, 0.28, M_METAL, { rim: false });
-		o.line('L', 0.05, 0.4, 0.95, 0.4, '#48555b', 0.9);
-		o.line('L', 0.05, 0.72, 0.95, 0.72, '#48555b', 0.9);
-		g = P(cx, cy, 0.62);
-		o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="15" style="fill:url(#ar-glow)"/>');
-		o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="7.5" style="fill:url(#ar-bulb);stroke:#ffe9a3;stroke-width:.9"/>');
-		o.pts.push([g[0] - 9, g[1] - 9], [g[0] + 9, g[1] + 9]);
-		o.target = P(cx, cy, 1.0);
-	} else if (kind === 'air') {   /* a split air conditioner on a piece of wall */
-		o = new Obj(id, cx, cy, 1.6);
-		o.box(cx - 0.9, cy - 0.3, 0, 1.8, 0.14, 1.55, M_WALL, { shadow: true });
-		o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
-		o.box(cx - 0.75, cy - 0.16, 0.92, 1.5, 0.32, 0.44, M_WHITE, { shadow: true });
-		o.face('L', 0.04, 0.08, 0.96, 0.32, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
-		o.line('L', 0.07, 0.2, 0.93, 0.2, '#7f8a8e', 1);
-		o.led('L', 0.9, 0.66, '#3ddc97', 0, 0, 1);
-		[0.24, 0.5, 0.76].forEach(function (u) { g = o.fp('L', u, 0); o.svg.push(pline([[g[0], g[1] + 4], [g[0], g[1] + 11]], 'fill:none;stroke:' + DN + ';stroke-opacity:.7;stroke-width:1.4;stroke-linecap:round')); });
-		o.target = P(cx, cy, 1.62);
-	} else if (kind === 'speaker') {   /* a smart speaker: fabric sides, a light ring on top */
-		o = new Obj(id, cx, cy, 0.9);
-		o.box(cx - 0.3, cy - 0.3, 0, 0.6, 0.6, 0.85, M_DARK, { ao: true, shadow: true });
-		[0.2, 0.32, 0.44, 0.56, 0.68, 0.8].forEach(function (v) { o.line('L', 0.14, v, 0.86, v, '#1f2629', 1.3); o.line('R', 0.14, v, 0.86, v, '#1a2023', 1.2); });
-		o.svg.push(ell(P(cx, cy, 0.85), 0.17, 'fill:#141b1e;stroke:' + DN + ';stroke-width:1.2'));
-		o.target = P(cx, cy, 0.92);
-	} else if (kind === 'printer') {
-		o = new Obj(id, cx, cy, 0.85);
-		o.box(cx - 0.6, cy - 0.4, 0, 1.2, 0.8, 0.45, M_BODY, { ao: true, shadow: true });
-		b = o.last;
-		o.face('T', 0.07, 0.3, 0.93, 0.9, 'fill:none;stroke:rgba(255,255,255,.14);stroke-width:.8');
-		o.face('L', 0.12, 0.22, 0.88, 0.46, 'fill:#141b1e;stroke:#0d1214;stroke-width:.6');
-		o.led('L', 0.86, 0.74, '#3ddc97', 0, 0, 1);
-		o.line('L', 0.12, 0.74, 0.5, 0.74, 'rgba(255,255,255,.18)', 1.2);
-		o.box(cx - 0.4, cy - 0.36, 0.45, 0.8, 0.04, 0.4, M_WHITE, { rim: false });
-		o.box(cx - 0.42, cy + 0.4, 0.1, 0.84, 0.3, 0.03, M_WHITE, { rim: false });
-		o.target = P(cx, cy - 0.3, 0.88);
-	} else if (kind === 'watch') {   /* a watch on its charging puck */
-		o = new Obj(id, cx, cy, 0.72);
-		o.box(cx - 0.26, cy - 0.26, 0, 0.52, 0.52, 0.08, M_WHITE, { shadow: true });
-		o.box(cx - 0.12, cy - 0.03, 0.08, 0.24, 0.08, 0.12, M_DARK, { rim: false });
-		o.box(cx - 0.2, cy - 0.05, 0.2, 0.4, 0.12, 0.4, M_BLACK);
-		o.face('L', 0.1, 0.08, 0.9, 0.92, 'fill:url(#ar-scr4)');
-		o.face('L', 0.24, 0.46, 0.76, 0.6, 'fill:#ffffff;opacity:.2');
-		o.box(cx - 0.12, cy - 0.03, 0.6, 0.24, 0.08, 0.1, M_DARK, { rim: false });
-		o.target = P(cx, cy, 0.74);
-	} else if (kind === 'camera') {   /* a camera head on a short post */
-		o = new Obj(id, cx, cy, 0.92);
-		o.box(cx - 0.2, cy - 0.2, 0, 0.4, 0.4, 0.06, M_DARK, { shadow: true });
-		o.box(cx - 0.05, cy - 0.05, 0.06, 0.1, 0.1, 0.48, M_DARK, { rim: false });
-		o.box(cx - 0.2, cy - 0.3, 0.54, 0.4, 0.6, 0.34, M_WHITE, { shadow: true });
-		o.face('L', 0.12, 0.12, 0.88, 0.88, 'fill:#141b1e');
-		o.led('L', 0.5, 0.5, DN, 0, 0, 1.7);
-		o.target = P(cx, cy, 0.94);
-	} else if (kind === 'streamer') {   /* a streaming box or stick: Apple TV, Chromecast, Fire TV, Shield, Roku */
-		o = new Obj(id, cx, cy, 0.24);
-		o.box(cx - 0.36, cy - 0.36, 0, 0.72, 0.72, 0.2, M_BLACK, { shadow: true });
-		o.line('L', 0.1, 0.5, 0.7, 0.5, 'rgba(255,255,255,.14)', 0.8);
-		o.led('L', 0.86, 0.5, DN, 0, 0, 1);
-		o.face('T', 0.14, 0.14, 0.86, 0.86, 'fill:none;stroke:rgba(255,255,255,.14);stroke-width:.8');
-		o.box(cx - 0.62, cy + 0.42, 0, 0.18, 0.5, 0.05, M_ALU, { rim: false });
-		o.target = P(cx, cy, 0.26);
-	} else if (kind === 'soundbar') {   /* a soundbar or AV receiver */
-		o = new Obj(id, cx, cy, 0.32);
-		o.box(cx - 1.1, cy - 0.17, 0, 2.2, 0.34, 0.26, M_BLACK, { shadow: true });
-		[0.3, 0.5, 0.7].forEach(function (v) { o.line('L', 0.04, v, 0.8, v, '#2c363a', 1.2); });
-		o.led('L', 0.9, 0.5, DN, 0, 0, 1);
-		o.target = P(cx, cy, 0.3);
-	} else if (kind === 'doorbell' || kind === 'lock') {   /* on a piece of door frame: a video doorbell, or a keypad lock */
-		o = new Obj(id, cx, cy, 1.3);
-		o.box(cx - 0.4, cy - 0.2, 0, 0.8, 0.14, 1.25, M_WALL, { shadow: true });
-		o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
-		o.box(cx - 0.15, cy - 0.06, 0.4, 0.3, 0.08, 0.7, kind === 'lock' ? M_METAL : M_BLACK);
-		if (kind === 'lock') {
-			[0.78, 0.62, 0.46].forEach(function (v) { [0.28, 0.5, 0.72].forEach(function (u) { g = o.fp('L', u, v); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r=".9" style="fill:#20282b"/>'); }); });
-			o.face('L', 0.4, 0.1, 0.6, 0.3, 'fill:#20282b');
-		} else {
-			o.led('L', 0.5, 0.76, DN, 0, 0, 1.5);
-			g = o.fp('L', 0.5, 0.26);
-			o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="2.6" style="fill:#11181b;stroke:' + ACC + ';stroke-width:1"/>');
-		}
-		o.target = P(cx, cy, 1.3);
-	} else if (kind === 'sensor' || kind === 'thermostat') {   /* a small puck: motion, door, temperature, leak, smoke; with a dial, a thermostat */
-		o = new Obj(id, cx, cy, 0.24);
-		o.disc(cx, cy, 0, 0.3, 0.16, M_WHITE, 'ar-cw', { shadow: true });
-		if (kind === 'thermostat') { o.svg.push(ell(P(cx, cy, 0.16), 0.2, 'fill:#141b1e;stroke:' + ACC + ';stroke-width:1.3')); o.svg.push(ell(P(cx, cy, 0.16), 0.07, 'fill:' + UPT)); }
-		else { o.svg.push(ell(P(cx, cy, 0.16), 0.12, 'fill:#aeb8bb')); g = P(cx, cy, 0.16); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="1.2" class="df-a df-led" style="fill:#3ddc97;animation-duration:' + (3 + (hash(id) % 10) / 4) + 's"/>'); }
-		o.target = P(cx, cy, 0.3);
-	} else if (kind === 'plug') {   /* a smart plug: a white block with a socket on top */
-		o = new Obj(id, cx, cy, 0.42);
-		o.box(cx - 0.21, cy - 0.21, 0, 0.42, 0.42, 0.38, M_WHITE, { shadow: true });
-		o.face('T', 0.2, 0.2, 0.8, 0.8, 'fill:#aeb8bb');
-		o.face('T', 0.34, 0.3, 0.42, 0.7, 'fill:#20282b'); o.face('T', 0.58, 0.3, 0.66, 0.7, 'fill:#20282b');
-		o.led('L', 0.5, 0.5, '#3ddc97', 0, 0, 1.1);
-		o.target = P(cx, cy, 0.46);
-	} else if (kind === 'hub') {   /* a smart-home hub or bridge */
-		o = new Obj(id, cx, cy, 0.22);
-		o.box(cx - 0.36, cy - 0.36, 0, 0.72, 0.72, 0.16, M_WHITE, { shadow: true });
-		[0.3, 0.5, 0.7].forEach(function (u, i) { g = o.fp('T', u, 0.72); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="1.3"' + (i === 1 ? ' class="df-a df-led"' : '') + ' style="fill:' + DN + (i === 1 ? ';animation-duration:' + (2.6 + (hash(id) % 10) / 4) + 's' : '') + '"/>'); });
-		o.svg.push(ell(P(cx, cy - 0.06, 0.16), 0.13, 'fill:none;stroke:#8f9a9e;stroke-width:.8'));
-		o.target = P(cx, cy, 0.24);
-	} else if (kind === 'vacuum') {   /* a robot vacuum */
-		o = new Obj(id, cx, cy, 0.3);
-		o.disc(cx, cy, 0.03, 0.5, 0.15, M_DARK, 'ar-cd', { shadow: true });
-		o.disc(cx - 0.1, cy - 0.1, 0.18, 0.15, 0.06, M_BLACK, 'ar-cd', { track: false });
-		g = P(cx + 0.2, cy + 0.2, 0.18);
-		o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="1.3" style="fill:#3ddc97"/>');
-		o.target = P(cx, cy, 0.3);
-	} else if (kind === 'appliance') {   /* white goods: washer, dryer, fridge, oven, purifier, fan, heater */
-		o = new Obj(id, cx, cy, 1.2);
-		o.box(cx - 0.5, cy - 0.5, 0, 1.0, 1.0, 1.15, M_WHITE, { ao: true, shadow: true });
-		o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
-		o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
-		o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
-		o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');
-		[0.3, 0.45, 0.6].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#7f8a8e', 1.1); });
-		o.target = P(cx, cy, 1.2);
-	} else if (kind === 'iot') {
-		o = new Obj(id, cx, cy, 0.42);
-		o.box(cx - 0.21, cy - 0.21, 0, 0.42, 0.42, 0.42, M_WHITE, { shadow: true });
-		o.face('T', 0.3, 0.3, 0.7, 0.7, 'fill:#aeb8bb');
-		o.led('L', 0.5, 0.55, ACC, 2.6 + (hash(id) % 10) / 4, -(hash(id) % 7) / 3, 1.2);
-		o.target = P(cx, cy, 0.5);
-	} else if (kind === 'switch') {
-		o = new Obj(id, cx, cy, 0.3);
-		o.box(cx - 0.8, cy - 0.4, 0, 1.6, 0.8, 0.24, M_BODY, { shadow: true });
-		b = o.last;
-		for (var i = 0; i < 5; i++) { var u = 0.1 + i * 0.165; o.face('L', u, 0.22, u + 0.11, 0.7, 'fill:#11181b;stroke:#c9a400;stroke-width:.7', b); o.led('L', u + 0.055, 0.86, '#3ddc97', i % 2 ? 0.8 : 0, -i * 0.2, 0.8, b); }
-		o.target = P(cx, cy, 0.3);
-	} else if (kind === 'console') {
-		o = new Obj(id, cx, cy, 0.3);
-		o.box(cx - 0.6, cy - 0.42, 0, 1.2, 0.84, 0.24, M_BLACK, { shadow: true });
-		o.line('L', 0.08, 0.5, 0.92, 0.5, DN, 1.2);
-		o.face('T', 0.1, 0.12, 0.9, 0.88, 'fill:none;stroke:rgba(255,255,255,.14);stroke-width:.8');
-		o.target = P(cx, cy, 0.32);
-	} else {
-		o = new Obj(id, cx, cy, 0.45);
-		o.box(cx - 0.45, cy - 0.35, 0, 0.9, 0.7, 0.4, M_DARK, { ao: true, shadow: true });
-		o.face('T', 0.15, 0.18, 0.85, 0.82, 'fill:none;stroke:rgba(255,255,255,.14);stroke-width:.8');
-		o.led('L', 0.24, 0.6, '#3ddc97', 1.9 + (hash(id) % 10) / 5, 0, 1.1);
-		o.line('L', 0.4, 0.6, 0.85, 0.6, 'rgba(255,255,255,.18)', 1.2);
-		o.target = P(cx, cy, 0.46);
-	}
+/* Clients: one drawing per kind, built around the stand's centre (cx, cy); objDevice below picks it. */
+function drawTvSide(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 1.92);
+	o.box(cx - 0.4, cy - 0.5, 0, 0.5, 1.0, 0.08, M_DARK, { shadow: true });
+	o.box(cx - 0.18, cy - 0.08, 0.08, 0.12, 0.16, 0.36, M_BLACK, { rim: false });
+	o.box(cx - 0.06, cy - 1.35, 0.42, 0.12, 2.7, 1.5, M_BLACK, { shadow: true });
+	o.screen('R', 'ar-scr2', true);
+	o.target = P(cx, cy, 1.96);
 	return o;
+}
+function drawTv(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 1.97);
+	o.box(cx - 0.5, cy - 0.25, 0, 1.0, 0.5, 0.08, M_DARK, { shadow: true });
+	o.box(cx - 0.08, cy - 0.16, 0.08, 0.16, 0.12, 0.36, M_BLACK, { rim: false });
+	o.box(cx - 1.4, cy - 0.06, 0.42, 2.8, 0.12, 1.55, M_BLACK, { shadow: true });
+	o.screen('L', 'ar-scr1', true);
+	o.led('L', 0.5, 0.035, BAD, 0, 0, 0.9);
+	o.target = P(cx, cy, 1.99);
+	return o;
+}
+function drawLaptop(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 1.07);
+	o.box(cx - 0.8, cy - 0.52, 0.07, 1.6, 0.07, 1.0, M_BLACK, { shadow: true });
+	o.screen('L', 'ar-scr3', false);
+	o.face('L', 0.1, 0.5, 0.6, 0.84, 'fill:#ffffff;opacity:.16');
+	o.face('L', 0.66, 0.3, 0.9, 0.84, 'fill:#ffffff;opacity:.1');
+	o.box(cx - 0.8, cy - 0.45, 0, 1.6, 1.05, 0.07, M_ALU, { shadow: true });
+	o.face('T', 0.07, 0.1, 0.93, 0.58, 'fill:#59646a');
+	[0.22, 0.34, 0.46].forEach(function (v) { o.line('T', 0.09, v, 0.91, v, '#8b969b', 0.7); });
+	o.face('T', 0.36, 0.66, 0.64, 0.93, 'fill:#c9d0d3;stroke:#8f999e;stroke-width:.5');
+	o.target = P(cx, cy - 0.49, 1.14);
+	return o;
+}
+function drawPhone(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 1.0);
+	o.box(cx - 0.35, cy - 0.18, 0, 0.7, 0.42, 0.07, M_DARK, { shadow: true });
+	o.box(cx - 0.25, cy - 0.05, 0.07, 0.5, 0.1, 0.95, M_BLACK);
+	o.face('L', 0.09, 0.04, 0.91, 0.96, 'fill:url(#ar-scr4)');
+	o.face('L', 0.36, 0.9, 0.64, 0.93, 'fill:#0d1214');
+	o.face('L', 0.18, 0.5, 0.82, 0.62, 'fill:#ffffff;opacity:.2');
+	o.target = P(cx, cy, 1.07);
+	return o;
+}
+function drawTablet(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 0.6);
+	[[cx - 0.6, cy + 0.45], [cx + 0.48, cy + 0.45], [cx + 0.48, cy - 0.55]].forEach(function (l) { o.box(l[0], l[1], 0, 0.12, 0.12, 0.45, M_DARK, { rim: false }); });
+	o.box(cx - 0.65, cy - 0.6, 0.45, 1.3, 1.2, 0.09, M_TABLE, { shadow: true });
+	o.box(cx - 0.45, cy - 0.4, 0.54, 0.9, 0.75, 0.05, M_BLACK);
+	o.face('T', 0.06, 0.07, 0.94, 0.93, 'fill:url(#ar-scr5)');
+	o.face('T', 0.14, 0.18, 0.5, 0.5, 'fill:#ffffff;opacity:.16');
+	o.target = P(cx, cy, 0.64);
+	return o;
+}
+function drawNas(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 2.0);
+	o.box(cx - 0.9, cy - 0.8, 0, 1.8, 1.6, 0.07, M_BLACK, { rim: false, shadow: true });
+	o.box(cx - 0.85, cy - 0.75, 0.07, 1.7, 1.5, 1.93, M_BODY, { ao: true, shadow: true });
+	[[0.08, 0.47], [0.53, 0.92]].forEach(function (u) {
+		o.face('L', u[0], 0.1, u[1], 0.76, 'fill:#20282b;stroke:#141a1d;stroke-width:.8');
+		o.line('L', u[0] + 0.06, 0.68, u[1] - 0.06, 0.68, '#5f6d73', 1.6);
+		o.line('L', u[0] + 0.06, 0.2, u[1] - 0.06, 0.2, 'rgba(255,255,255,.1)', 0.8);
+	});
+	o.led('L', 0.16, 0.87, '#3ddc97', 0.42, 0);
+	o.led('L', 0.28, 0.87, '#3ddc97', 0.31, -0.1);
+	o.led('L', 0.88, 0.87, DN, 0, 0, 1.3);
+	[0.3, 0.38, 0.46, 0.54, 0.62].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#1f2629', 1.3); });
+	o.target = P(cx, cy, 2.05);
+	return o;
+}
+function drawDesktop(id, kind, cx, cy, face) {   /* a tower PC with its monitor and keyboard */
+	var o, b;
+	o = new Obj(id, cx, cy, 1.22);
+	o.box(cx - 0.95, cy - 0.5, 0, 0.5, 1.0, 1.15, M_DARK, { ao: true, shadow: true });
+	b = o.last;
+	o.face('L', 0.16, 0.72, 0.84, 0.9, 'fill:#141b1e;stroke:#0d1214;stroke-width:.6', b);
+	o.line('L', 0.16, 0.62, 0.84, 0.62, 'rgba(255,255,255,.14)', 0.8, b);
+	o.led('L', 0.28, 0.5, '#3ddc97', 0, 0, 1.1, b);
+	o.line('L', 0.46, 0.5, 0.84, 0.5, DN, 1.2, b);
+	[0.3, 0.38, 0.46, 0.54, 0.62].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#1f2629', 1.3, b); });
+	o.box(cx + 0.1, cy - 0.5, 0, 0.5, 0.3, 0.05, M_DARK, { shadow: true });
+	o.box(cx + 0.3, cy - 0.38, 0.05, 0.1, 0.07, 0.3, M_BLACK, { rim: false });
+	o.box(cx - 0.25, cy - 0.34, 0.3, 1.2, 0.07, 0.8, M_BLACK, { shadow: true });
+	o.screen('L', 'ar-scr3', false);
+	o.face('L', 0.1, 0.5, 0.6, 0.84, 'fill:#ffffff;opacity:.16');
+	o.face('L', 0.66, 0.3, 0.9, 0.84, 'fill:#ffffff;opacity:.1');
+	o.box(cx - 0.1, cy + 0.2, 0, 0.9, 0.3, 0.04, M_ALU);
+	o.face('T', 0.05, 0.14, 0.95, 0.86, 'fill:#59646a');
+	o.target = P(cx + 0.35, cy - 0.3, 1.12);
+	return o;
+}
+function drawMac(id, kind, cx, cy, face) {   /* a compact aluminium desktop (Mac Studio, Mac mini) with its display */
+	var o;
+	o = new Obj(id, cx, cy, 1.24);
+	o.box(cx - 0.55, cy - 0.52, 0, 0.6, 0.34, 0.04, M_ALU, { shadow: true });
+	o.box(cx - 0.31, cy - 0.4, 0.04, 0.12, 0.06, 0.3, M_ALU, { rim: false });
+	o.box(cx - 0.95, cy - 0.36, 0.3, 1.4, 0.06, 0.92, M_ALU, { shadow: true });
+	o.face('L', 0, 0, 1, 1, 'fill:#11181b');
+	o.screen('L', 'ar-scr2', false);
+	o.face('L', 0.1, 0.5, 0.6, 0.84, 'fill:#ffffff;opacity:.16');
+	o.box(cx + 0.02, cy + 0.02, 0, 0.74, 0.74, 0.36, M_ALU, { ao: true, shadow: true });
+	o.face('L', 0.12, 0.34, 0.2, 0.54, 'fill:#59646a');
+	o.face('L', 0.26, 0.34, 0.34, 0.54, 'fill:#59646a');
+	o.face('L', 0.46, 0.38, 0.74, 0.5, 'fill:#59646a');
+	o.led('L', 0.88, 0.44, '#f0efec', 0, 0, 0.8);
+	o.face('T', 0.3, 0.3, 0.7, 0.7, 'fill:#c9d0d3;stroke:#8f999e;stroke-width:.5');
+	o.target = P(cx - 0.25, cy - 0.33, 1.24);
+	return o;
+}
+function drawLight(id, kind, cx, cy, face) {   /* a lit bulb on a small lamp foot */
+	var o, g;
+	o = new Obj(id, cx, cy, 0.95);
+	o.box(cx - 0.2, cy - 0.2, 0, 0.4, 0.4, 0.08, M_DARK, { shadow: true });
+	o.box(cx - 0.09, cy - 0.09, 0.08, 0.18, 0.18, 0.28, M_METAL, { rim: false });
+	o.line('L', 0.05, 0.4, 0.95, 0.4, '#48555b', 0.9);
+	o.line('L', 0.05, 0.72, 0.95, 0.72, '#48555b', 0.9);
+	g = P(cx, cy, 0.62);
+	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="15" style="fill:url(#ar-glow)"/>');
+	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="7.5" style="fill:url(#ar-bulb);stroke:#ffe9a3;stroke-width:.9"/>');
+	o.pts.push([g[0] - 9, g[1] - 9], [g[0] + 9, g[1] + 9]);
+	o.target = P(cx, cy, 1.0);
+	return o;
+}
+function drawAir(id, kind, cx, cy, face) {   /* a split air conditioner on a piece of wall */
+	var o, g;
+	o = new Obj(id, cx, cy, 1.6);
+	o.box(cx - 0.9, cy - 0.3, 0, 1.8, 0.14, 1.55, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	o.box(cx - 0.75, cy - 0.16, 0.92, 1.5, 0.32, 0.44, M_WHITE, { shadow: true });
+	o.face('L', 0.04, 0.08, 0.96, 0.32, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
+	o.line('L', 0.07, 0.2, 0.93, 0.2, '#7f8a8e', 1);
+	o.led('L', 0.9, 0.66, '#3ddc97', 0, 0, 1);
+	[0.24, 0.5, 0.76].forEach(function (u) { g = o.fp('L', u, 0); o.svg.push(pline([[g[0], g[1] + 4], [g[0], g[1] + 11]], 'fill:none;stroke:' + DN + ';stroke-opacity:.7;stroke-width:1.4;stroke-linecap:round')); });
+	o.target = P(cx, cy, 1.62);
+	return o;
+}
+function drawSpeaker(id, kind, cx, cy, face) {   /* a smart speaker: fabric sides, a light ring on top */
+	var o;
+	o = new Obj(id, cx, cy, 0.9);
+	o.box(cx - 0.3, cy - 0.3, 0, 0.6, 0.6, 0.85, M_DARK, { ao: true, shadow: true });
+	[0.2, 0.32, 0.44, 0.56, 0.68, 0.8].forEach(function (v) { o.line('L', 0.14, v, 0.86, v, '#1f2629', 1.3); o.line('R', 0.14, v, 0.86, v, '#1a2023', 1.2); });
+	o.svg.push(ell(P(cx, cy, 0.85), 0.17, 'fill:#141b1e;stroke:' + DN + ';stroke-width:1.2'));
+	o.target = P(cx, cy, 0.92);
+	return o;
+}
+function drawPrinter(id, kind, cx, cy, face) {
+	var o, b;
+	o = new Obj(id, cx, cy, 0.85);
+	o.box(cx - 0.6, cy - 0.4, 0, 1.2, 0.8, 0.45, M_BODY, { ao: true, shadow: true });
+	b = o.last;
+	o.face('T', 0.07, 0.3, 0.93, 0.9, 'fill:none;stroke:rgba(255,255,255,.14);stroke-width:.8');
+	o.face('L', 0.12, 0.22, 0.88, 0.46, 'fill:#141b1e;stroke:#0d1214;stroke-width:.6');
+	o.led('L', 0.86, 0.74, '#3ddc97', 0, 0, 1);
+	o.line('L', 0.12, 0.74, 0.5, 0.74, 'rgba(255,255,255,.18)', 1.2);
+	o.box(cx - 0.4, cy - 0.36, 0.45, 0.8, 0.04, 0.4, M_WHITE, { rim: false });
+	o.box(cx - 0.42, cy + 0.4, 0.1, 0.84, 0.3, 0.03, M_WHITE, { rim: false });
+	o.target = P(cx, cy - 0.3, 0.88);
+	return o;
+}
+function drawWatch(id, kind, cx, cy, face) {   /* a watch on its charging puck */
+	var o;
+	o = new Obj(id, cx, cy, 0.72);
+	o.box(cx - 0.26, cy - 0.26, 0, 0.52, 0.52, 0.08, M_WHITE, { shadow: true });
+	o.box(cx - 0.12, cy - 0.03, 0.08, 0.24, 0.08, 0.12, M_DARK, { rim: false });
+	o.box(cx - 0.2, cy - 0.05, 0.2, 0.4, 0.12, 0.4, M_BLACK);
+	o.face('L', 0.1, 0.08, 0.9, 0.92, 'fill:url(#ar-scr4)');
+	o.face('L', 0.24, 0.46, 0.76, 0.6, 'fill:#ffffff;opacity:.2');
+	o.box(cx - 0.12, cy - 0.03, 0.6, 0.24, 0.08, 0.1, M_DARK, { rim: false });
+	o.target = P(cx, cy, 0.74);
+	return o;
+}
+function drawCamera(id, kind, cx, cy, face) {   /* a camera head on a short post */
+	var o;
+	o = new Obj(id, cx, cy, 0.92);
+	o.box(cx - 0.2, cy - 0.2, 0, 0.4, 0.4, 0.06, M_DARK, { shadow: true });
+	o.box(cx - 0.05, cy - 0.05, 0.06, 0.1, 0.1, 0.48, M_DARK, { rim: false });
+	o.box(cx - 0.2, cy - 0.3, 0.54, 0.4, 0.6, 0.34, M_WHITE, { shadow: true });
+	o.face('L', 0.12, 0.12, 0.88, 0.88, 'fill:#141b1e');
+	o.led('L', 0.5, 0.5, DN, 0, 0, 1.7);
+	o.target = P(cx, cy, 0.94);
+	return o;
+}
+function drawStreamer(id, kind, cx, cy, face) {   /* a streaming box or stick: Apple TV, Chromecast, Fire TV, Shield, Roku */
+	var o;
+	o = new Obj(id, cx, cy, 0.24);
+	o.box(cx - 0.36, cy - 0.36, 0, 0.72, 0.72, 0.2, M_BLACK, { shadow: true });
+	o.line('L', 0.1, 0.5, 0.7, 0.5, 'rgba(255,255,255,.14)', 0.8);
+	o.led('L', 0.86, 0.5, DN, 0, 0, 1);
+	o.face('T', 0.14, 0.14, 0.86, 0.86, 'fill:none;stroke:rgba(255,255,255,.14);stroke-width:.8');
+	o.box(cx - 0.62, cy + 0.42, 0, 0.18, 0.5, 0.05, M_ALU, { rim: false });
+	o.target = P(cx, cy, 0.26);
+	return o;
+}
+function drawSoundbar(id, kind, cx, cy, face) {   /* a soundbar or AV receiver */
+	var o;
+	o = new Obj(id, cx, cy, 0.32);
+	o.box(cx - 1.1, cy - 0.17, 0, 2.2, 0.34, 0.26, M_BLACK, { shadow: true });
+	[0.3, 0.5, 0.7].forEach(function (v) { o.line('L', 0.04, v, 0.8, v, '#2c363a', 1.2); });
+	o.led('L', 0.9, 0.5, DN, 0, 0, 1);
+	o.target = P(cx, cy, 0.3);
+	return o;
+}
+function drawDoorbellLock(id, kind, cx, cy, face) {   /* on a piece of door frame: a video doorbell, or a keypad lock */
+	var o, g;
+	o = new Obj(id, cx, cy, 1.3);
+	o.box(cx - 0.4, cy - 0.2, 0, 0.8, 0.14, 1.25, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	o.box(cx - 0.15, cy - 0.06, 0.4, 0.3, 0.08, 0.7, kind === 'lock' ? M_METAL : M_BLACK);
+	if (kind === 'lock') {
+		[0.78, 0.62, 0.46].forEach(function (v) { [0.28, 0.5, 0.72].forEach(function (u) { g = o.fp('L', u, v); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r=".9" style="fill:#20282b"/>'); }); });
+		o.face('L', 0.4, 0.1, 0.6, 0.3, 'fill:#20282b');
+	} else {
+		o.led('L', 0.5, 0.76, DN, 0, 0, 1.5);
+		g = o.fp('L', 0.5, 0.26);
+		o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="2.6" style="fill:#11181b;stroke:' + ACC + ';stroke-width:1"/>');
+	}
+	o.target = P(cx, cy, 1.3);
+	return o;
+}
+function drawSensorThermostat(id, kind, cx, cy, face) {   /* a small puck: motion, door, temperature, leak, smoke; with a dial, a thermostat */
+	var o, g;
+	o = new Obj(id, cx, cy, 0.24);
+	o.disc(cx, cy, 0, 0.3, 0.16, M_WHITE, 'ar-cw', { shadow: true });
+	if (kind === 'thermostat') { o.svg.push(ell(P(cx, cy, 0.16), 0.2, 'fill:#141b1e;stroke:' + ACC + ';stroke-width:1.3')); o.svg.push(ell(P(cx, cy, 0.16), 0.07, 'fill:' + UPT)); }
+	else { o.svg.push(ell(P(cx, cy, 0.16), 0.12, 'fill:#aeb8bb')); g = P(cx, cy, 0.16); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="1.2" class="df-a df-led" style="fill:#3ddc97;animation-duration:' + (3 + (hash(id) % 10) / 4) + 's"/>'); }
+	o.target = P(cx, cy, 0.3);
+	return o;
+}
+function drawPlug(id, kind, cx, cy, face) {   /* a smart plug: a white block with a socket on top */
+	var o;
+	o = new Obj(id, cx, cy, 0.42);
+	o.box(cx - 0.21, cy - 0.21, 0, 0.42, 0.42, 0.38, M_WHITE, { shadow: true });
+	o.face('T', 0.2, 0.2, 0.8, 0.8, 'fill:#aeb8bb');
+	o.face('T', 0.34, 0.3, 0.42, 0.7, 'fill:#20282b'); o.face('T', 0.58, 0.3, 0.66, 0.7, 'fill:#20282b');
+	o.led('L', 0.5, 0.5, '#3ddc97', 0, 0, 1.1);
+	o.target = P(cx, cy, 0.46);
+	return o;
+}
+function drawHub(id, kind, cx, cy, face) {   /* a smart-home hub or bridge */
+	var o, g;
+	o = new Obj(id, cx, cy, 0.22);
+	o.box(cx - 0.36, cy - 0.36, 0, 0.72, 0.72, 0.16, M_WHITE, { shadow: true });
+	[0.3, 0.5, 0.7].forEach(function (u, i) { g = o.fp('T', u, 0.72); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="1.3"' + (i === 1 ? ' class="df-a df-led"' : '') + ' style="fill:' + DN + (i === 1 ? ';animation-duration:' + (2.6 + (hash(id) % 10) / 4) + 's' : '') + '"/>'); });
+	o.svg.push(ell(P(cx, cy - 0.06, 0.16), 0.13, 'fill:none;stroke:#8f9a9e;stroke-width:.8'));
+	o.target = P(cx, cy, 0.24);
+	return o;
+}
+function drawVacuum(id, kind, cx, cy, face) {   /* a robot vacuum */
+	var o, g;
+	o = new Obj(id, cx, cy, 0.3);
+	o.disc(cx, cy, 0.03, 0.5, 0.15, M_DARK, 'ar-cd', { shadow: true });
+	o.disc(cx - 0.1, cy - 0.1, 0.18, 0.15, 0.06, M_BLACK, 'ar-cd', { track: false });
+	g = P(cx + 0.2, cy + 0.2, 0.18);
+	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="1.3" style="fill:#3ddc97"/>');
+	o.target = P(cx, cy, 0.3);
+	return o;
+}
+function drawAppliance(id, kind, cx, cy, face) {   /* white goods: washer, dryer, fridge, oven, purifier, fan, heater */
+	var o;
+	o = new Obj(id, cx, cy, 1.2);
+	o.box(cx - 0.5, cy - 0.5, 0, 1.0, 1.0, 1.15, M_WHITE, { ao: true, shadow: true });
+	o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
+	o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
+	o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
+	o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');
+	[0.3, 0.45, 0.6].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#7f8a8e', 1.1); });
+	o.target = P(cx, cy, 1.2);
+	return o;
+}
+function drawIot(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 0.42);
+	o.box(cx - 0.21, cy - 0.21, 0, 0.42, 0.42, 0.42, M_WHITE, { shadow: true });
+	o.face('T', 0.3, 0.3, 0.7, 0.7, 'fill:#aeb8bb');
+	o.led('L', 0.5, 0.55, ACC, 2.6 + (hash(id) % 10) / 4, -(hash(id) % 7) / 3, 1.2);
+	o.target = P(cx, cy, 0.5);
+	return o;
+}
+function drawSwitch(id, kind, cx, cy, face) {
+	var o, b;
+	o = new Obj(id, cx, cy, 0.3);
+	o.box(cx - 0.8, cy - 0.4, 0, 1.6, 0.8, 0.24, M_BODY, { shadow: true });
+	b = o.last;
+	for (var i = 0; i < 5; i++) { var u = 0.1 + i * 0.165; o.face('L', u, 0.22, u + 0.11, 0.7, 'fill:#11181b;stroke:#c9a400;stroke-width:.7', b); o.led('L', u + 0.055, 0.86, '#3ddc97', i % 2 ? 0.8 : 0, -i * 0.2, 0.8, b); }
+	o.target = P(cx, cy, 0.3);
+	return o;
+}
+function drawConsole(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 0.3);
+	o.box(cx - 0.6, cy - 0.42, 0, 1.2, 0.84, 0.24, M_BLACK, { shadow: true });
+	o.line('L', 0.08, 0.5, 0.92, 0.5, DN, 1.2);
+	o.face('T', 0.1, 0.12, 0.9, 0.88, 'fill:none;stroke:rgba(255,255,255,.14);stroke-width:.8');
+	o.target = P(cx, cy, 0.32);
+	return o;
+}
+function drawGeneric(id, kind, cx, cy, face) {
+	var o;
+	o = new Obj(id, cx, cy, 0.45);
+	o.box(cx - 0.45, cy - 0.35, 0, 0.9, 0.7, 0.4, M_DARK, { ao: true, shadow: true });
+	o.face('T', 0.15, 0.18, 0.85, 0.82, 'fill:none;stroke:rgba(255,255,255,.14);stroke-width:.8');
+	o.led('L', 0.24, 0.6, '#3ddc97', 1.9 + (hash(id) % 10) / 5, 0, 1.1);
+	o.line('L', 0.4, 0.6, 0.85, 0.6, 'rgba(255,255,255,.18)', 1.2);
+	o.target = P(cx, cy, 0.46);
+	return o;
+}
+var DRAW = {
+	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight,
+	air: drawAir, speaker: drawSpeaker, printer: drawPrinter, watch: drawWatch, camera: drawCamera, streamer: drawStreamer, soundbar: drawSoundbar,
+	doorbell: drawDoorbellLock, lock: drawDoorbellLock, sensor: drawSensorThermostat, thermostat: drawSensorThermostat, plug: drawPlug, hub: drawHub,
+	vacuum: drawVacuum, appliance: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric
+};
+/* Devices on the map: one drawing per kind, at (cx, cy) on the floor, facing left (the default) or right.
+   Kinds without a drawing of their own get the generic box. */
+function objDevice(id, kind, cx, cy, face) {
+	var draw = kind === 'tv' && face === 'R' ? drawTvSide : (DRAW[kind] || drawGeneric);
+	return draw(id, kind, cx, cy, face);
 }
 function objTray(cx, cy) {
 	var o = new Obj('more', cx, cy, 0.36);
@@ -1319,7 +1428,7 @@ function geomBig(w, h, nodes) {
 	var n = Math.min(Math.floor((w - 64) / cu), Math.floor((h - 134) * 2 / U));   /* floor cells across both axes that fit */
 	n = Math.max(32, Math.min(n, 52));
 	var fx = Math.round(n * 9 / 16), fy = n - fx;                                     /* the small floor is 18 × 14 */
-	var x0 = -Math.round((fx - 18) * 0.4), y0 = -Math.round((fy - 14) * 0.4);
+	var x0 = -Math.round((fx - 18) * 0.4) || 0, y0 = -Math.round((fy - 14) * 0.4) || 0;
 	var g = { big: true, U: U, x0: x0, y0: y0, x1: x0 + fx, y1: y0 + fy, SW: w, SH: h, hit: 56, nodes: Math.min(nodes || 0, 3), tray: TRAY };
 	g.OX = Math.round((w - n * cu) / 2 + (g.y1 - x0) * cu);   /* the floor centred across the stage */
 	g.OY = 96 - Math.round((x0 + y0) * U / 2);
@@ -1336,7 +1445,7 @@ function genSlots(g) {
 	var inR = function (x, y, r) { return x > r[0] && x < r[2] && y > r[1] && y < r[3]; };
 	/* node zones: back right and front left as in the small view, a third front right. On a small floor (a
 	   short or narrow window) they shrink, so none reaches under the router or into another zone. */
-	var RT = [4.4, 4.8, 9.8, 9.4];
+	var RT = [3.9, 4.3, 10.3, 9.9];   /* the router and its base plate, with half a cell of room */
 	var z0 = [Math.max(g.x1 - 10.5, RT[2] + 0.4), g.y0, g.x1, g.y0 + 9];
 	var z1 = [g.x0, Math.max(g.y1 - 8.4, RT[3] + 0.3), g.x0 + 9, g.y1];
 	var z2 = [Math.max(g.x1 - 9.5, z1[2] + 0.3), Math.max(g.y1 - 8, z0[3] + 0.3), g.x1, g.y1];
@@ -1346,7 +1455,7 @@ function genSlots(g) {
 		{ zone: z1, cx: g.x0 + 1.3, cy: z1[1] + 1.3 },
 		{ zone: z2, cx: z2[0] + 1.2, cy: z2[1] + 1.2 }
 	].slice(0, g.nodes);
-	var keep = [[4.4, 4.8, 9.8, 9.4], [0.4, 0.6, 3.2, 2.9], [3.2, 0.9, 7.9, 2.5], [6.3, 2.5, 7.9, 4.8],   /* router, internet terminal, WAN pipe */
+	var keep = [RT, [0.4, 0.6, 3.2, 2.9], [3.2, 0.9, 7.9, 2.5], [6.3, 2.5, 7.9, 4.8],   /* router, internet terminal, WAN pipe */
 		[1.0, g.y0, 2.4, 1.2], [g.x0, 3.9, 3.2, 6.9]];                                                   /* the fibre from the wall, the tray */
 	var inFloor = function (s) { return s.cx - 1.4 > g.x0 && s.cx + 1.4 < g.x1 && s.cy - 1.3 > g.y0 && s.cy + 1.3 < g.y1; };
 	var inZone = function (s) { return g.nodeSlots.some(function (ns) { return inR(s.cx, s.cy, ns.zone) || s.route.some(function (p) { return inR(p[0], p[1], ns.zone); }); }); };
@@ -1777,7 +1886,7 @@ function renderMap(net) {
 		if (id === 'wan') return net.wan;
 		if (id === 'more') return { dn: trayDn, up: trayUp, sdn: traySdn, sup: traySup };
 		var x = net.byId[id];
-		if (!x) return { dn: 0, up: 0, sdn: 0, sup: 0 };
+		if (!x) return zeroRate();
 		return x.bh ? x.bh : x;
 	};
 	R.lanes.forEach(function (el) {
@@ -1899,7 +2008,7 @@ function buildFlow(gs) {
 	o.push(lbl('src:wan', '<text x="' + (FX0.src - 8) + '" y="-2" style="font-size:12px;font-weight:700;fill:#f0efec;text-anchor:end">Internet</text><text data-t="agg:wan" x="' + (FX0.src - 8) + '" y="12" style="font-size:10.5px;fill:#c3c2b7;text-anchor:end;font-variant-numeric:tabular-nums"></text>'));
 	o.push(lbl('src:loc', '<text x="' + (FX0.src - 8) + '" y="-2" style="font-size:12px;font-weight:700;fill:#f0efec;text-anchor:end">Local</text><text data-t="agg:loc" x="' + (FX0.src - 8) + '" y="12" style="font-size:10.5px;fill:#c3c2b7;text-anchor:end;font-variant-numeric:tabular-nums"></text><text x="' + (FX0.src - 8) + '" y="25" style="font-size:10px;fill:#93a9b1;text-anchor:end">LAN ↔ LAN</text>'));
 	o.push(lbl('rt', '<text data-t="rtname" x="' + (FX0.rt + 6) + '" y="0" style="font-size:12px;font-weight:700;fill:#ffcc00;text-anchor:middle"></text>'));
-	o.push(lbl('rtb', '<text data-t="agg:rt" x="' + (FX0.rt + 6) + '" y="0" style="font-size:10.5px;fill:#c3c2b7;text-anchor:middle;font-variant-numeric:tabular-nums"></text>'));
+	o.push(lbl('rtb', '<text data-t="agg:rt" x="' + (FX0.rt + 6) + '" y="0" style="font-size:10.5px;fill:#c3c2b7;text-anchor:middle;font-variant-numeric:tabular-nums;paint-order:stroke;stroke:#2b3539;stroke-width:4px;stroke-linejoin:round"></text>'));
 	gs.forEach(function (g) {
 		var nm = g.node ? 'Backhaul' : g.label, pw = Math.round(textW(nm, true) + 70);
 		o.push(lbl('g:' + g.id, '<rect x="' + (FX0.link - 4) + '" y="-12.5" width="' + pw + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/>' +
@@ -1924,6 +2033,75 @@ function buildFlow(gs) {
 	}); });
 	return { svg: svg, rows: rows.join('') };
 }
+/* What a Flow row carries (key: 'sdn'/'sup' smoothed, 'dn'/'up' shown), what a group carries, and whether a
+   group is a node that can't report per device (then its rows share one ribbon). */
+function flowRowVal(r, key) {
+	if (r.dev) return r.dev.st === 'ok' ? Math.max(r.dev[key], 0) : 0;
+	if (r.more) return r.more.reduce(function (a, dv) { return a + (dv.st === 'ok' ? Math.max(dv[key], 0) : 0); }, 0);
+	if (r.nodeOnly) return Math.max(r.nodeOnly.bh[key], 0);
+	return 0;
+}
+function flowGroupVal(g, key) { return g.node ? Math.max(g.node.bh[key], 0) : g.rows.reduce(function (a, r) { return a + flowRowVal(r, key); }, 0); }
+function flowAgg(g) { return !!(g.node && g.node.state !== 'ok'); }
+/* Where everything goes in the Flow view, from the numbers alone (no DOM): the scale k (px per Mb/s),
+   each row's slot, each group's band, the router block and the two sources. The scale is chosen on the
+   smoothed rates so it doesn't jump; the ribbons use the shown ones. */
+function flowLayout(gs, net, mode) {
+	var f = mode === 'up' ? 'up' : 'dn', bf = mode === 'up' ? 'sup' : 'sdn';
+	var lay = function (k, key) {
+		var y = G.flow.top, slot = {}, grp = {};
+		gs.forEach(function (g, gi) {
+			if (gi) y += FGGAP;
+			var y0 = y, Hh = 0, n = g.rows.length, gv = flowGroupVal(g, key);
+			var aggH = flowAgg(g) && gv > 0 ? Math.max(gv * k, 1.5) : 0;
+			g.rows.forEach(function (r, ri) {
+				if (ri) y += FGAP;
+				var v = flowAgg(g) ? 0 : flowRowVal(r, key), h = v > 0 ? Math.max(v * k, 1.5) : 0;
+				var sl = Math.max(h, G.flow.rowMin, aggH ? (aggH - FGAP * (n - 1)) / n : 0);
+				slot[r.id] = { top: y, s: sl, h: h, bar: y + (sl - h) / 2 };
+				y += sl; Hh += h;
+			});
+			if (aggH) Hh = aggH;
+			/* a node's backhaul can carry more than its listed clients (the node itself, rounding) */
+			if (g.node && !flowAgg(g) && gv * k > Hh) Hh = Math.min(gv * k, y - y0);
+			grp[g.id] = { y0: y0, y1: y, H: Hh, top: (y0 + y) / 2 - Hh / 2 };
+		});
+		return { slot: slot, grp: grp, bottom: y };
+	};
+	var total = gs.reduce(function (a, g) { return a + flowGroupVal(g, bf); }, 0);
+	var k = Math.min(FKCAP, G.flow.target / Math.max(total, 1e-6)), LIM = G.flow.limit;
+	for (var i = 0; LIM && i < 120 && lay(k, bf).bottom > LIM - 6; i++) k *= 0.97;
+	var Lf = lay(k, f);
+	for (var j = 0; LIM && j < 80 && Lf.bottom > LIM; j++) { k *= 0.97; Lf = lay(k, f); }
+	var grp = Lf.grp, first = grp[gs[0].id], last = grp[gs[gs.length - 1].id];
+	var Hr = gs.reduce(function (a, g) { return a + grp[g.id].H; }, 0);
+	var rc = (first.top + last.top + last.H) / 2;
+	if (!LIM) rc = Math.min(rc, Math.max(G.flow.top + Hr / 2 + FSGAP, G.SH / 2));   /* scrolling: the router stays on the first screen */
+	var wv = Math.max(net.wan[f], 0), lv = Math.max(net.local[f], 0);
+	var hi = wv + lv > 0 ? Hr * Math.min(wv / (wv + lv), 1) : Hr;
+	var stop = rc - (Hr + FSGAP) / 2;
+	return { k: k, slot: Lf.slot, grp: grp, bottom: Lf.bottom, Hr: Hr, rtop: rc - Hr / 2,
+		src: { wan: { top: stop, h: hi }, loc: { top: stop + hi + FSGAP, h: Hr - hi } },
+		height: LIM ? G.SH : Math.max(G.SH, Math.ceil(Lf.bottom + 12)) };   /* the big view: the stage grows and scrolls */
+}
+/* What a Flow row says: name, second line, icon, state, the big view's two columns. */
+function flowRowInfo(g, r) {
+	var x = { name: '', sub: '', icon: 'generic', st: 'ok', c1: '', c2: '' };
+	if (r.dev) {
+		var dv = r.dev; x.name = dv.name; x.icon = dv.kind; x.st = dv.st;
+		x.sub = dv.st === 'off' ? 'Offline' : (dv.st === 'nodata' ? 'Not reported' : linkShort(dv));
+		if (G.big) {   /* wider rows: where it's connected and its address, then signal and link rate in columns */
+			var ip = ipOf(dv), wired = dv.link === 'wired';
+			x.sub = (wired ? dv.portLabel : (dv.node ? dv.node.name : bandName(dv.band))) + (ip ? ' · ' + ip : '') + (dv.guest ? ' · guest' : '') + (dv.st === 'off' ? ' · offline' : '');
+			x.c1 = wired ? (dv.speed ? speedTxt(dv.speed) : '') : dbm(dv.rssi, '');
+			x.c2 = wired ? (dv.count > 1 ? dv.count + ' devices' : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
+		}
+	} else if (r.more) { x.name = '+' + r.more.length + ' more'; x.icon = 'more'; x.sub = r.more.slice(0, 3).map(function (dv) { return dv.name; }).join(', '); }
+	else { x.name = r.nodeOnly.name; x.icon = FORM_ICON[formOf(r.nodeOnly.model, 'tower').form] || 'mesh'; x.sub = 'No clients right now'; }
+	if (g.node && flowAgg(g)) { x.st = g.node.online ? 'nodata' : 'off'; if (r.dev) x.sub = g.node.online ? 'Not reported' : 'Offline'; }
+	return x;
+}
+/* The Flow view, every poll: the layout above, painted onto the scene (rebuilt only when the rows change). */
 function renderFlow(net) {
 	var gs = flowGroups(net), sig = flowSignature(gs);
 	A.flowGs = gs;
@@ -1945,54 +2123,10 @@ function renderFlow(net) {
 	var R = A.flowRefs, upm = A.mode === 'up', f = upm ? 'up' : 'dn', bf = upm ? 'sup' : 'sdn';
 	R.mode.setAttribute('class', upm ? 'm-up' : 'm-dn');
 	R.t.srchead.textContent = upm ? 'DESTINATION' : 'SOURCE';
-	var sel = selValid(net);
-	var rowVal = function (r, key) {
-		if (r.dev) return r.dev.st === 'ok' ? Math.max(r.dev[key], 0) : 0;
-		if (r.more) return r.more.reduce(function (a, dv) { return a + (dv.st === 'ok' ? Math.max(dv[key], 0) : 0); }, 0);
-		if (r.nodeOnly) return Math.max(r.nodeOnly.bh[key], 0);
-		return 0;
-	};
-	var gVal = function (g, key) { return g.node ? Math.max(g.node.bh[key], 0) : g.rows.reduce(function (a, r) { return a + rowVal(r, key); }, 0); };
-	var agg = function (g) { return g.node && g.node.state !== 'ok'; };
-	var lay = function (k, key) {
-		var y = G.flow.top, slot = {}, grp = {};
-		gs.forEach(function (g, gi) {
-			if (gi) y += FGGAP;
-			var y0 = y, Hh = 0, n = g.rows.length, gv = gVal(g, key);
-			var aggH = agg(g) && gv > 0 ? Math.max(gv * k, 1.5) : 0;
-			g.rows.forEach(function (r, ri) {
-				if (ri) y += FGAP;
-				var v = agg(g) ? 0 : rowVal(r, key), h = v > 0 ? Math.max(v * k, 1.5) : 0;
-				var sl = Math.max(h, G.flow.rowMin, aggH ? (aggH - FGAP * (n - 1)) / n : 0);
-				slot[r.id] = { top: y, s: sl, h: h, bar: y + (sl - h) / 2 };
-				y += sl; Hh += h;
-			});
-			if (aggH) Hh = aggH;
-			/* a node's backhaul can carry more than its listed clients (the node itself, rounding) */
-			if (g.node && !agg(g) && gv * k > Hh) Hh = Math.min(gv * k, y - y0);
-			grp[g.id] = { y0: y0, y1: y, H: Hh, top: (y0 + y) / 2 - Hh / 2 };
-		});
-		return { slot: slot, grp: grp, bottom: y };
-	};
-	var total = gs.reduce(function (a, g) { return a + gVal(g, bf); }, 0);
-	var k = Math.min(FKCAP, G.flow.target / Math.max(total, 1e-6)), LIM = G.flow.limit;
-	for (var i = 0; LIM && i < 120 && lay(k, bf).bottom > LIM - 6; i++) k *= 0.97;
-	var Lf = lay(k, f);
-	for (var j = 0; LIM && j < 80 && Lf.bottom > LIM; j++) { k *= 0.97; Lf = lay(k, f); }
-	if (!LIM) {   /* the big view: the stage grows and scrolls */
-		var Hs = String(Math.max(G.SH, Math.ceil(Lf.bottom + 12)));
-		if (R.svg.getAttribute('height') !== Hs) { R.svg.setAttribute('height', Hs); R.svg.setAttribute('viewBox', '0 0 ' + G.SW + ' ' + Hs); }
-	}
-	var slot = Lf.slot, grp = Lf.grp;
-	var first = grp[gs[0].id], last = grp[gs[gs.length - 1].id];
-	var Hr = gs.reduce(function (a, g) { return a + grp[g.id].H; }, 0);
-	var rc = (first.top + last.top + last.H) / 2;
-	if (!LIM) rc = Math.min(rc, Math.max(G.flow.top + Hr / 2 + FSGAP, G.SH / 2));   /* scrolling: the router stays on the first screen */
-	var rtop = rc - Hr / 2;
-	var wv = Math.max(net.wan[f], 0), lv = Math.max(net.local[f], 0);
-	var hi = wv + lv > 0 ? Hr * Math.min(wv / (wv + lv), 1) : Hr;
-	var stop = rc - (Hr + FSGAP) / 2;
-	var src = { wan: { top: stop, h: hi }, loc: { top: stop + hi + FSGAP, h: Hr - hi } };
+	var sel = selValid(net), rowVal = flowRowVal, gVal = flowGroupVal, agg = flowAgg;
+	var Lay = flowLayout(gs, net, A.mode), k = Lay.k, slot = Lay.slot, grp = Lay.grp, Hr = Lay.Hr, rtop = Lay.rtop, src = Lay.src;
+	var Hs = String(Lay.height);
+	if (R.svg.getAttribute('height') !== Hs) { R.svg.setAttribute('height', Hs); R.svg.setAttribute('viewBox', '0 0 ' + G.SW + ' ' + Hs); }
 	var rib = function (x0, a0, b0, x1, a1, b1) {
 		var xm = n1((x0 + x1) / 2);
 		return 'M' + n1(x0) + ' ' + n1(a0) + ' C' + xm + ' ' + n1(a0) + ' ' + xm + ' ' + n1(a1) + ' ' + n1(x1) + ' ' + n1(a1) + ' L' + n1(x1) + ' ' + n1(b1) +
@@ -2082,19 +2216,7 @@ function renderFlow(net) {
 		var el = R.rows[r.id], sl = slot[r.id];
 		if (!el) return;
 		el.style.top = n1(sl.top) + 'px'; el.style.height = n1(sl.s) + 'px';
-		var name, sub, icon, st = 'ok', c1 = '', c2 = '';
-		if (r.dev) {
-			var dv = r.dev; name = dv.name; icon = dv.kind; st = dv.st;
-			sub = dv.st === 'off' ? 'Offline' : (dv.st === 'nodata' ? 'Not reported' : linkShort(dv));
-			if (G.big) {   /* wider rows: where it's connected and its address, then signal and link rate in columns */
-				var ip = ipOf(dv), wired = dv.link === 'wired';
-				sub = (wired ? dv.portLabel : (dv.node ? dv.node.name : bandName(dv.band))) + (ip ? ' · ' + ip : '') + (dv.guest ? ' · guest' : '') + (dv.st === 'off' ? ' · offline' : '');
-				c1 = wired ? (dv.speed ? speedTxt(dv.speed) : '') : dbm(dv.rssi, '');
-				c2 = wired ? (dv.count > 1 ? dv.count + ' devices' : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
-			}
-		} else if (r.more) { name = '+' + r.more.length + ' more'; icon = 'more'; sub = r.more.slice(0, 3).map(function (dv) { return dv.name; }).join(', '); }
-		else { name = r.nodeOnly.name; icon = FORM_ICON[formOf(r.nodeOnly.model, 'tower').form] || 'mesh'; sub = 'No clients right now'; }
-		if (g.node && agg(g)) { st = g.node.online ? 'nodata' : 'off'; if (r.dev) sub = g.node.online ? 'Not reported' : 'Offline'; }
+		var x = flowRowInfo(g, r), name = x.name, sub = x.sub, icon = x.icon, st = x.st, c1 = x.c1, c2 = x.c2;
 		var v = st === 'ok' ? rowVal(r, f) : null, fm = fmt(v);
 		var isOn = rowSel(r);
 		var key = [name, sub, icon, fm.n, fm.u, st, upm, c1, c2].join('|');
@@ -2169,7 +2291,7 @@ function readoutFor(net) {
 	} else if (id && net.byId[id] && net.byId[id].link) {
 		var dv = net.byId[id];
 		d = { icon: dv.kind, badge: dv.link === 'wired' ? 'Wired' : 'Wi-Fi', name: dv.name,
-			link: dv.link === 'wired' ? 'Wired · ' + dv.portLabel : bandName(dv.band) + ' · on ' + (dv.node ? dv.node.name : rname) + (dv.guest ? ' · guest network' : '') };
+			link: dv.link === 'wired' ? 'Wired · ' + dv.portLabel : bandName(dv.band) + ' · on ' + (dv.node ? dv.node.name : rname) + (dv.guest ? ' · guest network' : '') + (dv.alias ? ' · matched by host name' : '') };
 		dn = dv.st === 'ok' ? dv.dn : null; up = dv.st === 'ok' ? dv.up : null;
 		sdn = pct(dn, net.total.dn) + '% of all download'; sup = pct(up, net.total.up) + '% of all upload';
 		if (dv.link === 'wired') { k1 = 'Port'; v1 = dv.portLabel; k2 = 'Link rate'; v2 = dv.speed ? dv.speed + ' Mb/s' : '—'; }
@@ -2476,7 +2598,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>

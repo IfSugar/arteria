@@ -218,4 +218,37 @@ const ovl = (a, b) => !(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= 
 });
 ok(!zb.length, 'expanded view: node zones clear of the router and of each other (7 window sizes, up to 3 nodes)', zb.slice(0, 5).join('; '));
 
+// ---- 12. the Flow layout, from numbers alone: rows apart and tall enough, ribbons fit their groups, sources add up
+const fdevs = [];
+for (let i = 0; i < 40; i++) fdevs.push({ id: 'F' + i, mac: '00:00:5E:00:53:' + (0x40 + i).toString(16).toUpperCase(), name: 'Dev ' + i, link: i % 7 ? 'wifi' : 'wired', band: i % 3 ? '5' : '2.4',
+	portLabel: 'LAN 1', kind: 'generic', st: 'ok', dn: (i % 5) * 3.1, up: i % 4, sdn: (i % 5) * 3.1, sup: i % 4 });
+const fnet = { router: { model: 'RT-AX86U' }, nodes: [], devs: fdevs, byId: {}, wan: { dn: 30, up: 10, sdn: 30, sup: 10 }, local: { dn: 12, up: 3, sdn: 12, sup: 3 } };
+fdevs.forEach(d => { fnet.byId[d.id] = d; });
+const flbad = [];
+[T.geomSmall(), T.geomBig(1184, 790, 0)].forEach(g => {
+	const keepG = T.G(); T.useGeom(g);
+	try {
+		['dn', 'up'].forEach(mode => {
+			A.flowAt = 0;
+			const gs = T.flowGroups(fnet), L = T.flowLayout(gs, fnet, mode), tag = (g.big ? 'big ' : 'small ') + mode + ': ';
+			let prev = -1, rows = 0;
+			gs.forEach(gr => gr.rows.forEach(r => {
+				const s = L.slot[r.id]; rows++;
+				if (!s || s.top < prev - 0.01) flbad.push(tag + 'rows overlap at ' + r.id);
+				if (s && s.s < g.flow.rowMin - 0.01) flbad.push(tag + 'row shorter than a tap target: ' + r.id);
+				if (s && (s.h > s.s + 0.01 || s.bar < s.top - 0.01)) flbad.push(tag + 'ribbon outside its row: ' + r.id);
+				prev = s ? s.top + s.s : prev;
+			}));
+			if (g.big && rows !== fdevs.length) flbad.push(tag + rows + ' rows for ' + fdevs.length + ' devices');
+			if (!g.big && rows > g.flow.rows) flbad.push(tag + rows + ' rows, budget ' + g.flow.rows);
+			if (g.flow.limit && L.bottom > g.flow.limit + 0.01) flbad.push(tag + 'runs past the stage: ' + L.bottom);
+			if (!g.flow.limit && L.height < L.bottom) flbad.push(tag + 'the scrolling stage is shorter than its rows');
+			if (Math.abs(L.src.wan.h + L.src.loc.h - L.Hr) > 0.01) flbad.push(tag + 'internet + local != router');
+			if (!(L.k > 0 && L.k <= 11.5)) flbad.push(tag + 'scale ' + L.k);
+		});
+	} catch (e) { flbad.push('ERROR ' + e.message); }
+	T.useGeom(keepG);
+});
+ok(!flbad.length, 'Flow layout: rows apart and tap-sized, ribbons in their rows, internet + local = router, fits or scrolls', flbad.slice(0, 5).join('; '));
+
 process.exit(fails ? 1 : 0);
