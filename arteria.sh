@@ -885,6 +885,15 @@ latest_tag() {
 		| sed -n 's#.*/releases/tag/\([0-9][0-9.]*\)$#\1#p')
 	echo "$t"
 }
+# Why there's no latest release to install: none has been published yet, or GitHub can't be reached.
+no_release_why() {
+	code=$(curl -s --connect-timeout 15 -o /dev/null -w '%{http_code}' "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null)
+	case "$code" in
+		404) printf "No release of %s has been published yet, so there's nothing to update to. '%s update dev' installs the newest code on main (a development version)." "$TITLE" "$SCRIPT" ;;
+		''|000) printf "Couldn't reach GitHub (no internet connection on the router, or DNS?); nothing was changed." ;;
+		*) printf "GitHub didn't list the latest release (HTTP %s; it may be rate-limiting this address for a while); nothing was changed." "$code" ;;
+	esac
+}
 release_url() {
 	[ -n "$AR_RAW_URL" ] && { echo "$RAW_URL"; return; }
 	t=$(latest_tag); [ -n "$t" ] && echo "$RAW_BASE/$t"
@@ -1000,7 +1009,7 @@ install_dl() {   # [build]
 update() {   # [force]  fetch the latest release from GitHub and reinstall over this one
 	say "Checking GitHub for updates..."
 	rel=$(release_url)
-	[ -n "$rel" ] || die "Couldn't find the latest release on GitHub (no connection to github.com?); nothing was changed."
+	[ -n "$rel" ] || die "$(no_release_why)"
 	get_script "$rel" "the latest release"
 	if [ "$new" = "$VERSION" ] && [ "$1" != "force" ] && [ ! -f "$BUILD_FILE" ]; then
 		rm -rf "$dl"; say "Already up to date ($VERSION)."; return 0

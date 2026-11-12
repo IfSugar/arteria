@@ -463,6 +463,7 @@ while [ \$# -gt 0 ]; do
 	shift
 done
 echo "\$url" >> "$t/curl.log"
+[ -f "$t/offline" ] && { [ -n "\$w" ] && printf 000; exit 7; }   # no connection
 case "\$url" in
 	https://raw.githubusercontent.com/IfSugar/arteria/*) f="$srv/raw/\${url#https://raw.githubusercontent.com/IfSugar/arteria/}" ;;
 	https://api.github.com/repos/IfSugar/arteria/releases/latest) f="$srv/api/latest" ;;
@@ -482,6 +483,11 @@ release() {   # dir version: a whole release of this script and page, renumbered
 }
 upd() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" "$@" < /dev/null > "$t/upd.out" 2>&1; }
 inst_ver() { sed -n 's/^VERSION="\([0-9.]*\)".*/\1/p' "$R/jffs/addons/arteria/arteria.sh"; }
+upd update || true   # nothing published yet: GitHub answers 404
+grep -q 'No release of Arteria has been published yet' "$t/upd.out" && grep -q 'update dev' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] \
+	&& ok "update: with no release yet, it says so and points to 'update dev'" || { bad "update, no release:"; cat "$t/upd.out"; }
+touch "$t/offline"; upd update || true; rm -f "$t/offline"
+grep -q "Couldn't reach GitHub" "$t/upd.out" && ok "update: without a connection, it says so" || { bad "update, offline:"; cat "$t/upd.out"; }
 printf '{"tag_name": "%s"}' "$cur" > "$srv/api/latest"; release "$cur" "$cur"
 upd update || true; grep -q 'Already up to date' "$t/upd.out" && [ "$(inst_ver)" = "$cur" ] && ok "update: the same version changes nothing" || { bad "update, same version:"; cat "$t/upd.out"; }
 printf '{"tag_name": "9.9.9"}' > "$srv/api/latest"; release 9.9.9 9.9.9
