@@ -189,7 +189,7 @@ Arteria follows amtm's conventions for third-party scripts:
 ## What it changes on your router
 
 - **Nothing until the checks pass.** `install` first verifies the firmware, the Addons API, the Broadcom driver's per-client counters, the shell tools it needs, JFFS space and a free page slot. If anything fails it stops without changing anything. Run `arteria.sh check` to see the checklist on its own.
-- **JFFS (flash):** about 245 KB of addon files and the node key, written at install. One tagged line is added to each of `/jffs/scripts/services-start` and `service-event`. Nothing is written to flash while sampling, apart from a node's host key the first time Arteria connects to it.
+- **JFFS (flash):** about 250 KB of addon files and the node key, written at install. One tagged line is added to each of `/jffs/scripts/services-start` and `service-event`. Nothing is written to flash while sampling, apart from a node's host key the first time Arteria connects to it.
 - **Settings:** the only router setting it may change is *JFFS custom scripts and configs*, switched on if it's off.
 - **AiMesh nodes:** when you run `nodekey` (or say yes at install), one line is added to each node's authorized keys (*Administration → System → Authorized Keys*, stored in the node's nvram). Nothing else on a node is changed.
 - **RAM only (gone after a reboot, recreated at boot):** the web page, the menu entry and the sample files (a few KB). The menu is edited on a copy and swapped in only if the result is exactly one new line in a tab list (after *Statistic*, or last in *Network Tools*); otherwise it's left alone and the installer prints the page's direct link.
