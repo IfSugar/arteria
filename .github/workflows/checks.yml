@@ -73,6 +73,6 @@ jobs:
       - name: Check the page in a browser (every scenario, the expanded view, keyboard, hostile names, two tabs)
         # Headless Chrome (the runner's own) against preview.py's made-up data.
         run: |
-          python3 -m venv /tmp/pw && /tmp/pw/bin/pip install --quiet playwright
+          python3 -m venv /tmp/pw && /tmp/pw/bin/pip install --quiet playwright==1.63.0   # pinned
           /tmp/pw/bin/python .github/tests/page-browser.py "$(command -v google-chrome || command -v chromium)"
 

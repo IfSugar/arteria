@@ -115,6 +115,9 @@ r = al('<Tom\'s tablet>' + OLD + '>0>21>>', [lease(OLD, 'Toms-iPad'), lease(NEW,
 ok(!r[NEW] && !r[NEW2], 'two unnamed addresses with that host name: no match');
 r = al('<Tom\'s tablet>' + OLD + '>0>21>>', [lease(OLD, 'Toms-iPad'), lease(NEW, 'Toms-iPad')], { [NEW]: 1, [OLD]: 1 });
 ok(!r[NEW], 'the named address is still connected: no match');
+let thrown = '';
+try { al('<Phone>' + OLD + '>0>10>>', [lease(OLD, 'constructor'), lease(NEW, 'constructor'), lease(NEW2, '__proto__')], { [NEW]: 1, [NEW2]: 1 }); } catch (e) { thrown = e.message; }
+ok(!thrown, 'host names like "constructor" or "__proto__" are just names', thrown);
 ok(T.isPrivate('0A:00:00:00:00:01') && T.isPrivate('f6:00:00:00:00:01') && !T.isPrivate('00:00:5E:00:53:01'), 'private (locally administered) addresses are recognised');
 
 // ---- 5. the device report: numbers and rule names only

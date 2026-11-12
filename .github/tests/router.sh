@@ -540,4 +540,15 @@ AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addo
 cmp -s "$R/jffs/scripts/services-start" "$t/ss.before" && ok "other scripts' hook lines untouched" || { bad "services-start changed:"; cat "$R/jffs/scripts/services-start"; }
 grep -q Arteria "$m" && bad "menu line left behind" || ok "menu line removed"
 
+# A page someone planted next to the installer (a link, or a file that isn't root's own) is never installed:
+# the real one is downloaded from the release instead.
+mkdir -p "$t/inst"; cp "$script" "$t/inst/arteria.sh"
+printf 'PLANTED <!-- arteria-version: %s -->\n</html>\n' "$cur" > "$t/planted.asp"; ln -s "$t/planted.asp" "$t/inst/arteria.asp"
+printf '{"tag_name": "%s"}' "$cur" > "$srv/api/latest"; release "$cur" "$cur"; : > "$t/curl.log"
+AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$t/inst/arteria.sh" install < /dev/null > "$t/inst.out" 2>&1 || true
+if ! grep -q PLANTED "$R/jffs/addons/arteria/arteria.asp" 2>/dev/null && grep -q "arteria-version: $cur " "$R/jffs/addons/arteria/arteria.asp" && grep -q "/$cur/arteria.asp" "$t/curl.log"; then
+	ok "install: a page planted next to the installer is ignored, the release's is downloaded"
+else bad "planted page:"; cat "$t/inst.out"; head -3 "$R/jffs/addons/arteria/arteria.asp"; fi
+AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > /dev/null 2>&1 || true
+
 [ $fail -eq 0 ] && echo "Router: all checks passed." || { echo "::error::Router checks failed."; exit 1; }

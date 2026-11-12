@@ -74,7 +74,7 @@ No Entware or USB drive needed.
 Over SSH on the router:
 
 ```sh
-curl -fsL --retry 3 "https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh" -o /tmp/arteria.sh && sh /tmp/arteria.sh install
+d=/tmp/arteria-install; rm -rf "$d" && mkdir -m 700 "$d" && curl -fsL --retry 3 "https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh" -o "$d/arteria.sh" && sh "$d/arteria.sh" install; rm -rf "$d"
 ```
 
 <details>
@@ -83,8 +83,9 @@ curl -fsL --retry 3 "https://github.com/IfSugar/arteria/releases/latest/download
 Download `arteria.sh` and `arteria.asp` from this repo, copy both to the router (use your router's IP and SSH username), then run the installer:
 
 ```sh
-scp -O arteria.sh arteria.asp admin@192.168.50.1:/tmp/
-ssh admin@192.168.50.1 'sh /tmp/arteria.sh install'
+ssh admin@192.168.50.1 'd=/tmp/arteria-install; rm -rf "$d" && mkdir -m 700 "$d"'
+scp -O arteria.sh arteria.asp admin@192.168.50.1:/tmp/arteria-install/
+ssh admin@192.168.50.1 'sh /tmp/arteria-install/arteria.sh install; rm -rf /tmp/arteria-install'
 ```
 </details>
 
@@ -108,7 +109,7 @@ Open **Traffic Analyzer → Arteria**, the tab after *Statistic*. Routers withou
 
 The router only knows a node's backhaul: the total going to and from it. To show the devices connected to each node, Arteria asks the node itself, over SSH, while the page is open.
 
-- **A key only the router holds.** At install, Arteria creates an SSH key in `/jffs/addons/arteria/node_key` and offers to add its public half to each node's authorized keys. That asks for the node's password once (your router's admin password, which AiMesh nodes share); it goes to the node only and is never stored. Run `arteria.sh nodekey` any time to do it later, or again after a node was reset. Like your own SSH key would be, it's a full admin login on each node, so it never leaves the router (readable by root only). AiMesh doesn't copy the router's authorized keys to its nodes, so this is needed even if you log in to the router with a key.
+- **A key only the router holds.** At install, Arteria creates an SSH key in `/jffs/addons/arteria/node_key` and offers to add its public half to each node's authorized keys. That asks for the node's password once (your router's admin password, which AiMesh nodes share); it goes to the node only and is never stored. Run `arteria.sh nodekey` any time to do it later, or again after a node was reset. Like your own SSH key would be, it's a full admin login on each node, so it stays on the router (readable by root only); note that a backup of JFFS (Merlin's own, or a backup addon) includes it, so keep those backups private. AiMesh doesn't copy the router's authorized keys to its nodes, so this is needed even if you log in to the router with a key.
 - **One session per node, only while the page is open.** The router keeps one SSH session to each node, on the router's SSH port and with its admin name. The node runs a small read-only loop that prints its clients' counters every 2 seconds. When you close the page the router hangs up and the loop ends; it also ends by itself after 30 minutes.
 - **Key login only.** Arteria never offers a node a password: key logins use Dropbear's `-o BatchMode=yes` (Dropbear 2024.84 and later; Merlin 3004.388.13 has 2026.94), and the sampler has no terminal anyway. On an older SSH client, `nodes test` won't try the key from a terminal, since it couldn't stop a password prompt; the page still shows whether each node answers. If a node refuses the key, Arteria says so on the page and doesn't retry until the page is opened again. Each node's host key is pinned on first use, in `/jffs/addons/arteria/.ssh/known_hosts`. If a node later shows a different identity (after a reset or a firmware update, or if something else is answering at its address), the page says so and `nodekey` asks before trusting the new one, so your password never goes to a device that only claims to be the node.
 - **If a node refuses the right password.** ASUS firmware locks out an address for a while after several failed logins, and then refuses even the right password from it (the node's `/tmp/protect_srv.log` shows it). A refused key doesn't count, a wrong password or user name does. Wait a while, or reboot the node, and run `nodekey` again. Or add the key on the node yourself: `arteria.sh nodekey print` shows one line to paste in an SSH session on the node, from any computer.
@@ -182,7 +183,7 @@ Arteria follows amtm's conventions for third-party scripts:
 | Version line | `^VERSION=` |
 | Remote script | `https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh` (the latest release, never unreleased work) |
 | Check string | `IfSugar/arteria` |
-| Install | download the remote script to `/tmp/arteria.sh`, then `sh /tmp/arteria.sh install` |
+| Install | download the remote script into a new folder only root can write (not straight into `/tmp`), then run `sh <that folder>/arteria.sh install` |
 | Open | `/jffs/addons/arteria/arteria.sh` |
 | Entware | not needed |
 

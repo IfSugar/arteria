@@ -562,7 +562,7 @@ function hostMemo(set) {   /* per-browser memory of "this named address used thi
 }
 /* online: { MAC: 1 } for every address in this sample. Returns { newMac: { mac: oldMac, name, type, host } }. */
 function buildAliases(N, online) {
-	var memo = hostMemo(), learn = {}, named = {}, fresh = {}, out = {};
+	var memo = hostMemo(), learn = {}, named = Object.create(null), fresh = Object.create(null), out = {};   /* keyed by host names: "constructor" is one */
 	var hostOf = function (mac) { var l = N.lease[mac], m = N.nmp[mac]; return hostKey(l && l.host) || hostKey(m && m.name) || hostKey(memo[mac]); };
 	Object.keys(N.custom).forEach(function (mac) {
 		var h = hostOf(mac);
@@ -2731,7 +2731,7 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 			</svg>
 		</div>
 	</div>
-	<div class="ar-foot"><span id="arFootTx">Arteria</span><span class="ar-foot-r"><button type="button" class="ar-link" id="arRepBtn" aria-controls="arReport" aria-expanded="false">Device report</button><a href="https://github.com/IfSugar/arteria" target="_blank" rel="noopener">GitHub</a></span></div>
+	<div class="ar-foot"><span id="arFootTx">Arteria</span><span class="ar-foot-r"><button type="button" class="ar-link" id="arRepBtn" aria-controls="arReport" aria-expanded="false">Device report</button><a href="https://github.com/IfSugar/arteria" target="_blank" rel="noopener noreferrer">GitHub</a></span></div>
 </div>
 </td>
 </tr>
