@@ -1433,58 +1433,6 @@ function objDevice(id, kind, cx, cy, face) {
 	var draw = kind === 'tv' && face === 'R' ? drawTvSide : (DRAW[kind] || drawGeneric);
 	return draw(id, kind, cx, cy, face);
 }
-/* The Flow's pictures: the Map's own drawings, each made once (per kind, or per router or node model) and cropped
-   to its outline, so it fits any size. The phone, tablet and watch stand on something on the Map; their pictures
-   leave that out, since at this size the stand is all you'd see. */
-function thumbPhone(id, kind, cx, cy) {
-	var o = new Obj(id, cx, cy, 1.1);
-	o.box(cx - 0.28, cy - 0.05, 0, 0.56, 0.1, 1.1, M_BLACK);
-	o.face('L', 0.09, 0.04, 0.91, 0.96, 'fill:url(#ar-scr5)');
-	o.face('L', 0.38, 0.9, 0.62, 0.93, 'fill:#0d1214');
-	o.face('L', 0.18, 0.5, 0.82, 0.62, 'fill:#ffffff;opacity:.2');
-	return o;
-}
-function thumbTablet(id, kind, cx, cy) {
-	var o = new Obj(id, cx, cy, 1.2);
-	o.box(cx - 0.48, cy - 0.04, 0, 0.96, 0.08, 1.2, M_BLACK);
-	o.face('L', 0.07, 0.06, 0.93, 0.94, 'fill:url(#ar-scr5)');
-	o.face('L', 0.14, 0.52, 0.6, 0.86, 'fill:#ffffff;opacity:.16');
-	return o;
-}
-function thumbWatch(id, kind, cx, cy) {
-	var o = new Obj(id, cx, cy, 1.0);
-	o.box(cx - 0.13, cy - 0.03, 0, 0.26, 0.06, 0.32, M_DARK, { rim: false });   /* the strap below */
-	o.box(cx - 0.2, cy - 0.05, 0.3, 0.4, 0.12, 0.42, M_BLACK);
-	o.face('L', 0.1, 0.08, 0.9, 0.92, 'fill:url(#ar-scr4)');
-	o.face('L', 0.24, 0.46, 0.76, 0.6, 'fill:#ffffff;opacity:.2');
-	o.box(cx - 0.13, cy - 0.03, 0.7, 0.26, 0.06, 0.32, M_DARK, { rim: false });   /* and above */
-	return o;
-}
-var THUMB_DRAW = { phone: thumbPhone, tablet: thumbTablet, watch: thumbWatch };
-var THUMB = Object.create(null);
-function thumb(key, make) {
-	var t = THUMB[key];
-	if (!t) {
-		var o = make(), b = o.bbox(), w = b[2] - b[0], h = b[3] - b[1], z = Math.max(w, h, 1), p = z * 0.05;
-		t = THUMB[key] = { svg: o.svg.join(''), vb: [b[0] - (z - w) / 2 - p, b[1] - (z - h) / 2 - p, z + 2 * p, z + 2 * p].map(n1).join(' ') };
-	}
-	return t;
-}
-function picSvg(t, size, svg) {
-	return '<svg width="' + size + '" height="' + size + '" viewBox="' + t.vb + '" aria-hidden="true" style="display:block;flex:none;overflow:visible">' + (svg || t.svg) + '</svg>';
-}
-function devicePic(kind, size) {
-	var draw = THUMB_DRAW[kind] || DRAW[kind];
-	if (!draw) return iconSvg(kind, Math.round(size * 0.6), INK2);   /* "+N more": the three dots */
-	return picSvg(thumb('d:' + kind, function () { return draw('pic', kind, 5, 5, 'L'); }), size);
-}
-function routerPic(model, size) { return picSvg(thumb('r:' + model, function () { return objRouter(model); }), size); }
-function wanPic(size) { return picSvg(thumb('wan', objWan), size); }
-/* A node, its ring violet while it's online and red when it isn't, as on the Map. */
-function nodePic(model, size, online) {
-	var t = thumb('n:' + model, function () { return objNode('pic', 5, 5, model); });
-	return picSvg(t, size, online ? t.svg : t.svg.replace('<g data-ring="pic:lit">', '<g data-ring="pic:lit" class="hide">').replace('<g data-ring="pic:dead" class="hide">', '<g data-ring="pic:dead">'));
-}
 function objTray(cx, cy) {
 	var o = new Obj('more', cx, cy, 0.36);
 	o.box(cx - 0.9, cy - 0.7, 0, 1.8, 1.4, 0.1, M_DARK, { shadow: true });
@@ -1786,9 +1734,21 @@ function buildMap(net, L) {
 		return '<g data-lead="' + lb.id + '" class="ob"><path d="M' + n1(lb.px) + ' ' + n1(lb.py) + ' L' + n1(lb.ax) + ' ' + n1(lb.ay) + '" style="fill:none;stroke:rgba(255,255,255,.4);stroke-width:1"/>' +
 			'<circle cx="' + n1(lb.ax) + '" cy="' + n1(lb.ay) + '" r="2" style="fill:#f0efec"/></g>';
 	});
-
+	var grad = function (id, a, b, c) {
+		return '<linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:' + a + '"/>' + (c ? '<stop offset=".55" style="stop-color:' + b + '"/>' : '') + '<stop offset="1" style="stop-color:' + (c || b) + '"/></linearGradient>';
+	};
+	var defs = '<defs><linearGradient id="ar-floor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:#43535b"/><stop offset="1" style="stop-color:#2e3b41"/></linearGradient>' +
+		grad('ar-scr1', '#123049', '#2c76a6', '#6cc6ea') + grad('ar-scr2', '#22265a', '#4f57bd', '#a3acf5') + grad('ar-scr3', '#0f2a40', '#2f78a6') + grad('ar-scr4', '#1b3346', '#4a96c0') + grad('ar-scr5', '#1a3a52', '#5aa9d6') +
+		'<linearGradient id="ar-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" style="stop-color:#59c3ff;stop-opacity:.5"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></linearGradient>' +
+		'<radialGradient id="ar-halo"><stop offset=".45" style="stop-color:#59c3ff;stop-opacity:.34"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></radialGradient>' +
+		'<radialGradient id="ar-globe" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#bfe8ff"/><stop offset=".5" style="stop-color:#59c3ff"/><stop offset="1" style="stop-color:#1e6fa3"/></radialGradient>' +
+		'<radialGradient id="ar-glow"><stop offset=".3" style="stop-color:#ffcc00;stop-opacity:.36"/><stop offset="1" style="stop-color:#ffcc00;stop-opacity:0"/></radialGradient>' +
+		'<radialGradient id="ar-bulb" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#fff6d0"/><stop offset=".5" style="stop-color:#ffcc00"/><stop offset="1" style="stop-color:#b38f00"/></radialGradient>' +
+		'<linearGradient id="ar-cw" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_WHITE.l + '"/><stop offset=".5" style="stop-color:' + M_WHITE.r + '"/></linearGradient>' +
+		'<linearGradient id="ar-cd" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_DARK.l + '"/><stop offset=".5" style="stop-color:' + M_DARK.r + '"/></linearGradient>' +
+		'<filter id="ar-blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>';
 	var svg = '<svg width="' + G.SW + '" height="' + G.SH + '" viewBox="0 0 ' + G.SW + ' ' + G.SH + '" role="img" aria-label="Isometric map of your network: traffic moving between the internet, the router, its AiMesh nodes and each device">' +
-		floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3" filter="url(#ar-blur)">' + sh.join('') + '</g>' +
+		defs + floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3" filter="url(#ar-blur)">' + sh.join('') + '</g>' +
 		objs.map(function (o) { return '<g data-obj="' + o.id + '" class="ob">' + o.svg.join('') + '</g>'; }).join('') +
 		arcs.map(function (a) { return a.svg; }).join('') + hubs.join('') + marks.join('') + leaders.join('') + '</svg>';
 	var html = labels.map(function (lb) {
@@ -1949,23 +1909,6 @@ function setNotice(text, color) {
 }
 
 /* the map, every poll: classes and numbers only (the scene is rebuilt only when stands change) */
-/* The gradients and filter the drawings use, in one hidden SVG that is always rendered (#arDefs): a gradient inside
-   a hidden SVG draws nothing in Chrome, and the Flow shows the Map's drawings while the Map is hidden. */
-function sceneDefs() {
-	var grad = function (id, a, b, c) {
-		return '<linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:' + a + '"/>' + (c ? '<stop offset=".55" style="stop-color:' + b + '"/>' : '') + '<stop offset="1" style="stop-color:' + (c || b) + '"/></linearGradient>';
-	};
-	return '<defs><linearGradient id="ar-floor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:#43535b"/><stop offset="1" style="stop-color:#2e3b41"/></linearGradient>' +
-		grad('ar-scr1', '#123049', '#2c76a6', '#6cc6ea') + grad('ar-scr2', '#22265a', '#4f57bd', '#a3acf5') + grad('ar-scr3', '#0f2a40', '#2f78a6') + grad('ar-scr4', '#1b3346', '#4a96c0') + grad('ar-scr5', '#1a3a52', '#5aa9d6') +
-		'<linearGradient id="ar-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" style="stop-color:#59c3ff;stop-opacity:.5"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></linearGradient>' +
-		'<radialGradient id="ar-halo"><stop offset=".45" style="stop-color:#59c3ff;stop-opacity:.34"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></radialGradient>' +
-		'<radialGradient id="ar-globe" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#bfe8ff"/><stop offset=".5" style="stop-color:#59c3ff"/><stop offset="1" style="stop-color:#1e6fa3"/></radialGradient>' +
-		'<radialGradient id="ar-glow"><stop offset=".3" style="stop-color:#ffcc00;stop-opacity:.36"/><stop offset="1" style="stop-color:#ffcc00;stop-opacity:0"/></radialGradient>' +
-		'<radialGradient id="ar-bulb" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#fff6d0"/><stop offset=".5" style="stop-color:#ffcc00"/><stop offset="1" style="stop-color:#b38f00"/></radialGradient>' +
-		'<linearGradient id="ar-cw" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_WHITE.l + '"/><stop offset=".5" style="stop-color:' + M_WHITE.r + '"/></linearGradient>' +
-		'<linearGradient id="ar-cd" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_DARK.l + '"/><stop offset=".5" style="stop-color:' + M_DARK.r + '"/></linearGradient>' +
-		'<filter id="ar-blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>';
-}
 function renderMap(net) {
 	if (G.big && Math.min(net.nodes.length, 3) !== G.nodes) fit();   /* a node joined or left: its zone */
 	var L = mapLayout(net), sig = mapSignature(L);
@@ -2049,9 +1992,6 @@ function renderMap(net) {
 
 /* ---------------------------------------------------------------- the flow (Sankey) */
 var FBW = { src: 10, rt: 12, link: 10, mesh: 10, dev: 8 }, FGAP = 3, FGGAP = 11, FSGAP = 34, FKCAP = 11.5;
-/* The Flow's pictures (px), larger in the expanded view; FTOP: just under the column titles */
-var FPIC = { row: 30, wan: 36, rt: 46, node: 38 }, FPIC_BIG = { row: 34, wan: 46, rt: 58, node: 48 }, FTOP = 76;
-function FP() { return G.big ? FPIC_BIG : FPIC; }
 /* The big view's flow: columns spread across the stage, a row for every device (up to 60), wider rows
    with more columns, and no height limit: the stage scrolls instead of the ribbons shrinking. */
 function flowGeom(w, h) {
@@ -2095,8 +2035,8 @@ function flowGroups(net) {
 	return gs;
 }
 function flowSignature(gs) { return G.key + JSON.stringify(gs.map(function (g) { return [g.id, g.rows.map(function (r) { return r.id; })]; })); }
-function buildFlow(gs, net) {
-	var o = [], keys = [], FX0 = G.flow.x, model = net && net.router ? net.router.model || '' : '';
+function buildFlow(gs) {
+	var o = [], keys = [], FX0 = G.flow.x;
 	var rb = function (key, cls) {
 		keys.push(key);
 		var dl = function (i) { return (-((hash(key) * 17 + i * 29) % 100) / 100 * 1.4).toFixed(2); };
@@ -2132,14 +2072,6 @@ function buildFlow(gs, net) {
 			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + esc(nn) + '</text>'));
 		}
 	});
-	/* with Pictures on, as on the Map: the internet terminal over its label, the router over its name, each node over its bar.
-	   Each is drawn with its bottom at 0 and moved into place like the labels. */
-	var pic = function (key, x, size, inner) { return lbl('pic:' + key, '<g transform="translate(' + n1(x - size / 2) + ' ' + (-size) + ')">' + inner + '</g>'); };
-	if (A.pics) {
-		o.push(pic('wan', FX0.src - 8 - textW('Internet', true) / 2, FP().wan, wanPic(FP().wan)));
-		o.push(pic('rt', FX0.rt + 6, FP().rt, routerPic(model, FP().rt)));
-		gs.forEach(function (g) { if (g.node) o.push(pic('n:' + g.id, FX0.mesh + FBW.mesh / 2, FP().node, nodePic(g.node.model, FP().node, g.node.online))); });
-	}
 	var hs = 'font-size:10px;font-weight:700;letter-spacing:.12em;fill:#93a9b1';
 	var heads = '<text data-t="srchead" x="' + (FX0.src - 22) + '" y="68" style="' + hs + ';text-anchor:middle">SOURCE</text>' +
 		[[FX0.rt + 6, 'ROUTER'], [FX0.link + 5, 'LINK']].map(function (h) { return '<text x="' + h[0] + '" y="68" style="' + hs + ';text-anchor:middle">' + h[1] + '</text>'; }).join('') +
@@ -2186,10 +2118,6 @@ function flowLayout(gs, net, mode) {
 			if (aggH) Hh = aggH;
 			/* a node's backhaul can carry more than its listed clients (the node itself, rounding) */
 			if (g.node && !flowAgg(g) && gv * k > Hh) Hh = Math.min(gv * k, y - y0);
-			if (g.node && A.pics) {   /* room for the node's picture above its name: move the group down if it doesn't fit */
-				var ly = Hh > 0 ? (y0 + y) / 2 - Hh / 2 - 7 : (y0 + y) / 2 + 4, room = ly - 16 - FP().node - (gi ? y0 - FGGAP : FTOP) - 2;
-				if (room < 0) { g.rows.forEach(function (r) { slot[r.id].top -= room; slot[r.id].bar -= room; }); y0 -= room; y -= room; }
-			}
 			grp[g.id] = { y0: y0, y1: y, H: Hh, top: (y0 + y) / 2 - Hh / 2 };
 		});
 		return { slot: slot, grp: grp, bottom: y };
@@ -2205,8 +2133,6 @@ function flowLayout(gs, net, mode) {
 	if (!LIM) rc = Math.min(rc, Math.max(G.flow.top + Hr / 2 + FSGAP, G.SH / 2));   /* scrolling: the router stays on the first screen */
 	var wv = Math.max(net.wan[f], 0), lv = Math.max(net.local[f], 0);
 	var hi = wv + lv > 0 ? Hr * Math.min(wv / (wv + lv), 1) : Hr;
-	/* with pictures, the router's picture and name, and the internet's picture and label, fit under the column titles */
-	if (A.pics) rc = Math.max(rc, FTOP + FP().rt + 27 + Hr / 2, FTOP + FP().wan + 19 + (Hr + FSGAP) / 2 - hi / 2);
 	var stop = rc - (Hr + FSGAP) / 2;
 	return { k: k, slot: Lf.slot, grp: grp, bottom: Lf.bottom, Hr: Hr, rtop: rc - Hr / 2,
 		src: { wan: { top: stop, h: hi }, loc: { top: stop + hi + FSGAP, h: Hr - hi } },
@@ -2225,16 +2151,16 @@ function flowRowInfo(g, r) {
 			x.c2 = wired ? (dv.count > 1 ? dv.count + ' devices' : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
 		}
 	} else if (r.more) { x.name = '+' + r.more.length + ' more'; x.icon = 'more'; x.sub = r.more.slice(0, 3).map(function (dv) { return dv.name; }).join(', '); }
-	else { x.name = r.nodeOnly.name; x.icon = 'node'; x.node = r.nodeOnly; x.sub = 'No clients right now'; }
+	else { x.name = r.nodeOnly.name; x.icon = FORM_ICON[formOf(r.nodeOnly.model, 'tower').form] || 'mesh'; x.sub = 'No clients right now'; }
 	if (g.node && flowAgg(g)) { x.st = g.node.online ? 'nodata' : 'off'; if (r.dev) x.sub = g.node.online ? 'Not reported' : 'Offline'; }
 	return x;
 }
 /* The Flow view, every poll: the layout above, painted onto the scene (rebuilt only when the rows change). */
 function renderFlow(net) {
-	var gs = flowGroups(net), sig = flowSignature(gs) + '|' + (net.router.model || '') + (A.pics ? '|pics' : '');
+	var gs = flowGroups(net), sig = flowSignature(gs);
 	A.flowGs = gs;
 	if (sig !== A.flowSig) {
-		var b = buildFlow(gs, net);
+		var b = buildFlow(gs);
 		$('arFlowScene').innerHTML = b.svg;
 		$('arFlowRows').innerHTML = b.rows;
 		A.flowSig = sig;
@@ -2330,21 +2256,13 @@ function renderFlow(net) {
 	B('src:wan', src.wan.top, src.wan.h); B('src:loc', src.loc.top, src.loc.h);
 	R.br.rt.setAttribute('y', n1(rtop)); R.br.rt.setAttribute('height', n1(Math.max(Hr, 0.01)));
 	T('src:wan', src.wan.top + src.wan.h / 2); T('src:loc', src.loc.top + src.loc.h / 2); T('rt', rtop - 10); T('rtb', rtop + Hr + 17);
-	T('pic:wan', src.wan.top + src.wan.h / 2 - 17); T('pic:rt', rtop - 25);
 	R.t['agg:wan'].textContent = full(net.wan[f]); R.t['agg:loc'].textContent = full(net.local[f]);
 	R.t.rtname.textContent = net.router.model || 'Router';
 	R.t['agg:rt'].textContent = full(gs.reduce(function (a, g) { return a + gVal(g, f); }, 0));
 	gs.forEach(function (g) {
 		var Gr = grp[g.id];
 		T('g:' + g.id, Gr.H > 0 ? Gr.top - 7 : (Gr.y0 + Gr.y1) / 2 + 4);
-		if (g.node) {
-			var ly = Gr.H > 0 ? Gr.top - 7 : (Gr.y0 + Gr.y1) / 2 + 4, pe = R.tx['pic:n:' + g.id];
-			T('n:' + g.id, ly); T('pic:n:' + g.id, ly - 16);
-			if (pe && pe._on !== !!g.node.online) {   /* the ring turns red while the node is offline */
-				pe._on = !!g.node.online;
-				pe.firstChild.innerHTML = nodePic(g.node.model, FP().node, g.node.online);
-			}
-		}
+		if (g.node) T('n:' + g.id, Gr.H > 0 ? Gr.top - 7 : (Gr.y0 + Gr.y1) / 2 + 4);
 		if (R.t['gv:' + g.id]) R.t['gv:' + g.id].textContent = g.node && !g.node.online ? 'offline' : full(gVal(g, f));
 	});
 	/* the device rows */
@@ -2355,12 +2273,11 @@ function renderFlow(net) {
 		var x = flowRowInfo(g, r), name = x.name, sub = x.sub, icon = x.icon, st = x.st, c1 = x.c1, c2 = x.c2;
 		var v = st === 'ok' ? rowVal(r, f) : null, fm = fmt(v);
 		var isOn = rowSel(r);
-		var key = [name, sub, icon, fm.n, fm.u, st, upm, c1, c2, x.node ? !!x.node.online : '', !!A.pics].join('|');
+		var key = [name, sub, icon, fm.n, fm.u, st, upm, c1, c2].join('|');
 		if (r.more) el.setAttribute('aria-expanded', isOn ? 'true' : 'false');
 		if (el._k !== key) {
 			el._k = key;
-			el.querySelector('.ic').innerHTML = !A.pics ? iconSvg(x.node ? FORM_ICON[formOf(x.node.model, 'tower').form] || 'mesh' : icon, 16, INK2)
-				: x.node ? nodePic(x.node.model, FP().row, x.node.online) : devicePic(icon, FP().row);
+			el.querySelector('.ic').innerHTML = iconSvg(icon, 16, INK2);
 			el.querySelector('.nm').textContent = name;
 			el.querySelector('.sb').textContent = sub;
 			var nEl = el.querySelector('.vl .n');
@@ -2375,7 +2292,7 @@ function renderFlow(net) {
 	$('arScaleSw').style.background = upm ? UP : DN;
 	$('arDn').className = upm ? '' : 'on-dn'; $('arUp').className = upm ? 'on-up' : '';
 	$('arDn').setAttribute('aria-pressed', upm ? 'false' : 'true'); $('arUp').setAttribute('aria-pressed', upm ? 'true' : 'false');
-	var nt = noticeFor(net) || ['Tap a device to trace it.', MUTED];
+	var nt = noticeFor(net) || ['Ribbon width follows throughput. Tap a device to trace it.', MUTED];
 	setNotice(nt[0], nt[1]);
 }
 /* The big view's third label line: how it's connected (band and signal, or port and speed). Link rates
@@ -2605,13 +2522,6 @@ function setUnit(u) {
 	$('arUnitMb').setAttribute('aria-pressed', A.unit === 'Mb' ? 'true' : 'false'); $('arUnitMB').setAttribute('aria-pressed', A.unit === 'MB' ? 'true' : 'false');
 	render();
 }
-/* The Flow shows outline icons (the default, the lightest look) or the Map's drawings; kept per browser. */
-function setPics(on) {
-	A.pics = !!on; store('flowpics', A.pics ? '1' : '0');
-	$('arPicsOff').className = A.pics ? '' : 'on'; $('arPicsOn').className = A.pics ? 'on' : '';
-	$('arPicsOff').setAttribute('aria-pressed', A.pics ? 'false' : 'true'); $('arPicsOn').setAttribute('aria-pressed', A.pics ? 'true' : 'false');
-	render();
-}
 /* ---------------------------------------------------------------- the expanded view
    Same DOM, same state, same render(): only the geometry changes. #ar moves to <body> while expanded so
    no ancestor of the router's page can clip it; a comment marks its place to go back to. */
@@ -2693,7 +2603,6 @@ function togglePause() {
 }
 function boot() {
 	$('arPackets').textContent = packetCss();
-	$('arDefs').innerHTML = sceneDefs();
 	A.tab = store('tab') === 'flow' ? 'flow' : 'map';
 	A.mode = store('mode') === 'up' ? 'up' : 'dn';
 	A.det = store('det') === '1';
@@ -2701,9 +2610,6 @@ function boot() {
 	$('arUnitMb').addEventListener('click', function () { setUnit('Mb'); });
 	$('arUnitMB').addEventListener('click', function () { setUnit('MB'); });
 	setUnit(store('unit'));
-	$('arPicsOff').addEventListener('click', function () { setPics(false); });
-	$('arPicsOn').addEventListener('click', function () { setPics(true); });
-	setPics(store('flowpics') === '1');
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
@@ -2784,7 +2690,6 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 <div class="formfontdesc">Live traffic between the internet, your router, its AiMesh nodes and every client. The router samples only while this page is open.</div>
 
 <div id="ar">
-	<svg id="arDefs" width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden"></svg>
 	<div class="ar-bar">
 		<nav class="ar-tabs" aria-label="Arteria views">
 			<button type="button" id="arTabMap" class="on" aria-selected="true">Map</button>
@@ -2821,7 +2726,6 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 					<button type="button" id="arDn" class="on-dn" aria-pressed="true">↓ Download</button>
 					<button type="button" id="arUp" aria-pressed="false">↑ Upload</button>
 				</div>
-				<div class="ar-unit" role="group" aria-label="Show devices as"><button type="button" id="arPicsOff" class="on" aria-pressed="true" title="Small outline icons: the lightest look">Icons</button><button type="button" id="arPicsOn" aria-pressed="false" title="The Map's drawings for each device, the router, each node and the internet">Pictures</button></div>
 				<div class="ar-notice" id="arNoticeFlow" style="flex:1 1 0;min-width:0"><span class="sw"></span><span class="tx"></span></div>
 				<div class="ar-scale"><span class="sw" id="arScaleSw"></span><span id="arScaleTx"></span></div>
 			</div>
