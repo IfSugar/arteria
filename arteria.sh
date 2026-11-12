@@ -244,8 +244,8 @@ sta_json() {
 # The script each node runs while the page is open: every INTERVAL seconds it prints a block of its
 # clients' counters ("#B uptime", "S ..." lines, "#E"). It stops by itself after 30 minutes, or as soon
 # as the router hangs up. It reads counters only; nothing on the node is changed.
-write_node_script() {
-	printf 'I=%s\n' "$INTERVAL"
+write_node_script() {   # [rounds]   default: 30 minutes' worth (the page's session); 'nodes test' runs one
+	printf 'I=%s\nN=%s\n' "$INTERVAL" "${1:-$((1800 / INTERVAL))}"
 	cat <<'EOF'
 L=""
 for u in 0 1 2 3; do
@@ -255,7 +255,7 @@ for u in 0 1 2 3; do
 	for x in $f $(nvram get wl${u}_vifs); do L="$L $x:$b"; done
 done
 n=0
-while [ $n -lt $((1800 / I)) ]; do
+while [ $n -lt $N ]; do
 	echo "#B $(cut -d' ' -f1 /proc/uptime)"
 	for p in $L; do
 		x=${p%%:*}; b=${p#*:}
@@ -266,7 +266,7 @@ EOF
 	printf "\tdone | awk '%s'\n" "$STA_AWK"
 	cat <<'EOF'
 	echo "#E"
-	n=$((n + 1)); sleep $I
+	n=$((n + 1)); [ $n -lt $N ] && sleep $I
 done
 EOF
 }
@@ -706,6 +706,36 @@ node_try() {   # ip [pin] [command]   pin: also trust and pin the identity that 
 	return $rc
 }
 
+# For text that may be posted in a bug report: addresses and user names out.
+scrub() { sed 's/[0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}/IP/g; s/[0-9A-Fa-f]\{2\}\(:[0-9A-Fa-f]\{2\}\)\{5\}/MAC/g; s/[A-Za-z0-9._-]*@/user@/g'; }
+
+# One round of the script the page runs on a node: whether it works there, how many devices it reads and how
+# long that takes. The page counts a node as answering while its output is at most 3 rounds + 4 s old, so a round
+# much slower than that shows as "not answering" even though key login works.
+node_probe() {   # ip -> PROBE_MSG; 0 if a round came back
+	tmpd; ssh_home_init; s="$TMPD/probe.$$.sh"; o="$TMPD/probe.$$"; PROBE_MSG=""
+	write_node_script 1 > "$s"
+	t0=$(now)
+	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'sh -s') < "$s" > "$o" 2>&1 &
+	p=$!; i=0
+	while kill -0 "$p" 2>/dev/null; do
+		[ $i -ge 30 ] && { kill "$p" 2>/dev/null; break; }
+		sleep 1; i=$((i + 1))
+	done
+	t=$(( $(now) - t0 )); [ $t -ge 1 ] || t=1
+	if grep -q '^#E' "$o" 2>/dev/null; then
+		PROBE_MSG="reads $(grep -c '^S ' "$o") device(s), one round takes about $t s"
+		[ $t -gt $((INTERVAL * 2 + 4)) ] && PROBE_MSG="$PROBE_MSG: too slow, the page shows it as not answering"
+		rc=0
+	elif [ $i -ge 30 ]; then PROBE_MSG="reading its devices took over 30 s"; rc=1
+	else
+		e=$(grep -v '^#B\|^S \|^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
+		PROBE_MSG="reading its devices failed${e:+: $e}"; rc=1
+	fi
+	rm -f "$s" "$o"
+	return $rc
+}
+
 nodes_cmd() {   # [test]
 	if [ "$NODES" != on ]; then say "Reading AiMesh nodes is off (NODES=off in $CONF): the page shows backhaul totals only."; fi
 	list=$(node_list)
@@ -718,7 +748,7 @@ nodes_cmd() {   # [test]
 			if [ ! -s "$KEY" ]; then line="$line: no key yet, run '$SCRIPT nodekey'"
 			else
 				node_try "$ip"; rc=$?
-				if [ $rc -eq 0 ]; then line="$line: key login OK"
+				if [ $rc -eq 0 ]; then node_probe "$ip"; line="$line: key login OK, $PROBE_MSG"
 				elif [ $rc -eq 2 ]; then line="$line: can't test here ($TRY_ERR); open the page, it shows whether the node answers"
 				elif [ "$TRY_NEW" = 1 ]; then line="$line: not trusted yet (Arteria hasn't connected to it before); run '$SCRIPT nodekey', which shows its fingerprint first"
 				else line="$line: key login failed${TRY_ERR:+ ($TRY_ERR)}; run '$SCRIPT nodekey'"
@@ -794,7 +824,10 @@ nodekey() {   # [node-ip | print]
 	list=$(node_list)
 	[ -n "$1" ] && list=$(printf '%s\n' "$list" | awk -v ip="$1" '$2 == ip')
 	if [ -z "$list" ]; then [ -n "$1" ] && die "No AiMesh node at $1 found."; nodes_none_why; exit 1; fi
-	fails=0
+	fails=0; sync=0
+	# With password login off (Administration > System > Allow Password Login), a node takes no password, but
+	# AiMesh still copies the router's key list (which has the key now, see above) to it at its next settings sync.
+	nopass=0; [ "$(nvram get sshd_pass)" = "0" ] && nopass=1
 	# the remote side: add the key unless it's there, then restart its SSH server (after we've disconnected)
 	cmd="k='$pub'; c=\$(nvram get sshd_authkeys); case \"\$c\" in *'$b64'*) echo arteria-had-key ;; *) nvram set sshd_authkeys=\"\${c:+\$c
 }\$k\"; nvram commit; echo arteria-added-key; (sleep 2; service restart_sshd) > /dev/null 2>&1 & ;; esac"
@@ -810,6 +843,7 @@ nodekey() {   # [node-ip | print]
 		if [ "$TRY_HOSTKEY" = 1 ] || [ "$TRY_NEW" = 1 ]; then   # trusted now: the key may already be there (an AiMesh sync)
 			node_try "$ip" pin && { say "  Key login works."; node_keep_key "$ip"; continue; }
 		fi
+		if [ $nopass = 1 ]; then say "  Password login over SSH is off on the router, so the key reaches this node with the next AiMesh sync."; sync=$((sync + 1)); continue; fi
 		say "  Enter the node's password (your router's admin password). It goes to the node only and isn't stored."
 		out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1)
 		case "$out" in *[Hh]ost\ key\ mismatch*)   # only seen here when the key couldn't be tried first (an older dbclient)
@@ -818,6 +852,7 @@ nodekey() {   # [node-ip | print]
 		case "$out" in
 			*arteria-had-key*)   say "  The node already listed the key." ;;
 			*arteria-added-key*) say "  Key added."; sleep 4 ;;
+			*[Nn]o\ auth\ methods*) say "  The node doesn't take passwords over SSH, so the key reaches it with the next AiMesh sync."; sync=$((sync + 1)); continue ;;
 			*) say "  Couldn't log in: $(printf '%s' "$out" | tail -1 | tr -cd '\040-\176' | cut -c1-120)"; fails=$((fails + 1)); continue ;;
 		esac
 		node_try "$ip"; rc=$?
@@ -828,6 +863,14 @@ nodekey() {   # [node-ip | print]
 	done < "$TMPD/nodekey.list"
 	rm -f "$TMPD/nodekey.list" "$TMPD"/node.*.fail
 	say ""
+	if [ $sync -gt 0 ]; then
+		say "$sync node(s) will get the key from the router: it is in the router's Authorized Keys (Administration >"
+		say "System), and AiMesh copies that list to the nodes when it syncs settings. Start a sync by saving a setting"
+		say "in the router's web page (saving Wireless > General works; Wi-Fi restarts briefly), wait a few minutes"
+		say "until the node is back in the AiMesh list, then run '$SCRIPT nodes test'."
+		[ $fails -eq 0 ] && return 0
+		say ""
+	fi
 	[ $fails -eq 0 ] && say "Done. Reopen the page to see each node's devices." && return 0
 	say "$fails node(s) not set up. Check that SSH is on and the password is right."
 	say ""
@@ -1190,8 +1233,13 @@ debug() {
 	say "Nodes:       $(printf '%s\n' "$nl" | grep -c .) $(printf '%s\n' "$nl" | awk '{ printf "%s%s", (c++ ? "," : ""), $3 }')   ssh port: $(ssh_port)   sshd_enable: $(nvram get sshd_enable)"
 	printf '%s\n' "$nl" | while read -r mac ip model; do
 		[ -n "$mac" ] || continue
-		say "  $model: backhaul stations=$(node_stas "$mac" | wc -w | tr -d ' ') state=$(node_state "$(node_file "$mac")")"
+		f=$(node_file "$mac")
+		if sampler_running; then st=$(node_state "$f"); else st="(page closed)"; fi
+		say "  $model: backhaul stations=$(node_stas "$mac" | wc -w | tr -d ' ') state=$st"
+		e=$(tail -c 2048 "$f.err" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
+		[ -n "$e" ] && say "    last SSH message: $e"
 	done
+	[ -n "$nl" ] && say "  (for each node's devices and round time, run: $SCRIPT nodes test)"
 	# the first client's sta_info field names (the values are counters only)
 	for p in $(radio_list); do
 		x=${p%%:*}; m=$(wl -i "$x" assoclist 2>/dev/null | cut -d' ' -f2 | head -1)

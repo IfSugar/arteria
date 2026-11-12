@@ -53,6 +53,7 @@ cat > "$B/nvram" <<EOF
 [ "\$1" = get ] || exit 0
 case "\$2" in
 	sshd_authkeys) cat "$t/router-authkeys" 2>/dev/null ;;
+	sshd_pass) cat "$t/sshd-pass" 2>/dev/null || echo 1 ;;   # Allow Password Login (a test turns it off)
 	productid) echo RT-AX86U ;; buildno) echo 388.13 ;; extendno) echo 0 ;; firmver) echo 3.0.0.4 ;;
 	wl0_ifname) echo eth6 ;; wl1_ifname) echo eth7 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
 	lan_ifnames) echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7" ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
@@ -377,6 +378,21 @@ runi service_event start arteriastop
 waitfor 6 sampler_gone; waitfor 6 no_session
 rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 
+# nodes test: key login, then one round of the page's own node script: how many devices, how long. A node where that
+# round fails (the session drops) says so, with addresses and user names taken out of the message.
+run nodes test > "$t/nt.out" 2>&1 || true
+grep -q 'key login OK, reads [0-9][0-9]* device(s), one round takes about [0-9][0-9]* s$' "$t/nt.out" \
+	&& ok "nodes test: key login, then the node's devices read by the page's own script, with the time it takes" \
+	|| { bad "nodes test:"; cat "$t/nt.out"; }
+printf 'echo "dbclient: Connection to admin@192.168.50.10:2222 exited: Remote closed the connection" >&2\nexit 1\n' > "$t/node-hostile"
+run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
+grep -q 'key login OK, reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection' "$t/nt.out" \
+	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
+	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+run debug > "$t/debug2.out" 2>&1 || true
+grep -q 'state=(page closed)' "$t/debug2.out" && ! grep -q '192\.168\.' "$t/debug2.out" \
+	&& ok "debug: no node state while the page is closed (it would read 'down')" || { bad "debug, nodes:"; grep -A2 '^Nodes' "$t/debug2.out"; }
+
 # Which nodes: the router's AiMesh list, never the router itself. Saving a setting empties that list for minutes while
 # the nodes stay online: nodes then says so, rather than "no nodes".
 run nodes > "$t/nodes.out" 2>&1
@@ -456,6 +472,14 @@ if "$py" -c 'import pty' 2>/dev/null; then
 		&& [ "$(grep -c 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' "$t/node-authkeys")" = 1 ] && [ ! -f "$t/dbclient.pw" ]; then
 		ok "nodekey: a node that takes the key but doesn't list it gets it in its own list, once, with no password"
 	else bad "nodekey, key works but the node doesn't list it:"; cat "$t/nk-keep.out" "$t/nk-keep2.out"; cat "$t/node-authkeys"; fi
+	# password login off on the router (and so on the nodes): no password is asked for; the key waits in the router's
+	# list for the next AiMesh sync, and nodekey says how to start one
+	rm -rf "$R/jffs/addons/arteria/.ssh" "$t/dbclient.pw"; echo PASSKEY > "$t/node-identity"; : > "$t/node-authkeys"; echo 0 > "$t/sshd-pass"
+	nk y > "$t/nk-nopass.out"; rm -f "$t/sshd-pass"
+	if grep -q "Password login over SSH is off on the router" "$t/nk-nopass.out" && grep -q "saving a setting" "$t/nk-nopass.out" && grep -q "nodes test" "$t/nk-nopass.out" \
+		&& [ ! -f "$t/dbclient.pw" ] && grep -q 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' "$t/router-authkeys"; then
+		ok "nodekey with password login off: no password asked, the key waits in the router's list for the AiMesh sync"
+	else bad "nodekey with password login off:"; cat "$t/nk-nopass.out"; fi
 else echo "skip  nodekey at a terminal (python3 has no pty module here)"; fi
 # The sampler never pins a node itself: one seen for the first time is "nokey" (run nodekey) and stays unpinned
 rm -rf "$R/jffs/addons/arteria/.ssh" "$R/tmp/arteria"; echo FIRSTKEY > "$t/node-identity"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
