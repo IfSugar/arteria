@@ -1646,8 +1646,6 @@ window.Arteria = { state: A, render: render, onSample: onSample, buildNet: build
 <tr>
 <td bgcolor="#4D595D" colspan="3" valign="top">
 <div>&nbsp;</div>
-<div class="formfonttitle">Arteria</div>
-<div style="margin:10px 0 10px 5px;" class="splitLine"></div>
 <div class="formfontdesc">Live traffic between the internet, your router, its AiMesh nodes and every client. The router samples only while this page is open.</div>
 
 <div id="ar">
