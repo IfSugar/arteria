@@ -29,7 +29,7 @@ cat <<EOF
 Over SSH on the router:
 
 \`\`\`sh
-curl -fsL --retry 3 "https://raw.githubusercontent.com/$repo/$v/arteria.sh" -o /tmp/arteria.sh && sh /tmp/arteria.sh install
+d=/tmp/arteria-install; rm -rf "\$d" && mkdir -m 700 "\$d" && curl -fsL --retry 3 "https://github.com/$repo/releases/download/$v/arteria.sh" -o "\$d/arteria.sh" && sh "\$d/arteria.sh" install; rm -rf "\$d"
 \`\`\`
 
 Already installed? Run \`/jffs/addons/arteria/arteria.sh update\`. Your settings and node access are kept.

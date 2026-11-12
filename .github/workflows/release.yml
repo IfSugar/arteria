@@ -38,6 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0, pinned to its commit
         with:
+          persist-credentials: false   # gh uses GH_TOKEN; no write token in .git/config while repo scripts run
           fetch-depth: 0 # need the other tags and main
 
       - name: The tag matches the version and is on main
@@ -80,6 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0, pinned to its commit
         with:
+          persist-credentials: false   # gh uses GH_TOKEN; no write token in .git/config while repo scripts run
           fetch-depth: 0
 
       - name: Sync every release's notes with CHANGELOG.md

@@ -11,8 +11,8 @@
 #                    nodes [test] | nodekey [node-ip | print] | debug | sample | amtmupdate [check] |
 #                    startup | version
 #
-#  Install:  curl -fsL --retry 3 https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh \
-#              -o /tmp/arteria.sh && sh /tmp/arteria.sh install
+#  Install:  d=/tmp/arteria-install; rm -rf "$d" && mkdir -m 700 "$d" && curl -fsL --retry 3 \
+#              https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh -o "$d/arteria.sh" && sh "$d/arteria.sh" install
 ###############################################################################
 
 VERSION="1.0.0"
@@ -87,6 +87,19 @@ tmpd() {
 	die "$TMPD exists and isn't Arteria's own folder. Remove it and try again."
 }
 
+# A file in a folder others can write (/tmp) that Arteria may read or install from: a regular file, not a
+# link, that belongs to root. Anyone on the router can create /tmp/arteria.asp or /tmp/menuTree.js first.
+ours_file() { [ -f "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]; }
+
+# The Addons API's lock file, shared with other addons. Opened for appending (never truncated) and never
+# through a link or someone else's file: a name in /tmp could be a link planted by anyone.
+webui_lock() {
+	if [ -L "$WEBUI_LOCK" ] || { [ -e "$WEBUI_LOCK" ] && ! ours_file "$WEBUI_LOCK"; }; then
+		log "$WEBUI_LOCK isn't root's own file: not using it"; say "$WEBUI_LOCK isn't root's own file. Remove it and try again."; return 1
+	fi
+	exec 9>>"$WEBUI_LOCK" && flock -x 9 2>/dev/null
+}
+
 # Background work runs at the lowest CPU priority, so routing, Wi-Fi and the web UI always come first.
 lowprio() { renice -n 19 -p $$ >/dev/null 2>&1 || true; }
 
@@ -149,11 +162,12 @@ own_macs() {
 node_list() {
 	me=$(nvram get lan_ipaddr)
 	nvram get cfg_device_list | tr '<' '\n' | awk -F'>' -v me="$me" '
-		NF >= 3 && $2 != me && $2 ~ /^[0-9.]+$/ && $3 ~ /^[0-9A-Fa-f:]+$/ { print toupper($3), $2, $1 }'
+		NF >= 3 && $2 != me && $2 ~ /^[0-9.]+$/ && $3 ~ /^[0-9A-Fa-f:]+$/ { m = $1; gsub(/[^ -~]/, "", m); print toupper($3), $2, m }'   # the model as printable text only: it reaches the terminal
 }
-node_alias() { sed -n 's/.*"cfg_alias":"\([^"]*\)".*/\1/p' "$ROOT/tmp/$1.json" 2>/dev/null | head -1; }
+node_alias() { ours_file "$ROOT/tmp/$1.json" && sed -n 's/.*"cfg_alias":"\([^"]*\)".*/\1/p' "$ROOT/tmp/$1.json" 2>/dev/null | head -1 | tr -cd '\040-\176'; }
 # A node's backhaul stations: the addresses it uses to connect to the router over Wi-Fi.
 node_stas() {
+	ours_file "$ROOT/tmp/relist.json" || return 0
 	sed -n "s/.*\"$1\":{\([^}]*\)}.*/\1/p" "$ROOT/tmp/relist.json" 2>/dev/null | grep -o '[0-9A-Fa-f:]\{17\}' | tr a-f A-F | tr '\n' ' '
 }
 node_models() { printf '%s\n' "$1" | awk '{ $1 = ""; $2 = ""; sub(/^ +/, ""); printf "%s%s", (c++ ? ", " : ""), $0 }'; }   # node list -> "RP-AX56, ..."
@@ -247,13 +261,14 @@ EOF
 
 # ---- AiMesh node sessions ----------------------------------------------------------
 # While the page is open the router keeps one SSH session to each node. Key login only: the sampler
-# has no terminal, so dbclient can never ask for (or send) a password. Host keys are pinned in $SSH_HOME.
+# has no terminal, so dbclient can never ask for (or send) a password. Host keys are pinned in $SSH_HOME,
+# only by nodekey (no -y here): a node seen for the first time isn't trusted until you say so there.
 node_start() {   # mac ip
 	f=$(node_file "$1")
 	: > "$f.out"; : > "$f.err"; now > "$f.start"; rm -f "$f.fail" "$f.last"
 	# ulimit -f: a session that writes more than about 1 MB between two trims is ended (nodes_tick trims at 128 KB),
 	# so a node that floods its output can't fill the router's RAM; it is reconnected like any dropped session.
-	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -y -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
 		< "$TMPD/node.sh" >> "$f.out" 2>> "$f.err" 8>&- &
 	echo $! > "$f.pid"
 }
@@ -282,6 +297,7 @@ node_state() {   # file-base -> state
 	fi
 	e=$(tail -c 2048 "$f.err" 2>/dev/null | tr -d '\000')
 	case "$e" in
+		*trusted\ hosts*) echo nokey ;;   # never trusted yet: nodekey asks
 		*[Hh]ost\ key*|*[Mm]ismatch*|*[Ii]dentification*) echo hostkey ;;
 		*[Pp]ermission\ denied*|*[Aa]uth*|*[Pp]assword*|*publickey*) echo nokey ;;
 		*) echo down ;;
@@ -307,7 +323,9 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 	for o in "$TMPD"/node.*.out; do
 		[ -f "$o" ] || continue
 		if [ "$(wc -c < "$o")" -gt 131072 ]; then
-			awk '/^#B / { b = "" } { b = b $0 "\n" } /^#E/ { last = b } END { printf "%s", last }' "$o" > "${o%.out}.last"
+			# the last complete block, found by its line numbers: building it up as an awk string costs the square of its size
+			blk=$(awk '/^#B / { s = NR } /^#E/ && s { a = s; z = NR } END { if (z) print a "," z }' "$o")
+			if [ -n "$blk" ]; then sed -n "${blk}p" "$o" > "${o%.out}.last"; else : > "${o%.out}.last"; fi
 			: > "$o"
 		fi
 		[ "$(wc -c < "${o%.out}.err" 2>/dev/null || echo 0)" -gt 65536 ] && : > "${o%.out}.err"
@@ -316,10 +334,11 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 }
 
 # The last complete block a node sent, as JSON: "up":"<node uptime>","c":[rows].
-# Only rows between a "#B" and its "#E" count: the file can be emptied in the middle of a block.
+# Only rows between a "#B" and its "#E" count: the file can be emptied in the middle of a block. At most 512 rows a
+# block (a node serves far fewer clients): a hostile node can't make every sample cost seconds of CPU.
 NODE_AWK="$ROWS_AWK"'
 /^#B / { cur = ""; cc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
-open && /^S / && $2 ~ /^[A-Za-z0-9.]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9A-Fa-f:]+$/ { cur = cur (cc++ ? "," : "") row(); next }
+open && cc < 512 && /^S / && $2 ~ /^[A-Za-z0-9.]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9A-Fa-f:]+$/ { cur = cur (cc++ ? "," : "") row(); next }
 /^#E/ { if (open) { last = cur; lup = cup; done = 1 } open = 0; next }
 END { if (done) printf "\"up\":\"%s\",\"c\":[%s]", lup, last; else printf "\"up\":null,\"c\":[]" }'
 
@@ -350,7 +369,7 @@ macs_json() {    # [port, MAC] for every address the bridge has learned on a wir
 	printf '['
 	brctl showmacs br0 2>/dev/null | awk -v map="$map" -v want=" $PORTS " '
 		BEGIN { n = split(map, a, ";"); for (i = 1; i <= n; i++) { split(a[i], b, " "); P[b[1]] = b[2] } }
-		NR > 1 && $3 == "no" && $2 ~ /^[0-9A-Fa-f:]+$/ { p = P[$1]; if (p != "" && index(want, " " p " ")) printf "%s[\"%s\",\"%s\"]", (c++ ? "," : ""), p, toupper($2) }'
+		NR > 1 && $3 == "no" && $2 ~ /^[0-9A-Fa-f:]+$/ { p = P[$1]; if (p != "" && index(want, " " p " ") && N[p]++ < 64) printf "%s[\"%s\",\"%s\"]", (c++ ? "," : ""), p, toupper($2) }'
 	printf ']'
 }
 ifs_json() {     # [ifname, rx bytes, tx bytes] for the WAN, the wired ports and the AiMesh WDS links
@@ -389,12 +408,15 @@ sample_json() {   # seq ms -> one sample as JSON on stdout
 # the router detected (nmp_cl_json.js), DHCP host names and the AiMesh client list. The page combines them.
 export_names() {
 	{
-		printf '{"custom":"%s","leases":"' "$(js "$(nvram get custom_clientlist)")"
-		tr '\n' '|' < "$ROOT/var/lib/misc/dnsmasq.leases" 2>/dev/null | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'
-		printf '","nmp":'
+		# The firmware's own JSON files go in as they are, first: a duplicate key later in the object wins, so
+		# nothing in them can replace the keys Arteria writes after them. The AiMesh list in /tmp only if it's root's own.
+		printf '{"nmp":'
 		if head -c 1 "$ROOT/jffs/nmp_cl_json.js" 2>/dev/null | grep -q '{'; then tr -d '\000-\037' < "$ROOT/jffs/nmp_cl_json.js"; else printf '{}'; fi
 		printf ',"cl":'
-		if head -c 1 "$ROOT/tmp/clientlist.json" 2>/dev/null | grep -q '{'; then tr -d '\000-\037' < "$ROOT/tmp/clientlist.json"; else printf '{}'; fi
+		if ours_file "$ROOT/tmp/clientlist.json" && head -c 1 "$ROOT/tmp/clientlist.json" 2>/dev/null | grep -q '{'; then tr -d '\000-\037' < "$ROOT/tmp/clientlist.json"; else printf '{}'; fi
+		printf ',"custom":"%s","leases":"' "$(js "$(nvram get custom_clientlist)")"
+		tr '\n' '|' < "$ROOT/var/lib/misc/dnsmasq.leases" 2>/dev/null | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'
+		printf '"'
 		# For the page's Details: DHCP reservations, addresses seen without a lease (static ones), and IPv6
 		# neighbours on the LAN bridge. Only hex, dots and colons get through the two awks, so nothing can
 		# break out of the JSON strings.
@@ -529,7 +551,7 @@ find_webui_page() {
 mount_webui() {
 	[ -d "$WWW_USER" ] || { say "$WWW_USER not found - is this Asuswrt-Merlin with JFFS scripts enabled?"; return 1; }
 	tmpd
-	exec 9>"$WEBUI_LOCK"; flock -x 9 2>/dev/null
+	webui_lock || return 1
 	find_webui_page
 	if [ "$am_webui_page" = "none" ]; then
 		flock -u 9; say "No free web UI slot (Merlin allows 20 addon pages)."; log "no free webui page"; return 1
@@ -545,7 +567,12 @@ mount_webui() {
 	[ "$(cat "$ADDON_DIR/webui_page" 2>/dev/null)" = "$am_webui_page" ] || echo "$am_webui_page" > "$ADDON_DIR/webui_page"
 	# Menu: edit a copy, and only swap it in if the result is exactly our new lines at known anchors.
 	# A broken menuTree.js would break the router's whole menu, so never risk it.
-	[ -f "$TMP_MENUTREE" ] || cp -f "$MENUTREE" "$TMP_MENUTREE"
+	# The copy other addons share. Only root's own file is trusted (anyone can create /tmp/menuTree.js first, and
+	# its content becomes the menu every router page runs); otherwise start from the firmware's, renamed into place
+	# so a planted link is replaced, never written through.
+	if ! ours_file "$TMP_MENUTREE"; then
+		cp -f "$MENUTREE" "$TMPD/menuTree.base" && mv -f "$TMPD/menuTree.base" "$TMP_MENUTREE" || { flock -u 9; return 1; }
+	fi
 	new="$TMPD/menuTree.$$"   # in our own folder: a name in /tmp could be a link someone planted
 	sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$new"
 	before=$(wc -l < "$new")
@@ -567,8 +594,8 @@ mount_webui() {
 
 unmount_webui() {
 	page=$(cat "$ADDON_DIR/webui_page" 2>/dev/null)
-	exec 9>"$WEBUI_LOCK"; flock -x 9 2>/dev/null
-	if [ -f "$TMP_MENUTREE" ]; then
+	webui_lock || return 1
+	if ours_file "$TMP_MENUTREE"; then
 		sed -i "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE"
 		menu_remount
 	fi
@@ -619,14 +646,29 @@ make_key() {
 }
 pub_key() { dropbearkey -y -f "$KEY" 2>/dev/null | awk '/^ssh-/ { print $1, $2, "arteria"; exit }'; }
 
+# AiMesh copies the router's own list of authorized SSH keys to every node whenever it syncs settings (saving
+# a Wi-Fi or system page does), replacing the node's list: a key added only on a node is gone after the next
+# sync. So the key is kept in the router's list too, and every sync carries it to the nodes. On the router
+# itself it only lets in whoever holds node_key, which only root on this router can read.
+router_key_add() {   # public-key-line base64 -> 0 if it was added now
+	c=$(nvram get sshd_authkeys)
+	case "$c" in *"$2"*) return 1 ;; esac
+	nvram set sshd_authkeys="$(printf '%s\n%s\n' "$c" "$1" | sed '/^$/d')" && nvram commit
+}
+router_key_del() {   # base64: take Arteria's line out of the router's list (uninstall)
+	c=$(nvram get sshd_authkeys)
+	case "$c" in *"$1"*) ;; *) return 0 ;; esac
+	nvram set sshd_authkeys="$(printf '%s\n' "$c" | grep -vF "$1")" && nvram commit
+}
+
 # Try the key on a node: key only, never a password (see ssh_batch). Gives up after 8 s.
 # Returns 0 if the key works, 1 if not, 2 if it can't be tried without risking a password prompt
 # (an older dbclient, run from a terminal).
-node_try() {   # ip
-	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0
+node_try() {   # ip [pin]   pin: also trust and pin the identity that answers (only after the person said yes)
+	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0; TRY_NEW=0; TRY_FP=""; y=""; [ "$2" = pin ] && y=-y
 	b=$(ssh_batch)
 	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
-	(HOME="$SSH_HOME" exec dbclient $b -y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
+	(HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'echo arteria-ok') \
 		< /dev/null > "$o" 2>&1 &
 	p=$!; i=0
 	while kill -0 "$p" 2>/dev/null; do
@@ -635,6 +677,8 @@ node_try() {   # ip
 	done
 	grep -q '^arteria-ok' "$o" 2>/dev/null; rc=$?
 	grep -qi 'host key mismatch' "$o" 2>/dev/null && TRY_HOSTKEY=1
+	grep -qi 'not in the trusted hosts' "$o" 2>/dev/null && TRY_NEW=1   # first contact: nothing pinned for this address yet
+	TRY_FP=$(grep -o '[A-Za-z0-9-]* fingerprint [A-Za-z0-9:+/=]*' "$o" 2>/dev/null | head -1)
 	TRY_ERR=$(grep -v '^arteria-ok' "$o" 2>/dev/null | tail -1 | tr -cd '\040-\176' | cut -c1-120)
 	rm -f "$o"
 	return $rc
@@ -654,6 +698,7 @@ nodes_cmd() {   # [test]
 				node_try "$ip"; rc=$?
 				if [ $rc -eq 0 ]; then line="$line: key login OK"
 				elif [ $rc -eq 2 ]; then line="$line: can't test here ($TRY_ERR); open the page, it shows whether the node answers"
+				elif [ "$TRY_NEW" = 1 ]; then line="$line: not trusted yet (Arteria hasn't connected to it before); run '$SCRIPT nodekey', which shows its fingerprint first"
 				else line="$line: key login failed${TRY_ERR:+ ($TRY_ERR)}; run '$SCRIPT nodekey'"
 				fi
 			fi
@@ -696,6 +741,17 @@ trust_new_identity() {   # ip -> 0 if the old identity was forgotten
 	return 0
 }
 
+# The first time Arteria reaches a node there is no pinned identity to check it against: whatever answers at the
+# address would get the admin password. Say so, show what answered, and go on only if the person says yes.
+trust_first_contact() {   # ip -> 0 to go ahead
+	say "  Arteria hasn't connected to $1 before, so it can't tell the node from something else answering there."
+	say "  It answered with ${TRY_FP:-an SSH identity}. Go on only if the node is up and nothing else is on the network"
+	say "  that shouldn't be (or answer n and use '$SCRIPT nodekey print' from your own computer instead)."
+	printf '  Trust it? (y/n) '
+	read -r a < /dev/tty || a=n
+	case "$a" in [yY]*) return 0 ;; *) say "  Left alone."; return 1 ;; esac
+}
+
 # Give each node the router's Arteria key. Asks for the node's password once (the router's admin
 # password, which AiMesh nodes share); it goes to the node only and is never stored. The key is
 # added to the node's authorized keys, keeping any that are already there.
@@ -709,6 +765,10 @@ nodekey() {   # [node-ip | print]
 	pub=$(pub_key); b64=$(printf '%s' "$pub" | cut -d' ' -f2)
 	[ -n "$b64" ] || die "Couldn't read the public key from $KEY"
 	ssh_home_init
+	if router_key_add "$pub" "$b64"; then
+		say "Added the key to the router's own SSH key list too (Administration > System > Authorized Keys): AiMesh"
+		say "copies that list to the nodes whenever it syncs settings, so they keep the key."
+	fi
 	list=$(node_list)
 	[ -n "$1" ] && list=$(printf '%s\n' "$list" | awk -v ip="$1" '$2 == ip')
 	[ -n "$list" ] || die "No AiMesh node${1:+ at $1} found."
@@ -724,6 +784,10 @@ nodekey() {   # [node-ip | print]
 		node_try "$ip"; rc=$?
 		if [ $rc -eq 0 ]; then say "  Already has the key."; continue; fi
 		if [ "$TRY_HOSTKEY" = 1 ] && ! trust_new_identity "$ip"; then fails=$((fails + 1)); continue; fi
+		if [ "$TRY_NEW" = 1 ] && ! trust_first_contact "$ip"; then fails=$((fails + 1)); continue; fi
+		if [ "$TRY_HOSTKEY" = 1 ] || [ "$TRY_NEW" = 1 ]; then   # trusted now: the key may already be there (an AiMesh sync)
+			node_try "$ip" pin && { say "  Key login works."; continue; }
+		fi
 		say "  Enter the node's password (your router's admin password). It goes to the node only and isn't stored."
 		out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1)
 		case "$out" in *[Hh]ost\ key\ mismatch*)   # only seen here when the key couldn't be tried first (an older dbclient)
@@ -806,7 +870,7 @@ check_support() {
 	fi
 
 	# Shell tools the addon relies on (router BusyBox builds vary)
-	t="$ROOT/tmp/$NAME.selftest.$$"; printf 'ab' > "$t" 2>/dev/null; lack=""
+	tmpd; t="$TMPD/selftest.$$"; printf 'ab' > "$t" 2>/dev/null; lack=""   # in our own folder: a name in /tmp could be a link
 	[ "$(tail -c 1 "$t" 2>/dev/null)" = "b" ] || lack="$lack tail-c"
 	date -r "$t" +%s >/dev/null 2>&1 || lack="$lack date-r"
 	[ -O "$t" ] || lack="$lack test-O"
@@ -862,7 +926,7 @@ asp_matches() { whole_page "$1" && grep -q "arteria-version: $VERSION " "$1"; }
 fetch() {
 	for attempt in 1 2 3; do
 		rm -f "$2" 2>/dev/null; mkdir -p "$(dirname "$2")"
-		code=$(curl -sL --retry 2 --connect-timeout 15 -w '%{http_code}' -o "$2" "$1" 2>/dev/null); rc=$?
+		code=$(curl -sL --proto =https --proto-redir =https --retry 2 --connect-timeout 15 -w '%{http_code}' -o "$2" "$1" 2>/dev/null); rc=$?
 		if [ $rc -eq 23 ]; then why="couldn't write $2"
 		elif [ $rc -ne 0 ]; then why="curl error $rc"
 		elif [ "$code" != "200" ]; then why="HTTP $code"
@@ -877,17 +941,17 @@ fetch() {
 }
 
 latest_tag() {
-	t=$(curl -fsL --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
+	t=$(curl -fsL --proto =https --proto-redir =https --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
 		"https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
 		| sed -n 's/.*"tag_name": *"\([0-9][0-9.]*\)".*/\1/p' | head -1)
-	[ -n "$t" ] || t=$(curl -fsI --retry 2 --connect-timeout 15 -o /dev/null -w '%{redirect_url}' \
+	[ -n "$t" ] || t=$(curl -fsI --proto =https --retry 2 --connect-timeout 15 -o /dev/null -w '%{redirect_url}' \
 		"https://github.com/$REPO/releases/latest" 2>/dev/null \
 		| sed -n 's#.*/releases/tag/\([0-9][0-9.]*\)$#\1#p')
 	echo "$t"
 }
 # Why there's no latest release to install: none has been published yet, or GitHub can't be reached.
 no_release_why() {
-	code=$(curl -s --connect-timeout 15 -o /dev/null -w '%{http_code}' "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null)
+	code=$(curl -s --proto =https --connect-timeout 15 -o /dev/null -w '%{http_code}' "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null)
 	case "$code" in
 		404) printf "No release of %s has been published yet, so there's nothing to update to. '%s update dev' installs the newest code on main (a development version)." "$TITLE" "$SCRIPT" ;;
 		''|000) printf "Couldn't reach GitHub (no internet connection on the router, or DNS?); nothing was changed." ;;
@@ -916,11 +980,14 @@ install() {
 	fi
 	mkdir -p "$ADDON_DIR" "$SCRIPTS_DIR"; tmpd
 	if [ "$src" != "$ADDON_DIR" ]; then
+		# The script must be root's own (installing from /tmp, anyone could have created that file first). A page
+		# next to it is used only if it is root's own too; otherwise it is downloaded.
+		ours_file "$0" || die "$0 isn't a file only root can change. Download arteria.sh again into a folder only root can write (see the README) and run install from there."
 		asp="$src/$NAME.asp"
-		if ! asp_matches "$asp"; then   # missing, or left over from another version
+		if ! ours_file "$asp" || ! asp_matches "$asp"; then   # missing, someone else's, or left over from another version
 			say "Downloading the web page from GitHub..."
 			asp="$TMPD/$NAME.asp.dl"; got=0
-			if [ -n "$AR_RAW_URL" ]; then bases="$RAW_URL"; else bases="$RAW_BASE/$VERSION release $RAW_URL"; fi
+			if [ -n "$AR_RAW_URL" ]; then bases="$RAW_URL"; else bases="$RAW_BASE/$VERSION release"; fi   # releases only, never main
 			for base in $bases; do
 				[ "$base" = release ] && { base=$(release_url); [ -n "$base" ] || continue; }
 				if fetch "$base/$NAME.asp" "$asp" quiet; then
@@ -931,7 +998,7 @@ install() {
 		fi
 		stop_all
 		# rename into place: a running copy of the old script (e.g. during update) keeps reading its own file
-		cp -f "$src/$NAME.sh" "$SCRIPT.new" && mv -f "$SCRIPT.new" "$SCRIPT"
+		cp -f "$0" "$SCRIPT.new" && mv -f "$SCRIPT.new" "$SCRIPT"
 		cp -f "$asp" "$PAGE_SRC.new" && mv -f "$PAGE_SRC.new" "$PAGE_SRC"
 		rm -f "$TMPD/$NAME.asp.dl"
 	fi
@@ -1036,7 +1103,7 @@ update_dev() {   # [branch]
 	say "Looking up the newest commit on $br..."
 	# Only a branch of this repository, by its commit. GitHub also serves commits and pull requests
 	# from other people's forks under this repository's addresses, and those aren't reviewed here.
-	sha=$(curl -fsL --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
+	sha=$(curl -fsL --proto =https --proto-redir =https --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
 		"https://api.github.com/repos/$REPO/branches/$br" 2>/dev/null \
 		| grep -o '"sha": *"[0-9a-f]\{40\}"' | head -1 | grep -o '[0-9a-f]\{40\}')
 	[ -n "$sha" ] || die "GitHub has no branch '$br' in $REPO, or couldn't be reached; nothing was changed."
@@ -1057,9 +1124,11 @@ uninstall() {
 	unmount_webui
 	hook_del services-start
 	hook_del service-event
+	b64=$([ -s "$KEY" ] && pub_key | cut -d' ' -f2)
+	[ -n "$b64" ] && router_key_del "$b64"
 	rm -rf "$(web_dir)" "$TMPD" "$ADDON_DIR"
-	say "Removed. The router's key for the nodes was deleted with it; the copy each node lists under"
-	say "its authorized keys no longer opens anything and goes away if the node is reset."
+	say "Removed. The router's key for the nodes was deleted with it, and taken out of the router's own SSH key"
+	say "list; the copy each node lists goes at the next AiMesh sync, and no longer opens anything anyway."
 }
 
 status() {
