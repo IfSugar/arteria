@@ -205,6 +205,7 @@ wl1.1 02:CC:00:00:00:12 5000000 60000
 wl1.1 02:CC:00:00:00:13 800000 90000
 EOF
 sed "s#$F/assoc#$F/node-assoc#" "$B/wl" > "$N/wl"
+printf '#!%s sh\n[ -f "%s/node-cut-crash" ] && kill -SEGV $$\nexec "%s" cut "$@"\n' "$bb" "$t" "$bb" > "$N/cut"   # a node whose cut can crash
 cat > "$N/nvram" <<EOF
 #!$bb sh
 # the node's own authorized SSH keys, in a file: nodekey adds the router's key here
@@ -321,7 +322,15 @@ rm -f "$W/names.htm"; runi service_event start arterianames
 grep -q 'Living room TV' "$W/names.htm" 2>/dev/null && [ ! -f "$R/tmp/arteria/sampler.pid" ] \
 	&& ok "service event arterianames: names exported at once, the sampler not started" || { bad "arterianames:"; ls "$W"; fail=1; }
 # before a rename, the page asks for the router's client list as it is now, with a token: only digits are taken
-runi service_event start arteriacl12345678
+chmod 777 "$W"; : > "$t/syslog"
+(umask 0; runi service_event start arteriacl12345678)
+[ "$(stat -c %a "$W")" = 755 ] && [ "$(stat -c %a "$W/clist.htm")" = 644 ] \
+	&& ok "the page's files and their folder: only root can change them, whatever umask the router starts it with" || { bad "permissions:"; ls -la "$W"; }
+(umask 0; runi service_event start arterianames)
+grep -q "renaming a device on the page: read the router's client list ([0-9]* name(s))" "$t/syslog" \
+	&& grep -q "renamed a device on the page: the router's client list has [0-9]* name(s) (before: [0-9]*)" "$t/syslog" \
+	&& ! grep -q 'Living room\|02:CC' "$t/syslog" && ok "renames are logged: how many names the router's list has before and after, no names or addresses" \
+	|| { bad "rename log:"; cat "$t/syslog"; }
 for bad in 'arteriacl' 'arteriacl12x' 'arteriacl1234567890123' 'arteriacl1;reboot'; do runi service_event start "$bad"; done
 python3 - "$W/clist.htm" <<'EOF' && ! grep -q '<' "$W/clist.htm" && ok "service event arteriacl<token>: the router's client list now, with the page's token" || { bad "arteriacl:"; cat "$W/clist.htm"; fail=1; }
 import json, sys
@@ -434,6 +443,17 @@ run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
 grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection" "$t/nt.out" \
 	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+touch "$t/node-cut-crash"; rm -f "$R/tmp/arteria/node-trace.txt"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-cut-crash"
+tr="$R/tmp/arteria/node-trace.txt"
+grep -q "something on the node crashed running: cut .* (what it ran is in .*/node-trace.txt, without addresses)$" "$t/nt.out" \
+	&& grep -q '^+ cut ' "$tr" && grep -q 'Segmentation fault' "$tr" && ! grep -qi '02:CC\|192\.168' "$tr" \
+	&& ok "nodes test: when something crashes on the node, what it ran is saved, without addresses" || { bad "nodes test, a crash on the node:"; cat "$t/nt.out"; head -n 20 "$tr" 2>/dev/null; }
+printf 'echo "#B 1"\necho "Segmentation fault" >&2\nexit 139\n' > "$t/node-hostile"
+rm -rf "$R/tmp/arteria" "$W"; runi service_event start arteria
+node_crash() { grep -q '"state":"crash"' "$W/live.htm" 2>/dev/null; }
+waitfor 10 node_crash
+node_crash && ok "a node where something crashes shows as 'crash', not 'not answering'" || { bad "node crash state:"; grep -o '"nodes":.*' "$W/live.htm" | head -c 300; echo; }
+runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session; rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 run debug > "$t/debug2.out" 2>&1 || true
 grep -q 'state=(page closed)' "$t/debug2.out" && ! grep -q '192\.168\.' "$t/debug2.out" \
 	&& ok "debug: no node state while the page is closed (it would read 'down')" || { bad "debug, nodes:"; grep -A2 '^Nodes' "$t/debug2.out"; }
@@ -772,6 +792,37 @@ upd update || true
 if grep -q "Updating" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
 	ok "update: from a development version back to the release, the mark is gone"
 else bad "update after update dev:"; cat "$t/upd.out"; fi
+# doctor: the known problems, found, then fixed. What going back to 1.0.0 leaves (its own hook line next to today's), a
+# file an old version left, page files anyone could change, a client list copy left after the page closed, a node
+# session left running; then a command that crashes on the node. Never a name, MAC or IP in what it says.
+doc() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" doctor "$@" > "$t/doc.out" 2>&1; }
+printf '%s/jffs/addons/arteria/arteria.sh service_event "$@" & # arteria\n' "$R" >> "$R/jffs/scripts/service-event"
+echo pub > "$R/jffs/addons/arteria/node_key.new.pub"
+mkdir -p "$W"; echo '{}' > "$W/clist.htm"; chmod 777 "$W"; chmod 666 "$W/clist.htm"
+printf 'while :; do sleep 1; done\n' > "$t/loop.sh"
+(env PATH="$B" HOME="$R/jffs/addons/arteria" "$B/dbclient" -o BatchMode=yes -K 10 -I 30 -p 2222 -i "$R/jffs/addons/arteria/node_key" admin@192.168.50.10 'sh -s' < "$t/loop.sh" > /dev/null 2>&1 &)
+left_session() { pgrep -f "$B/dbclient .* -K 10 -I 30 .*sh -s" > /dev/null 2>&1; }
+waitfor 3 left_session
+doc && rc=0 || rc=1
+if [ $rc = 1 ] && grep -q '^  \[FIX \] service-event has 2 lines of Arteria' "$t/doc.out" && grep -q '^  \[ OK \] services-start: ' "$t/doc.out" \
+	&& grep -q '^  \[FIX \] 1 file(s) an older' "$t/doc.out" && grep -q '^  \[FIX \] .* can be changed by any program' "$t/doc.out" \
+	&& grep -q '^  \[FIX \] a copy of the router' "$t/doc.out" && grep -q '^  \[FIX \] 1 node session(s) still running' "$t/doc.out" \
+	&& grep -q '^  \[ OK \] node 1 (RP-AX56): key login works' "$t/doc.out" && ! grep -q '192\.168\|02:CC\|Hall' "$t/doc.out"; then
+	ok "doctor: finds what going back to 1.0.0 leaves, old files, open permissions, a leftover client list and node session"
+else bad "doctor:"; cat "$t/doc.out"; fi
+doc fix || true; grep -q '^Fixed 5 problem(s)\.$' "$t/doc.out" && fixed=1 || { fixed=0; cat "$t/doc.out"; }
+doc && rc=0 || rc=1
+if [ $rc = 0 ] && [ $fixed = 1 ] && grep -q 'Nothing wrong found' "$t/doc.out" && [ "$(grep -c '# arteria$' "$R/jffs/scripts/service-event")" = 1 ] \
+	&& grep -qxF "case \"\$2\" in arteria*) $R/jffs/addons/arteria/arteria.sh service_event \"\$@\" & ;; esac # arteria" "$R/jffs/scripts/service-event" \
+	&& grep -q '/some/other/script event' "$R/jffs/scripts/service-event" && [ "$(stat -c %a "$W")" = 755 ] && [ ! -e "$W/clist.htm" ] \
+	&& [ ! -e "$R/jffs/addons/arteria/node_key.new.pub" ] && ! left_session; then
+	ok "doctor fix: one hook line, today's (others' lines kept), files tidied, permissions tightened, the session stopped"
+else bad "doctor fix:"; cat "$t/doc.out"; grep -n . "$R/jffs/scripts/service-event"; ls -la "$W"; fi
+touch "$t/node-cut-crash"; doc || true; rm -f "$t/node-cut-crash"
+if grep -q "^  \[WARN\] node 1 (RP-AX56): something crashed on the node running Arteria's script, at: cut " "$t/doc.out" \
+	&& grep -q '^== node 1 (RP-AX56)' "$R/tmp/arteria/node-trace.txt" && ! grep -qi '192\.168\|02:CC' "$t/doc.out" "$R/tmp/arteria/node-trace.txt"; then
+	ok "doctor: a command that crashes on a node is named, its trace saved without addresses"
+else bad "doctor, a crash on the node:"; cat "$t/doc.out"; fi
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
 grep -q 'arteria' "$t/router-authkeys" 2>/dev/null && { bad "uninstall left the key in the router's list:"; cat "$t/router-authkeys"; } || ok "uninstall takes the key out of the router's own list"

@@ -4,6 +4,10 @@ What changed in each release of Arteria. The release workflow copies a version's
 
 ## Unreleased
 
+- **Renames are logged**: the system log gets a line when the page reads the router's client list for a rename and one when the rename is saved, with how many names the list holds before and after. No names or addresses.
+- **`doctor` looks for known problems, and `doctor fix` fixes them** (also *d* in the menu): a hook line left by going back to 1.0.0 or by an older version, files older versions left, page files any program could change, a copy of the client list or a node session left after the page closed, and on each node, whether Arteria's script runs without anything crashing. What only you can fix it reports, and nothing in it names a device or an address.
+- **A node where something crashes says so**: when a command on a node crashes while Arteria reads it (*Segmentation fault*), the page says so instead of "isn't answering", and `nodes test` (like `doctor`) names the command and saves what the node ran, without addresses, to `/tmp/arteria/node-trace.txt` for a bug report.
+- **Only root can change the page's files**: the router starts Arteria from its service-event script with nothing masked, so the page's data files and their folder were writable by any program on the router.
 - **A pencil after a device's name** in the live readout shows it can be renamed: the name and the pencil light up together, and clicking either opens the name field.
 - **Dual WAN**: the second WAN counts as internet too, instead of as local traffic, and the Internet readout shows what each WAN carries.
 - **Guest Network Pro**: wired devices on a Guest Network Pro network (a LAN port in a VLAN profile) are placed on their port, from that network's bridge as well as the main LAN's.

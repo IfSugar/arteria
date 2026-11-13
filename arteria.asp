@@ -2422,6 +2422,7 @@ function noticeFor(net) {
 		if (n.state === 'nokey') return [n.name + ': per-device traffic needs node access. Run arteria.sh nodekey on the router.', ACC];
 		if (n.state === 'hostkey') return [n.name + ' has a new SSH identity (reset?). Run arteria.sh nodekey to trust it again.', ACC];
 		if (n.state === 'down') return [n.name + ' isn\'t answering over SSH, so its devices show without numbers.', ACC];
+		if (n.state === 'crash') return ['Something on ' + n.name + ' crashed while Arteria read it. Run arteria.sh nodes test on the router: it says what.', ACC];
 		if (n.state === 'busy') return ['The router is busy, so Arteria reads ' + n.name + ' only once it calms down. Its devices show without numbers meanwhile.', MUTED];
 		if (n.state === 'off') return ['Node access is off (NODES=off): ' + n.name + ' shows its backhaul total only.', MUTED];
 	}
@@ -2893,7 +2894,7 @@ function readoutFor(net) {
 		k1 = 'Backhaul signal'; v1 = dbm(n.bhRssi); k2 = 'Link rate'; v2 = n.bhPhy ? n.bhPhy + ' Mb/s' : '—';
 		path = rname + ' → ' + n.name;
 		note = { ok: 'Its devices are counted on the node and read over SSH.', nokey: 'Per-device data needs node access: run arteria.sh nodekey.', hostkey: 'Its SSH identity changed: run arteria.sh nodekey.',
-			down: 'Not answering over SSH: showing its backhaul total.', busy: 'Not read while the router is busy: showing its backhaul total.', wait: 'Connecting to the node…', off: 'Node access is off: backhaul total only.' }[n.state] || '';
+			down: 'Not answering over SSH: showing its backhaul total.', busy: 'Not read while the router is busy: showing its backhaul total.', crash: 'Something on the node crashed reading it: run arteria.sh nodes test.', wait: 'Connecting to the node…', off: 'Node access is off: backhaul total only.' }[n.state] || '';
 		if (n.weak) { note = 'A weak backhaul caps everything behind the node.'; tone = ACC; }
 		if (!n.online) { note = 'The node isn\'t connected to the router.'; tone = BAD; sdn = sup = 'offline'; }
 	} else if (id && net.byId[id] && net.byId[id].link) {
