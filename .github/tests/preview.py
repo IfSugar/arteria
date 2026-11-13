@@ -75,7 +75,8 @@ ZOO = [('Garage desktop', 'desktop'), ('Mac mini', 'mac'), ('Work laptop', 'lapt
        ('Tumble dryer', 'dryer'), ('Kitchen dishwasher', 'dishwasher'), ('Kitchen fridge', 'appliance'), ('Study iMac', 'mac')]
 NEWER = [('Driveway charger', 'charger'), ('Tesla Model Y', 'car'), ('Fronius inverter', 'solar'), ('Automower', 'mower'), ('Quest 3', 'vr'),
          ('Lounge projector', 'projector'), ('Garage door', 'garage'), ('Bambu printer', 'printer3d'), ('Kitchen Echo Show', 'display'),
-         ('Bedroom blinds', 'blinds'), ('Garden sprinkler', 'sprinkler'), ('Cat feeder', 'pet'), ('Peloton', 'fitness')]
+         ('Bedroom blinds', 'blinds'), ('Garden sprinkler', 'sprinkler'), ('Cat feeder', 'pet'), ('Peloton', 'fitness'),
+         ('Desk LED strip', 'strip'), ('Gas boiler', 'boiler')]
 ZOO += NEWER
 if SCN == 'newer':   # the newer kinds together, for a look at their drawings
     DEVICES = []

@@ -52,7 +52,7 @@ const CASES = [
 	['Tumble dryer', 0, 0, 0, 'wifi', '', '', 'dryer'],
 	['Electrolux_Appliance', 0, 0, 0, 'wifi', 'Electrolux Appliances AB', '', 'appliance'],
 	['Device …00:A6', 0, 0, 0, 'wifi', 'Electrolux Appliances AB', '', 'appliance'],
-	['ems-esp', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'thermostat'],
+	['ems-esp', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'boiler'],
 	['Hall thermostat', 0, 0, 0, 'wifi', '', '', 'thermostat'],
 	['Smart plug', 0, 0, 0, 'wifi', '', '', 'plug'],
 	['Door sensor', 0, 0, 0, 'wifi', '', '', 'contact'],
@@ -68,7 +68,8 @@ const CASES = [
 	['HS220(US)', 0, 0, 0, 'wifi', '', '', 'wallswitch'],
 	['H200', 0, 0, 0, 'wired', '', '', 'hub'],
 	['RV30_Max_Plus', 0, 0, 0, 'wifi', '', '', 'vacuum'],
-	['ihoment_H6159_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],
+	['ihoment_H6159_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'strip'],      // Govee's H61… are LED strips
+	['ihoment_H6008_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],      // ...its H600… bulbs
 	['ihoment_H7070_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],
 	['ihoment_H7121_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'purifier'],
 	['ihoment_H5075_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'sensor'],
@@ -134,6 +135,40 @@ const CASES = [
 	['Cat feeder', 0, 0, 0, 'wifi', '', '', 'pet'],
 	['Furbo', 0, 0, 0, 'wifi', '', '', 'pet'],
 	['Peloton', 0, 0, 0, 'wifi', '', '', 'fitness'],
+	// LED strips
+	['Desk LED strip', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['TV backlight', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Kitchen strip', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Bed LEDs', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['GoveeStrip', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Govee', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Govee floor lamp', 0, 0, 0, 'wifi', '', '', 'light'],
+	['Govee light bar', 0, 0, 0, 'wifi', '', '', 'light'],
+	['Govee purifier', 0, 0, 0, 'wifi', '', '', 'purifier'],
+	['Govee thermometer', 0, 0, 0, 'wifi', '', '', 'sensor'],
+	['Nanoleaf Lightstrip', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['yeelink-light-strip2_miio123', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['L930', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['KL430(US)', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['LED-Streifen Flur', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['LED лента', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Power strip', 0, 0, 0, 'wifi', '', '', 'plug'],
+	['Smart strip', 0, 0, 0, 'wifi', '', '', 'generic'],
+	['Desk LED strip', 60, 0, 0, 'wifi', '', '', 'strip'],                 // renamed here: the router's light icon was saved with it
+	['Desk lamp', 60, 0, 0, 'wifi', '', '', 'light'],
+	['Hall lamp', 70, 0, 0, 'wifi', '', '', 'plug'],
+	// boilers
+	['ems-esp-boiler', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'boiler'],
+	['Gas boiler', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['Vitoconnect', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['otgw-1A2B3C', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['Water heater', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['Газов котел', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['Boiler thermostat', 0, 0, 0, 'wifi', '', '', 'thermostat'],
+	['Bathroom heater', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Device …01:F5', 0, 0, 0, 'wifi', 'Viessmann Climate Solutions SE', '', 'boiler'],
+	['Gas boiler', 50, 0, 0, 'wifi', '', '', 'boiler'],                    // the router's appliance icon, saved with the name
+	['Washing machine', 50, 0, 0, 'wifi', '', '', 'washer'],
 	// more names for the older kinds
 	['NPI3C2AF4', 0, 0, 0, 'wifi', '', '', 'printer'],
 	['BRW0123456789AB', 0, 0, 0, 'wifi', '', '', 'printer'],
@@ -150,7 +185,7 @@ const CASES = [
 	['WiiM Pro', 0, 0, 0, 'wifi', '', '', 'speaker'],
 	['Hive Hub', 0, 0, 0, 'wifi', '', '', 'thermostat'],
 	['Device …01:F3', 0, 0, 0, 'wifi', 'Amazon Technologies Inc.', '', 'smartspeaker'],
-	['Device …01:F4', 0, 0, 0, 'wifi', 'Shenzhen Intellirocks Tech. Co., Ltd.', '', 'light'],
+	['Device …01:F4', 0, 0, 0, 'wifi', 'Shenzhen Intellirocks Tech. Co., Ltd.', '', 'strip'],
 	['Front door lock', 0, 0, 0, 'wifi', '', '', 'lock'],
 	['Apple Watch', 0, 0, 5, 'wifi', '', '', 'watch'],
 	['Kindle', 0, 25, 0, 'wifi', '', '', 'tablet'],
@@ -186,7 +221,7 @@ const CASES = [
 	['Lennox iComfort S40', 0, 0, 0, 'wifi', '', '', 'thermostat'],
 	['Rav4 ChargePoint', 0, 0, 0, 'wifi', '', '', 'charger'],
 	['SP111 nr4', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'plug'],
-	['wled-WLED', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],
+	['wled-WLED', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'strip'],
 	['Lampa Salon', 0, 0, 0, 'wifi', '', '', 'light'],
 	['Firestick', 0, 0, 0, 'wifi', '', '', 'stick'],
 ];
@@ -441,7 +476,8 @@ eq(RL('<A>' + M1 + '>0>7>><B>' + M1 + '>0>9>>', M1, 'Only one', 0), '<Only one>'
 eq(RL('<A>' + M1 + '>0>7>><Kids>' + M2 + '>0>21>>', M1, '', 0), '<Kids>' + M2 + '>0>21>>', 'no name: the entry goes');
 eq(RL('<A>' + M1 + '>0>7>>', M1, '', 0), '', 'the last entry removed: an empty list');
 eq(RL('', M1, 'Ünïcode lamp ✓', 60), '<Ünïcode lamp ✓>' + M1 + '>0>60>>', 'an empty list, any letters');
-Object.keys(T.ASUS_TYPE).forEach(k => { if (T.TYPE_KIND[T.ASUS_TYPE[k]] !== k) rlbad.push('icon ' + T.ASUS_TYPE[k] + ' for ' + k + ' reads back as ' + T.TYPE_KIND[T.ASUS_TYPE[k]]); });
+/* each kind's saved icon reads back as that kind: the same icon, or a broader one its name narrows (LED strip -> light) */
+Object.keys(T.ASUS_TYPE).forEach(k => { const b = T.TYPE_KIND[T.ASUS_TYPE[k]]; if (b !== k && T.SUB[k] !== b) rlbad.push('icon ' + T.ASUS_TYPE[k] + ' for ' + k + ' reads back as ' + b); });
 ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s client list, as the router writes it', rlbad.join('; '));
 
 process.exit(fails ? 1 : 0);

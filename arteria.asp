@@ -41,9 +41,10 @@
 #ar * { box-sizing: border-box; }
 #ar button { font-family: inherit; cursor: pointer; }
 #ar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-#ar .ar-bar { display: flex; align-items: center; gap: 10px; height: 46px; border-bottom: 1px solid #7d8c90; margin: 4px 0 12px; }
-#ar .ar-tabs { display: flex; gap: 10px; align-self: stretch; }
-#ar .ar-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: #e3eaec; font-size: 13px; padding: 0 6px; min-width: 44px; margin-bottom: -1px; }
+/* The tab bar: its controls 6px clear of its line, and 6px below the panel's top (the panel's own 5px, plus 1px) */
+#ar .ar-bar { display: flex; align-items: center; gap: 10px; height: 41px; padding-bottom: 6px; border-bottom: 1px solid #7d8c90; margin: 1px 0 12px; }
+#ar .ar-tabs { display: flex; gap: 10px; align-self: stretch; margin-bottom: -6px; }   /* the tabs reach down to the line, their text level with the controls' */
+#ar .ar-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: #e3eaec; font-size: 13px; padding: 0 6px 5px; min-width: 44px; margin-bottom: -1px; }
 #ar .ar-tabs button:hover { color: #fff; }
 #ar .ar-tabs button.on { color: #fff; border-bottom-color: var(--accent); font-weight: 600; cursor: default; }
 #ar .ar-sum { flex: 1; display: flex; align-items: baseline; justify-content: flex-end; gap: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink); }
@@ -53,16 +54,16 @@
 #ar .ar-sum .n { display: inline-block; min-width: 9.6ch; text-align: right; }
 #ar .ar-sum .dn { color: var(--dnt); font-weight: 700; }
 #ar .ar-sum .up { color: var(--upt); font-weight: 700; }
-/* Every pill-shaped control is the same: 44px tall overall, a dark fill, the same border, 12px text, 14px sides */
-#ar .ar-unit { display: flex; flex: none; height: 44px; border: 1px solid #6b7b80; border-radius: 22px; overflow: hidden; background: var(--surface); }
-#ar .ar-unit button { background: none; border: 0; margin: 0; padding: 0 14px; min-width: 44px; color: #c3c2b7; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Every pill-shaped control is the same: 34px tall overall, a dark fill, the same border, 12px text, 14px sides */
+#ar .ar-unit { display: flex; flex: none; height: 34px; border: 1px solid #6b7b80; border-radius: 17px; overflow: hidden; background: var(--surface); }
+#ar .ar-unit button { background: none; border: 0; margin: 0; padding: 0 14px; min-width: 34px; color: #c3c2b7; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 #ar .ar-unit button:hover { color: #fff; }
 #ar .ar-unit button.on { background: #3a4549; color: #fff; cursor: default; }
-#ar .ar-live { min-height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-radius: 22px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
+#ar .ar-live { height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-radius: 17px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
 #ar .ar-live .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); flex: none; }
 #ar .ar-live.live .dot { background: #3ddc97; animation: arblink 1.6s ease-in-out infinite; }
 #ar .ar-live.warn .dot { background: var(--accent); }
-#ar .ar-ibtn { width: 44px; height: 44px; flex: none; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 22px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); }
+#ar .ar-ibtn { width: 34px; height: 34px; flex: none; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 17px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); }
 #ar .ar-ibtn:hover { background: #3a4549; }
 #ar .ar-stage { position: relative; width: 728px; height: 518px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; overflow: clip; }   /* clip: never scrolled, not even to show a focused label */
 #ar .ar-view { display: none; position: absolute; left: 0; top: 0; width: 726px; height: 516px; }
@@ -75,9 +76,9 @@
 #ar #arMapLabels { pointer-events: none; } #ar #arMapLabels .ar-lb { pointer-events: auto; }
 #ar #arMap { overflow: hidden; overflow: clip; }
 #ar.big #arMap { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; } #ar.big #arMap.grabbing { cursor: grabbing; }
-#ar .ar-zoom { display: none; position: absolute; right: 16px; bottom: 12px; height: 44px; border: 1px solid #6b7b80; border-radius: 22px; overflow: hidden; background: var(--surface); }
+#ar .ar-zoom { display: none; position: absolute; right: 16px; bottom: 12px; height: 34px; border: 1px solid #6b7b80; border-radius: 17px; overflow: hidden; background: var(--surface); }
 #ar.big .ar-zoom { display: flex; }
-#ar .ar-zoom button { background: none; border: 0; margin: 0; padding: 0 14px; min-width: 44px; color: #e3eaec; font-size: 15px; font-weight: 600; cursor: pointer; }
+#ar .ar-zoom button { background: none; border: 0; margin: 0; padding: 0 12px; min-width: 34px; color: #e3eaec; font-size: 15px; font-weight: 600; cursor: pointer; }
 #ar .ar-zoom #arZoomFit { font-size: 12px; min-width: 58px; color: #c3c2b7; font-variant-numeric: tabular-nums; border-left: 1px solid #4a585d; border-right: 1px solid #4a585d; }
 #ar .ar-zoom button:hover { background: #3a4549; } #ar .ar-zoom button:disabled { color: #6b7b80; cursor: default; background: none; }
 #ar .ar-legend { display: flex; flex-direction: column; gap: 5px; }
@@ -154,8 +155,8 @@
 #ar .ar-hist .vals span.n { font-size: 18px; line-height: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 #ar .ar-hist .vals span.u, #ar .ar-hist .vals span.l { font-size: 11px; color: var(--muted); }
 #ar .ar-flowbar { position: absolute; left: 12px; top: 10px; right: 16px; height: 44px; display: flex; align-items: center; gap: 14px; }
-#ar .ar-seg { display: flex; height: 44px; border-radius: 22px; border: 1px solid #6b7b80; overflow: hidden; flex: none; background: var(--surface); }
-#ar .ar-seg button { height: 42px; margin: 0; padding: 0 14px; border: 0; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+#ar .ar-seg { display: flex; height: 34px; border-radius: 17px; border: 1px solid #6b7b80; overflow: hidden; flex: none; background: var(--surface); }
+#ar .ar-seg button { height: 32px; margin: 0; padding: 0 14px; border: 0; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 #ar .ar-seg button.on-dn { background: #1f4a63; color: var(--dnt); }
 #ar .ar-seg button.on-up { background: #5a3520; color: var(--upt); }
 #ar .ar-scale { display: flex; align-items: center; gap: 7px; flex: none; font-size: 11px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -202,8 +203,11 @@
 /* Animation: CSS only, so the browser does the work and the router just answers a poll every 2 s. */
 #ar .df-a { animation-timing-function: linear; animation-iteration-count: infinite; }
 #ar .df-led { animation-name: arled; }
+#ar .df-rgb { animation-name: arrgb; }
+#ar .df-flame { animation-name: arflame; }
 #ar .df-ripple { transform-box: fill-box; transform-origin: center; animation-name: arripple; animation-duration: 2.6s; animation-timing-function: ease-out; }
 #ar.paused .df-a, #ar.paused .ar-live .dot { animation-play-state: paused !important; }
+#ar.moving .df-a { animation-play-state: paused !important; }   /* while the map is dragged or zoomed: it only has to move */
 #ar .lk, #ar .ob, #ar .rb { transition: opacity .3s ease; }
 #ar .ob { cursor: pointer; }
 #ar .lk.dim { opacity: .14; } #ar .ob.dim { opacity: .38; } #ar .ob.off { opacity: .3; }
@@ -222,6 +226,8 @@
 #ar .sk { stroke-opacity: .9; fill: none; stroke-width: 2.2px; stroke-linecap: round; }
 @keyframes arblink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 @keyframes arled { 0%, 40%, 60%, 100% { opacity: 1; } 50% { opacity: .15; } }
+@keyframes arrgb { 0%, 100% { fill: #ff5e7a; } 17% { fill: #ffb03d; } 33% { fill: #ffe45c; } 50% { fill: #3ddc97; } 67% { fill: #59c3ff; } 83% { fill: #a99cf5; } }
+@keyframes arflame { 0%, 100% { opacity: 1; } 22% { opacity: .62; } 47% { opacity: .92; } 71% { opacity: .55; } }
 @keyframes arripple { from { transform: scale(1); opacity: .75; } to { transform: scale(2.3); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #ar .df-a, #ar .ar-live .dot { animation: none !important; } #ar .lk, #ar .ob, #ar .rb, #ar .ar-lb { transition: none; } }
 </style>
@@ -332,6 +338,7 @@ var ICON = {
 	desktop: rr(2.5, 6, 12, 9, 1.5) + 'M6 19h5M8.5 15v4' + rr(17, 4, 4.5, 16, 1.2) + 'M19.25 7.5h.01',
 	mac: rr(3, 3, 18, 11, 1.5) + rr(7, 17, 10, 4, 1.5) + 'M9.5 19h.01',
 	light: 'M9.5 18h5M10.5 21h3M12 3a6 6 0 0 0-3.7 10.7c.7.6 1.2 1.3 1.2 2.3h5c0-1 .5-1.7 1.2-2.3A6 6 0 0 0 12 3z',
+	strip: 'M2.5 10.8c3 0 3.6-3.2 6.4-3.2S12.3 10.8 15.1 10.8s3.6-3.2 6.4-3.2M2.5 16.3c3 0 3.6-3.2 6.4-3.2S12.3 16.3 15.1 16.3s3.6-3.2 6.4-3.2M2.5 10.8v5.5M21.5 7.6v5.5M5.8 11.95h.01M12 11.95h.01M18.3 11.95h.01',
 	air: rr(3, 5, 18, 8, 2) + 'M6.5 10h11M8 16v2M12 16v3.5M16 16v2',
 	speaker: rr(6.5, 3, 11, 18, 2.5) + ci(12, 14, 3) + 'M12 7.5h.01',
 	printer: 'M7 8V4h10v4' + rr(3.5, 8, 17, 8, 2) + 'M7 13.5h10V20H7z',
@@ -346,6 +353,7 @@ var ICON = {
 	lock: rr(5, 10.5, 14, 10, 2) + 'M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3M12 14.5v2',
 	sensor: ci(12, 12, 3) + 'M5.6 7.5a8 8 0 0 0 0 9M18.4 7.5a8 8 0 0 1 0 9',
 	thermostat: ci(12, 12, 8.5) + 'M12 12l3-3.5M8 16.5h8',
+	boiler: rr(6, 2.5, 12, 15, 2) + 'M12 6.3c.5 1.6 3 3 3 5.6a3 3 0 0 1-6 0c0-1.3.6-2.3 1.4-3 .1 1 .6 1.7 1.3 1.8-.2-1.7.1-3.2.3-4.4zM9.5 17.5v4M12 17.5v4M14.5 17.5v4',
 	plug: 'M9 3v5M15 3v5' + rr(6, 8, 12, 7, 2) + 'M12 15v6',
 	hub: rr(4, 13, 16, 6, 2) + 'M8 16h.01M12 16h.01M16 16h.01M8.5 9.5a5 5 0 0 1 7 0M10.6 11.4a2 2 0 0 1 2.8 0',
 	vacuum: ci(12, 12, 8.5) + ci(12, 9, 2) + 'M9.5 16.5h5',
@@ -533,9 +541,12 @@ var TYPE_KIND = {
 /* Icon numbers networkmap hands out from one loose keyword ("mac" -> 6, "win"/"pc"/"nb" -> 1, "desktop" -> 34,
    a DHCP vendor class -> 9/22/30/31): a clear name beats these, even when they were saved with a nickname. */
 /* Renaming a device on the page saves the router's icon for what the name says, so the router's client list shows the same
-   kind; a kind the router has no icon for saves none (0), so a stale guess doesn't outrank the name. */
+   kind; a kind the router has no icon for saves none (0), so a stale guess doesn't outrank the name. An LED strip saves the
+   router's light icon and a boiler its appliance icon: the name still makes them a strip and a boiler (see SUB). */
 var ASUS_TYPE = { desktop: 34, mac: 14, laptop: 35, phone: 10, tablet: 20, tv: 23, streamer: 11, soundbar: 47, speaker: 43, console: 7, nas: 4,
-	printer: 18, camera: 5, doorbell: 85, lock: 63, air: 49, light: 60, vacuum: 61, plug: 70, sensor: 62, watch: 64, appliance: 50 };
+	printer: 18, camera: 5, doorbell: 85, lock: 63, air: 49, light: 60, vacuum: 61, plug: 70, sensor: 62, watch: 64, appliance: 50, strip: 60, boiler: 50 };
+/* Kinds that are a closer look at a broader one the router has an icon for: a name saying one of these narrows that icon */
+var SUB = { strip: 'light', boiler: 'appliance', washer: 'appliance', dryer: 'appliance', dishwasher: 'appliance' };
 /* The router's client list (custom_clientlist) with one device's entry changed, as the router's own editor writes it:
    "<name>MAC>0>icon>>", other fields kept as they were (newer firmware writes a few more empty ones: a new entry takes the
    shape of the others). No name removes the entry: the router's own name and icon come back. Every other entry stays as it
@@ -559,6 +570,10 @@ function renameList(raw, mac, name, type) {
 var TYPE_LOOSE = { 1: 1, 6: 1, 9: 1, 22: 1, 30: 1, 31: 1, 32: 1, 34: 1 };
 /* Names that say what a device is. First match wins, so the specific ones come first. */
 var KIND_STRONG = [
+	/* LED strips by what people call them (also in German, French, Spanish, Italian, Dutch and Bulgarian), TV backlights,
+	   WLED, LED controllers, Govee's strips (ihoment_H61…), Tapo L900-L930 and Kasa KL400-KL430; "strip" on its own unless
+	   the name says it's a power strip */
+	['strip', /(led|light|lights|rgb|rgbw|rgbic|neon)[ _-]?(strip|stripe|tape|rope)|lightstrip|ledstrip|strip[ _-]?lights?|\bleds\b|backlight|neon[ _-]?(flex|rope|sign)|rope[ _-]?lights?|led[ _-]?(streifen|band|lint|leiste)|lichtstreifen|ruban[ _-]?led|tira[ _-]?(de[ _-]?)?led|striscia[ _-]?led|(led|лед)[ _-]?лента|ihoment[_-]?h61|^(tapo[ _-]?)?l9\d\d(-\d+)?[a-z]?$|^kl4\d\d|\bwled\b|led[ _-]?controller|gledopto|lifx[ _-]?(z|neon)\b|^(?!.*(power|surge|outlet|socket|plug|extension|smart)).*\bstrips?\b/i],
 	['mac', /\bmac[ _-]?(studio|mini|pro)\b|\bimac/i],
 	['laptop', /mac[ _-]?book|\bmbp\b|\bmba\b|laptop|notebook|thinkpad|latitude|zenbook|vivobook|ideapad|chromebook|surface|elitebook|probook|\bxps\b|\byoga\b|magicbook|matebook|galaxy[ _-]?book|zephyrus|\bspectre\b/i],
 	['pi', /raspberry|\brpi\d*\b|^rpi?\d([-_.]|$)|\bpi[ _-]?[345]\b|pi[ _-]?hole/i],   /* before desktop and nas: a Pi often runs a server */
@@ -585,11 +600,14 @@ var KIND_STRONG = [
 	['pet', /pet[ _-]?(feeder|fountain|cam|door|camera)|feeder|litter|petlibro|petkit|whisker|sure[ _-]?(petcare|feed|flap)|cat[ _-]?flap|furbo|petcube|petsafe|\bdog[ _-]?cam|\bcat[ _-]?(cam|fountain)|tractive|bird[ _-]?buddy/i],   /* before camera: a pet camera */
 	['camera', /\bcam\b|[a-z]cam(\b|\d)|camera|kamera|ipcam|reolink|\barlo\b|\bblink|\bwyze(?![ _-]?(bulb|plug|lock|vac|robot|scale|watch|band|switch|light))|\beufy(?![ _-]?(robo|clean|vac|bulb|lock|smart ?lock|scale|plug))|hikvision|dahua|\bnvr\b|nest[ _-]?cam|^(tapo[ _-]?)?c[1-5]\d\d(ws?)?$|\bimou\b|ezviz|annke|amcrest|foscam|\blorex|\bswann\b|\buvc[ _-]|baby[ _-]?(monitor|cam)|nanit|\bowlet|\bmiku\b|webcam|imilab|\bkc\d{3}\b|wansview|\bzosi\b|heimvision|simplisafe|\bcanary\b/i],   /* Tapo cameras name themselves by model: C200 */
 	['lock', /\block\b|smart ?lock|\bnuki\b|\byale\b|schlage|tedee|ultraloq|lockly|danalock|igloohome|\blevel[ _-]?(lock|bolt|touch)|\bwelock|kwikset|\bloqed|deadbolt/i],
-	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?(learning|thermostat)|ems[-_]?esp|viessmann|vaillant|vitoconnect|\bhive\b|\bwiser\b|evohome|plugwise|buderus|remeha|intergas|\bnefit\b|bosch[ _-]?(easy[ _-]?control|ct\d{3})/i],   /* EMS-ESP: a boiler's gateway */
+	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?(learning|thermostat)|\bhive\b|\bwiser\b|evohome|plugwise|remeha|\bnefit\b|bosch[ _-]?(easy[ _-]?control|ct\d{3})/i],
+	/* after thermostat: a "boiler thermostat" is a thermostat. EMS-ESP, ebusd, OpenTherm Gateway, Vitoconnect and Buderus KM200
+	   are gateways on the boiler itself; boiler and water heater in German, French, Italian, Spanish, Dutch and Bulgarian */
+	['boiler', /boiler|\bcombi\b|ems[-_]?esp|ebusd|\botgw\b|opentherm|vitoconnect|viessmann|vaillant|buderus|\bkm\d{3}\b|intergas|incomfort|ariston|\bbaxi\b|worcester|ferroli|immergas|junkers|water[ _-]?heater|\bgeyser\b|bojler|бойлер|котел|\bkessel\b|heizung|chaudi[eè]re|caldaia|caldera|\bketel\b/i],
 	['blinds', /blind|curtain|\bshades?\b|shutter|rollo|rolladen|jalousie|\bsomfy(?![ _-]?(garage|gate|alarm|cam|tahoma|box|connexoon))|smartwings|motion[ _-]?blinds|powerview|\bbrel\b|\btuiss|awning/i],   /* before switch and light: "blind switch" */
 	['wallswitch', /wall ?switch|light ?switch|smart ?switch|switch ?module|\bdimmer\b|shelly[ _-]?(1|2|plus ?[12]|pro ?[12]|i4|dimmer)\b|sonoff[ _-]?(t[0-4]|tx|mini)\b|^(tapo[ _-]?)?s5\d\d[a-z]?$|^(hs2[0-2]0|ks2\d\d|es20m)\b/i],
 	/* Tapo and Kasa devices name themselves by model (L630, KL130), Govee's by its maker and model (ihoment_H6159_…) */
-	['light', /bulb|\blamp|\bwled\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee|^(tapo[ _-]?)?l[5-9]\d\d[a-z]?$|^(kl|lb)\d{3}\b|ihoment[_-]?h(6|70)|twinkly|sengled|\bcync\b|lumary|gledopto|magic[ _-]?home|flux[ _-]?led|\bhue[ _-]?(lamp|bulb|play|go|lightstrip|iris|bloom|gradient|signe)\b|led[ _-]?controller/i],
+	['light', /bulb|\blamp|light\b|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|^(tapo[ _-]?)?l[5-9]\d\d[a-z]?$|^(kl|lb)\d{3}\b|ihoment[_-]?h(6|70)|twinkly|sengled|\bcync\b|lumary|magic[ _-]?home|flux[ _-]?led|\bhue[ _-]?(lamp|bulb|play|go|iris|bloom|gradient|signe)\b/i],
 	['garage', /garage[ _-]?(door|opener|gate)|^garage$|\bmyq|liftmaster|chamberlain|tailwind|ratgdo|ismartgate|gogogate|aladdin[ _-]?connect|gate[ _-]?opener|meross[ _-]?msg/i],   /* before hub */
 	['hub', /\bbridge\b|\bhub\b|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee|^(tapo[ _-]?)?h[12]00$|dirigera|tradfri|fibaro|\bezlo\b|\bvera(plus|edge|secure)?\b|homebridge|deconz|phoscon|zigbee2mqtt|\bz2m\b|z-?wave|\bmatter\b|openhab|node-?red|domoticz|iobroker|jeedom|homematic|\bccu3\b|raspberrymatic|\bslzb|smlight|tubeszb|\bajax\b|tahoma|connexoon|lutron|caseta|broadlink|harmony|\bihost\b|\bhoobs\b/i],
 	['purifier', /purifier|humidifier|air[ _-]?(cleaner|performer|treatment)|philips[ _-]?air\b|\bblueair|levoit|\bcoway|\bwinix|airmega|ihoment[_-]?h71[24]|dyson[ _-]?(pure|hot|cool|purifier|humidify)|\bzhimi|\bmi[ _-]?air\b|smartmi|rabbit[ _-]?air|molekule/i],
@@ -605,9 +623,10 @@ var KIND_STRONG = [
 	['dishwasher', /dish ?washer|geschirr|^(bosch|siemens|neff|gaggenau|bsh|constructa|balay|pitsos|profilo)[-_ ]s[mnbpgrx][a-z]{0,2}\d/i],
 	['dryer', /tumble|dryer|trockner|^(bosch|siemens|neff|bsh|constructa|balay|pitsos|profilo)[-_ ]w[tq][a-z]{0,2}\d/i],
 	['washer', /washer|washing|waschmaschine|^(bosch|siemens|neff|bsh|constructa|balay|pitsos|profilo)[-_ ]w[agmnuvdx][a-z]{0,2}\d/i],
-	['appliance', /appliance|fridge|refrigerator|freezer|\boven\b|microwave|kettle|coffee|\bfan\b|heater|boiler|cooker|air ?fryer|ihoment[_-]?h7|^(bosch|siemens|neff|gaggenau|bsh)[-_ ][a-z]{2}|thermomix|nespresso|de'?[ _-]?longhi|\bjura\b|\bsmeg\b|\banova|\bmeater|instant[ _-]?pot|breville|cosori|\bthinq\b|espresso/i],
+	['appliance', /appliance|fridge|refrigerator|freezer|\boven\b|microwave|kettle|coffee|\bfan\b|heater|cooker|air ?fryer|ihoment[_-]?h7|^(bosch|siemens|neff|gaggenau|bsh)[-_ ][a-z]{2}|thermomix|nespresso|de'?[ _-]?longhi|\bjura\b|\bsmeg\b|\banova|\bmeater|instant[ _-]?pot|breville|cosori|\bthinq\b|espresso/i],
 	['plug', /\bplug|\bchime|\bsp1\d\d\b|smart ?plug|\boutlet\b|socket|power ?strip|\bhs1\d\d\b|\bkp\d{3}\b|^(tapo[ _-]?)?p[13]\d\d[a-z]?$|^ep\d\d\b|meross[ _-]?mss|gosund|teckin|blitzwolf/i],
 	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara|ihoment[_-]?h5|thermometer|hygrometer|air[ _-]?(quality|monitor)|\bawair|airthings|\bco2\b|\bradon|purpleair|qingping|\bflood|(energy|power)[ _-]?meter|shelly[ _-]?(ht|h&t|flood|smoke|3?em)|emporia[ _-]?vue|iotawatt|\bsiren\b/i],
+	['strip', /\bgovee/i],   /* a Govee with no other word in its name: most of Govee's Wi-Fi lights are LED strips */
 	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life|ihoment/i]
 ];
 /* Words as people run them together, split apart so the rules above find them: JohnsNas, KidsTV, LivingRoomLamp (camelCase),
@@ -633,7 +652,8 @@ var MODULE_KIND = [
 ];
 /* Weaker hints: the maker (from the MAC address) and the DHCP vendor class. Used only when nothing above matched. */
 var KIND_WEAK = [
-	['light', /signify|wiz connected|lifx|yeelight|nanoleaf|intellirocks|twinkly|ledworks/i],   /* Shenzhen Intellirocks: Govee */
+	['strip', /intellirocks/i],   /* Shenzhen Intellirocks: Govee, whose Wi-Fi lights are LED strips most often */
+	['light', /signify|wiz connected|lifx|yeelight|nanoleaf|twinkly|ledworks/i],
 	['air', /daikin|sensibo|gree electric|midea/i],
 	['smartspeaker', /amazon technologies/i],   /* Amazon's own Wi-Fi: Echo speakers, most often */
 	['speaker', /sonos|bose corp|bluesound|lenbrook|harman|bang & olufsen|devialet|linkplay/i],
@@ -649,7 +669,8 @@ var KIND_WEAK = [
 	['blinds', /somfy|hunter douglas|smartwings|dooya/i],
 	['pet', /petlibro|petkit|automated pet care|sure petcare|tomofun|petcube|whisker/i],
 	['fitness', /peloton|tonal|ifit|echelon|technogym|hydrow|wahoo/i],
-	['thermostat', /tado|ecobee|netatmo|resideo|viessmann|vaillant/i],
+	['thermostat', /tado|ecobee|netatmo|resideo/i],
+	['boiler', /viessmann|vaillant|bosch thermotechnik|ariston|baxi/i],
 	['tv', /lg innotek|hisense|vizio|tcl king/i],
 	['streamer', /\broku\b/i],
 	['nas', /synology|qnap|ugreen/i],
@@ -676,10 +697,11 @@ function classify(mac, name, link, al) {
 	   - the router's own guess (the same icon it detects), or a loose one (any computer, any phone);
 	   - a computer, phone, tablet, watch or console icon on a device you named after a home device ("Daikin AC"): nobody
 	     picks a game console for their air conditioner. A nickname the editor filled in with the device's own name
-	     (DESKTOP-…) isn't one you typed. Other icons you picked win over the name: a plug named for its lamp stays a plug. */
+	     (DESKTOP-…) isn't one you typed. Other icons you picked win over the name: a plug named for its lamp stays a plug.
+	   A name that says a closer kind of what the icon shows narrows it: a light named "Desk LED strip" is an LED strip. */
 	var key = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
 	var typed = names[0] && [l && l.host, m && m.name].every(function (h) { return !h || key(h) !== key(names[0]); }), mine = typed ? byName(names[0], 0) : null;
-	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt) && !(mine && PERSONAL[TYPE_KIND[ct]] && !PERSONAL[mine.kind])) return res(TYPE_KIND[ct], 'your icon');
+	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt) && !(mine && PERSONAL[TYPE_KIND[ct]] && !PERSONAL[mine.kind]) && !(mine && SUB[mine.kind] === TYPE_KIND[ct])) return res(TYPE_KIND[ct], 'your icon');
 	/* 2. a name that says what it is: your nickname, then the names the device gave */
 	for (j = 0; j < names.length; j++) if ((r = byName(names[j], j))) return r;
 	/* a Wi-Fi module's maker with the name its firmware gives, when the pair says what the device is */
@@ -741,7 +763,7 @@ function buildAliases(N, online) {
 var OS_NAME = { 1: 'Android', 2: 'Windows', 3: 'Linux', 4: 'ASUS', 5: 'Apple' };   /* networkmap.h BASE_TYPE_* */
 var WIFI_STD = { n: 'Wi-Fi 4 (802.11n)', ac: 'Wi-Fi 5 (802.11ac)', ax: 'Wi-Fi 6 (802.11ax)', be: 'Wi-Fi 7 (802.11be)' };
 var KIND_LABEL = { desktop: 'Desktop PC', mac: 'Mac desktop', laptop: 'Laptop', phone: 'Phone', tablet: 'Tablet', watch: 'Watch', printer: 'Printer', tv: 'TV', streamer: 'Streaming box',
-	speaker: 'Speaker', soundbar: 'Home cinema', console: 'Game console', nas: 'NAS', camera: 'Camera', doorbell: 'Doorbell', lock: 'Smart lock', thermostat: 'Thermostat', light: 'Light',
+	speaker: 'Speaker', soundbar: 'Home cinema', console: 'Game console', nas: 'NAS', camera: 'Camera', doorbell: 'Doorbell', lock: 'Smart lock', thermostat: 'Thermostat', light: 'Light', strip: 'LED strip', boiler: 'Boiler',
 	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', washer: 'Washing machine', dryer: 'Dryer', dishwasher: 'Dishwasher', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
 	pi: 'Single-board computer', stick: 'Streaming stick', smartspeaker: 'Smart speaker', purifier: 'Air purifier', wallswitch: 'Smart switch', contact: 'Door sensor',
 	charger: 'EV charger', car: 'Car', solar: 'Solar or battery', mower: 'Robot mower', vr: 'VR headset', projector: 'Projector', garage: 'Garage door', printer3d: '3D printer',
@@ -1340,6 +1362,50 @@ function drawLight(id, kind, cx, cy, face) {   /* a lit bulb on a small lamp foo
 	o.target = P(cx, cy, 1.0);
 	return o;
 }
+var M_WOOD = MAT('#7c6450'), M_COPPER = MAT('#b87333');
+/* An LED strip under a shelf on a piece of wall: its LEDs run through the colours one after another and wash the wall below. */
+function drawStrip(id, kind, cx, cy, face) {
+	var o, w, i, n = 9, d = 3.2, k = G.U / 24, col = ['#ff5e7a', '#ffb03d', '#ffe45c', '#3ddc97', '#59c3ff', '#a99cf5'];
+	var anim = function (j) { return 'animation-duration:' + d + 's;animation-delay:' + (-d * j / n).toFixed(2) + 's'; };
+	o = new Obj(id, cx, cy, 1.3);
+	o.box(cx - 0.6, cy - 0.2, 0, 1.2, 0.14, 1.25, M_WALL, { shadow: true });
+	w = o.last;
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	[[0.15, 0.1], [0.4, 0.15]].forEach(function (a) {
+		o.svg.push('<polygon class="df-a df-rgb" points="' + ptsS([o.fp('L', 0.1, 0.65, w), o.fp('L', 0.9, 0.65, w), o.fp('L', 0.98, a[0], w), o.fp('L', 0.02, a[0], w)]) +
+			'" style="fill:' + col[4] + ';opacity:' + a[1] + ';' + anim(4) + '"/>');
+	});
+	o.box(cx - 0.5, cy - 0.06, 0.82, 1.0, 0.3, 0.07, M_WOOD, { shadow: true });
+	o.box(cx - 0.36, cy + 0.02, 0.89, 0.08, 0.18, 0.28, MAT('#5f7f9a'), { rim: false });
+	o.box(cx - 0.27, cy + 0.02, 0.89, 0.07, 0.18, 0.24, MAT('#a0574f'), { rim: false });
+	o.box(cx + 0.14, cy + 0.04, 0.89, 0.16, 0.14, 0.14, M_WHITE);
+	for (i = 0; i < n; i++) {
+		var p = P(cx - 0.44 + 0.88 * i / (n - 1), cy + 0.22, 0.8);
+		o.svg.push('<circle class="df-a df-rgb" cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="' + n1(2.7 * k) + '" style="fill:' + col[i % 6] + ';opacity:.35;' + anim(i) + '"/>',
+			'<circle class="df-a df-rgb" cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="' + n1(1.2 * k) + '" style="fill:' + col[i % 6] + ';' + anim(i) + '"/>');
+	}
+	o.target = P(cx, cy, 1.3);
+	return o;
+}
+/* A wall-hung boiler: its white case on a piece of wall, the display, the flame flickering in its window, the pipes below. */
+function drawBoiler(id, kind, cx, cy, face) {
+	var o, g, k = G.U / 24, f = function (x, y) { return n1(g[0] + x * k) + ' ' + n1(g[1] + y * k); };
+	o = new Obj(id, cx, cy, 1.5);
+	o.box(cx - 0.45, cy - 0.2, 0, 0.9, 0.14, 1.5, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	[[-0.22, M_METAL], [-0.08, M_COPPER], [0.06, M_COPPER], [0.2, M_METAL]].forEach(function (q) { o.box(cx + q[0], cy - 0.02, 0.12, 0.05, 0.05, 0.46, q[1], { rim: false }); });
+	o.box(cx - 0.32, cy - 0.06, 0.56, 0.64, 0.34, 0.84, M_WHITE, { ao: true, shadow: true });
+	o.face('L', 0.18, 0.7, 0.82, 0.88, 'fill:#11181b');
+	o.face('L', 0.25, 0.74, 0.52, 0.84, 'fill:' + DN + ';opacity:.85');
+	o.led('L', 0.7, 0.79, '#3ddc97', 0, 0, 0.7);
+	o.face('L', 0.3, 0.14, 0.7, 0.52, 'fill:#1b2225;stroke:#9aa5a9;stroke-width:.6');
+	g = o.fp('L', 0.5, 0.31);
+	o.svg.push('<g class="df-a df-flame" style="animation-duration:1.9s"><circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + n1(4.6 * k) + '" style="fill:' + UP + ';opacity:.35"/>' +
+		'<path d="M' + f(0, -5.5) + ' C' + f(2.6, -2.4) + ' ' + f(3.4, 0.2) + ' ' + f(0, 3.2) + ' C' + f(-3.4, 0.2) + ' ' + f(-2.6, -2.4) + ' ' + f(0, -5.5) + 'Z" style="fill:' + UP + '"/>' +
+		'<path d="M' + f(0, -1.6) + ' C' + f(1.3, 0) + ' ' + f(1.6, 1.4) + ' ' + f(0, 2.6) + ' C' + f(-1.6, 1.4) + ' ' + f(-1.3, 0) + ' ' + f(0, -1.6) + 'Z" style="fill:#ffe45c"/></g>');
+	o.target = P(cx, cy, 1.5);
+	return o;
+}
 function drawAir(id, kind, cx, cy, face) {   /* a split air conditioner on a piece of wall */
 	var o, g;
 	o = new Obj(id, cx, cy, 1.6);
@@ -1805,7 +1871,7 @@ function drawGeneric(id, kind, cx, cy, face) {
 	return o;
 }
 var DRAW = {
-	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight,
+	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight, strip: drawStrip, boiler: drawBoiler,
 	air: drawAir, speaker: drawSpeaker, printer: drawPrinter, watch: drawWatch, camera: drawCamera, streamer: drawStreamer, soundbar: drawSoundbar,
 	doorbell: drawDoorbellLock, lock: drawDoorbellLock, sensor: drawSensorThermostat, thermostat: drawSensorThermostat, plug: drawPlug, hub: drawHub,
 	vacuum: drawVacuum, appliance: drawAppliance, washer: drawAppliance, dryer: drawAppliance, dishwasher: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
@@ -2105,14 +2171,19 @@ function buildMap(net, L) {
 	floor.push(pline([P(1.675, y0, 0.42), P(1.675, y0, 0.06), P(1.675, 1.15, 0.06)], 'fill:none;stroke:#11181b;stroke-width:' + px(4.5) + ';stroke-linecap:round;stroke-linejoin:round'));
 	floor.push(pline([P(1.675, y0, 0.42), P(1.675, y0, 0.06), P(1.675, 1.15, 0.06)], 'fill:none;stroke:#3f7fa6;stroke-width:' + px(1.8) + ';stroke-linecap:round;stroke-linejoin:round'));
 
-	var sh = [];
+	/* Shadows: every drawing's in one shape, its edge softened by six faint outlines rather than a blur filter. A blur is
+	   worked out again for every frame the map moves, and at 400% that is more than the browser can draw in time. */
+	var sd = '', sh = [];
 	objs.forEach(function (o) {
-		var parts = o.shadow.map(function (s) {
+		o.shadow.forEach(function (s) {
 			var X = s[0], Y = s[1], dx = s[2], dy = s[3], sx = s[4], sy = s[5];
-			return poly([P(X, Y + dy), P(X + dx, Y + dy), P(X + dx + sx, Y + dy + sy), P(X + dx + sx, Y + sy), P(X + sx, Y + sy), P(X, Y)], 'fill:#000000');
-		}).join('');
-		if (parts) sh.push('<g data-sh="' + o.id + '">' + parts + '</g>');
+			sd += 'M' + ptsS([P(X, Y + dy), P(X + dx, Y + dy), P(X + dx + sx, Y + dy + sy), P(X + dx + sx, Y + sy), P(X + sx, Y + sy), P(X, Y)]).replace(/ /g, ' L') + 'Z';
+		});
 	});
+	if (sd) {
+		[12, 10, 8, 6, 4, 2].forEach(function (w) { sh.push('<path d="' + sd + '" style="fill:none;stroke:#000000;stroke-opacity:.13;stroke-width:' + w + ';stroke-linejoin:round"/>'); });
+		sh.push('<path d="' + sd + '" style="fill:#000000;fill-opacity:.62"/>');
+	}
 
 	/* labels: real buttons over the scene, placed where they hit nothing */
 	var labels = placeLabels(net, L, objs, arcs);
@@ -2132,9 +2203,9 @@ function buildMap(net, L) {
 		'<radialGradient id="ar-bulb" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#fff6d0"/><stop offset=".5" style="stop-color:#ffcc00"/><stop offset="1" style="stop-color:#b38f00"/></radialGradient>' +
 		'<linearGradient id="ar-cw" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_WHITE.l + '"/><stop offset=".5" style="stop-color:' + M_WHITE.r + '"/></linearGradient>' +
 		'<linearGradient id="ar-cd" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_DARK.l + '"/><stop offset=".5" style="stop-color:' + M_DARK.r + '"/></linearGradient>' +
-		'<filter id="ar-blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>';
+		'</defs>';
 	var svg = '<svg width="' + G.SW + '" height="' + G.SH + '" viewBox="0 0 ' + G.SW + ' ' + G.SH + '" role="img" aria-label="Isometric map of your network: traffic moving between the internet, the router, its AiMesh nodes and each device">' +
-		defs + floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3" filter="url(#ar-blur)">' + sh.join('') + '</g>' +
+		defs + floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3">' + sh.join('') + '</g>' +
 		objs.map(function (o) { return '<g data-obj="' + o.id + '" class="ob">' + o.svg.join('') + '</g>'; }).join('') +
 		arcs.map(function (a) { return a.svg; }).join('') + hubs.join('') + marks.join('') + leaders.join('') + '</svg>';
 	var html = labels.map(function (lb) {
@@ -3085,8 +3156,11 @@ function pzSet(s, px, py) {   /* zoom to s, keeping the stage point (px, py) whe
 }
 function pzReset() { A.pz = { s: 1, x: 0, y: 0 }; pzApply(); }
 function pzWire() {
-	var el = $('arMap'), ptr = {}, drag = null, pinch = null, wAt = -1e9, wPad = false, gs0 = 1;
+	var el = $('arMap'), ptr = {}, drag = null, pinch = null, wAt = -1e9, wPad = false, gs0 = 1, still = 0;
 	var at = function (e) { var r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+	/* While the map moves, its animations wait: each frame then only redraws the map where it now is, which keeps up even at
+	   400% with a device traced (its ring and its packets would otherwise be redrawn too). They go on 200 ms after it stops. */
+	var moving = function () { $('ar').classList.add('moving'); clearTimeout(still); still = setTimeout(function () { $('ar').classList.remove('moving'); }, 200); };
 	el.addEventListener('wheel', function (e) {
 		if (!A.big) return;   /* the page's view: the page scrolls as usual */
 		e.preventDefault();
@@ -3094,6 +3168,7 @@ function pzWire() {
 		/* a mouse wheel turns in whole notches (100 or more, straight up and down); a trackpad scrolls in small or fractional
 		   steps, often sideways too. One gesture's events (each within 200 ms of the last) are judged together. */
 		var pad = e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40 || e.deltaY % 1 !== 0);
+		moving();
 		wPad = e.timeStamp - wAt > 200 ? pad : wPad || pad; wAt = e.timeStamp;
 		if (e.ctrlKey) pzSet(A.pz.s * Math.exp(-dy * 0.01), p[0], p[1]);                  /* a trackpad pinch (Chrome, Firefox, Edge) */
 		else if (wPad) { A.pz.x -= dx; A.pz.y -= dy; pzClamp(); pzApply(); }               /* two fingers on a trackpad: pan */
@@ -3101,7 +3176,7 @@ function pzWire() {
 	}, { passive: false });
 	/* Safari sends a trackpad pinch as gesture events, with the pinch's scale */
 	el.addEventListener('gesturestart', function (e) { if (A.big) { e.preventDefault(); gs0 = A.pz.s; } });
-	el.addEventListener('gesturechange', function (e) { if (A.big) { e.preventDefault(); var p = at(e); pzSet(gs0 * e.scale, p[0], p[1]); } });
+	el.addEventListener('gesturechange', function (e) { if (A.big) { e.preventDefault(); moving(); var p = at(e); pzSet(gs0 * e.scale, p[0], p[1]); } });
 	el.addEventListener('gestureend', function (e) { if (A.big) e.preventDefault(); });
 	el.addEventListener('pointerdown', function (e) {
 		if (!A.big || (e.pointerType === 'mouse' && e.button !== 0) || e.target.closest('.ar-zoom')) return;
@@ -3116,11 +3191,12 @@ function pzWire() {
 		var ids = Object.keys(ptr);
 		if (pinch && ids.length === 2) {
 			var a = ptr[ids[0]], b = ptr[ids[1]];
+			moving();
 			pzSet(pinch.s * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
 		} else if (drag) {
 			var p = at(e), dx = p[0] - drag.p[0], dy = p[1] - drag.p[1];
 			if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; el.classList.add('grabbing'); }
-			if (drag.moved) { A.pz.x = drag.x + dx; A.pz.y = drag.y + dy; pzClamp(); pzApply(); }
+			if (drag.moved) { moving(); A.pz.x = drag.x + dx; A.pz.y = drag.y + dy; pzClamp(); pzApply(); }
 		}
 	});
 	var up = function (e) {
@@ -3214,8 +3290,8 @@ function boot() {
 	A.rowHtml = $('arTop0').innerHTML;   /* the one row markup, for the busiest list and the "+N more" list */
 	for (var t = 1; t < TOP_BIG; t++) { var c = $('arTop0').cloneNode(true); c.id = 'arTop' + t; c.className = 'hide'; $('arTopEmpty').parentNode.insertBefore(c, $('arTopEmpty')); }
 	for (var i = 0; i < TOP_BIG; i++) (function (btn) { btn.addEventListener('click', function () { if (btn._id) pick(btn._id); }); })($('arTop' + i));
-	$('arBig').innerHTML = iconSvg('expand', 20, '#f0efec');
-	$('arFull').innerHTML = iconSvg('full', 20, '#f0efec');
+	$('arBig').innerHTML = iconSvg('expand', 18, '#f0efec');
+	$('arFull').innerHTML = iconSvg('full', 18, '#f0efec');
 	$('arBig').addEventListener('click', function () { setBig(!A.big); });
 	$('arFull').addEventListener('click', toggleFull);
 	document.addEventListener('keydown', bigKeys);
@@ -3248,7 +3324,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
@@ -3282,8 +3358,6 @@ window.Arteria = { _t: { renameList: renameList, nameKind: nameKind, ASUS_TYPE: 
 <table width="760px" border="0" cellpadding="5" cellspacing="0" class="FormTitle" id="FormTitle">
 <tr>
 <td bgcolor="#4D595D" colspan="3" valign="top">
-<div>&nbsp;</div>
-
 <div id="ar">
 	<div class="ar-bar">
 		<nav class="ar-tabs" aria-label="Arteria views">

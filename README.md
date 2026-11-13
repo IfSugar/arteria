@@ -48,7 +48,7 @@ Arteria draws each device as one of these kinds, with a drawing on the map and a
 | Phones and wearables | phone, tablet, watch |
 | Entertainment | TV, streaming box (Apple TV, Fire TV Cube, Shield), streaming stick (Fire TV Stick, Chromecast), speaker, smart speaker (Echo, HomePod, Nest Audio), smart display (Echo Show, Nest Hub), home cinema (soundbar), projector, game console, VR headset |
 | Home and office | printer, 3D printer, NAS, network device (switch, access point), fitness equipment (Peloton, treadmill) |
-| Smart home | camera, doorbell, smart lock, garage door, thermostat, light, smart switch, smart blinds, smart-home hub, air conditioner, air purifier or humidifier, robot vacuum, washing machine, dryer, dishwasher, appliance, smart plug, door or window sensor, sensor (motion, leak, smoke...), pet device (feeder, pet camera), other smart device |
+| Smart home | camera, doorbell, smart lock, garage door, thermostat, boiler (and its gateway: EMS-ESP, Vitoconnect), light, LED strip (Govee, WLED, TV backlights), smart switch, smart blinds, smart-home hub, air conditioner, air purifier or humidifier, robot vacuum, washing machine, dryer, dishwasher, appliance, smart plug, door or window sensor, sensor (motion, leak, smoke...), pet device (feeder, pet camera), other smart device |
 | Outdoors and energy | car, EV charger, solar inverter or home battery, robot mower, sprinkler |
 
 **How a kind is chosen**, first match wins:

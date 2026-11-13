@@ -250,10 +250,16 @@ async def zoom(b, port):
         lb = await pg.evaluate("(() => { const l = [...document.querySelectorAll('#arMapLabels .ar-lb')].find(l => { const r = l.getBoundingClientRect(), m = document.getElementById('arMap').getBoundingClientRect(); return r.width && r.left > m.left + 40 && r.right < m.right - 40 && r.top > m.top + 40 && r.bottom < m.bottom - 40; }); if (!l) return null; const r = l.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
         if lb:
             d0 = await z()
-            await pg.mouse.move(lb[0], lb[1]); await pg.mouse.down(); await pg.mouse.move(lb[0] + 60, lb[1] + 40, steps=6); await pg.mouse.up()
+            await pg.mouse.move(lb[0], lb[1]); await pg.mouse.down(); await pg.mouse.move(lb[0] + 60, lb[1] + 40, steps=6)
+            mid = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .df-a')).animationPlayState]")
+            await pg.mouse.up()
             await pg.wait_for_timeout(100)
             d1 = await z()
             check((d1['x'], d1['y']) != (d0['x'], d0['y']) and await pg.evaluate('Arteria.state.sel') is None, 'zoom: dragging pans, and doesn\'t trace the device it started on')
+            await pg.wait_for_timeout(300)
+            aft = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .df-a')).animationPlayState]")
+            check(mid == [True, 'paused'] and aft == [False, 'running'], 'zoom: the animations wait while the map is dragged, and go on when it stops (%s, %s)' % (mid, aft))
+        check(await pg.evaluate("!document.querySelector('#arMapScene [filter], #arMapScene filter')"), 'zoom: the map has no blur filter, which would be redrawn for every frame it moves')
         # no scrollbars, and nothing scrolls, not even when the keyboard reaches a label that is off screen
         for _ in range(12): await pg.keyboard.press('Tab')
         sc = await pg.evaluate("(() => { const s = document.querySelector('#ar .ar-stage'), m = document.getElementById('arMap'); return [s.scrollLeft, s.scrollTop, m.scrollLeft, m.scrollTop, s.offsetWidth - s.clientWidth - 2, m.offsetWidth - m.clientWidth]; })()")
