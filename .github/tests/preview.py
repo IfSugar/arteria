@@ -3,7 +3,7 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), nokey, offline, weak, busy, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile.
+Scenarios: home (default), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile.
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -92,6 +92,8 @@ if SCN == 'busy':
     for i in range(14):
         DEVICES.append(('02:CC:00:00:01:%02X' % i, ['Phone', 'Bulb', 'Plug', 'Tablet', 'Laptop', 'Speaker', 'Camera'][i % 7] + ' %d' % (i + 1),
                         'router' if i % 3 else 'node', '2.4' if i % 2 else '5', 0.5 + (i % 5) * 1.7, 0.1 + (i % 3) * 0.4, -50 - i))
+if SCN == 'speedtest':   # a speed test on one laptop: a river far thicker than everything else
+    DEVICES.append(('02:CC:00:00:01:40', 'Speed test laptop', 'router', '5', 880.0, 42.0, -46))
 if SCN == 'quiet':
     DEVICES = [(m, n, w, b, d * 0.003, u * 0.003, r) for (m, n, w, b, d, u, r) in DEVICES]
 if SCN == 'nonode':

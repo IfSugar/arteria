@@ -198,13 +198,87 @@ async def two_tabs(b, port):
         srv.terminate()
 
 
+async def speed_test(b, port):
+    """A speed test on one laptop: in the expanded Flow view the river fits the window, nothing scrolls."""
+    srv = await serve('speedtest', port)
+    try:
+        ctx = await b.new_context(viewport={'width': 1440, 'height': 860})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(pg)
+        await pg.click('#arBig'); await pg.click('#arTabFlow'); await pg.wait_for_timeout(2600)
+        fs = await pg.evaluate("(() => { const s = document.getElementById('arFlowScroll'); return [s.scrollHeight, s.clientHeight]; })()")
+        check(fs[0] <= fs[1] + 1, 'speed test: the expanded Flow view fits the window, no scrolling (%d of %d px)' % tuple(fs))
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
+async def zoom(b, port):
+    """The expanded map zooms and pans like a whiteboard, never with scrollbars; the page's own view doesn't zoom."""
+    srv = await serve('home', port)
+    try:
+        ctx = await b.new_context(viewport={'width': 1440, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(pg)
+        tf = "getComputedStyle(document.getElementById('arMapScene')).transform"
+        z = lambda: pg.evaluate("Arteria.state.pz")
+        box = await (await pg.query_selector('#arMap')).bounding_box()
+        cx, cy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+        await pg.mouse.move(cx, cy); await pg.mouse.wheel(0, -300); await pg.wait_for_timeout(100)
+        check((await z())['s'] == 1 and await pg.evaluate(tf) == 'none', 'zoom: the page\'s own view doesn\'t zoom')
+        await pg.click('#arBig'); await pg.wait_for_timeout(600)
+        box = await (await pg.query_selector('#arMap')).bounding_box()
+        px, py = box['x'] + box['width'] * 0.3, box['y'] + box['height'] * 0.4
+        # a mouse wheel (whole notches): zooms in around the pointer, which stays over the same spot of the map
+        before = await pg.evaluate("(([x, y]) => { const r = document.getElementById('arMap').getBoundingClientRect(), z = Arteria.state.pz; return [(x - r.left - z.x) / z.s, (y - r.top - z.y) / z.s]; })", [px, py])
+        await pg.mouse.move(px, py)
+        for _ in range(3): await pg.mouse.wheel(0, -120)
+        await pg.wait_for_timeout(100)
+        a = await z()
+        after = await pg.evaluate("(([x, y]) => { const r = document.getElementById('arMap').getBoundingClientRect(), z = Arteria.state.pz; return [(x - r.left - z.x) / z.s, (y - r.top - z.y) / z.s]; })", [px, py])
+        check(a['s'] > 1.5 and abs(after[0] - before[0]) < 1 and abs(after[1] - before[1]) < 1, 'zoom: the mouse wheel zooms in around the pointer (%.2fx)' % a['s'])
+        # a trackpad's two-finger scroll (small, fractional steps) pans; a pinch (ctrl + wheel) zooms
+        await pg.evaluate("(([x, y]) => { const el = document.getElementById('arMap'); for (let i = 0; i < 6; i++) el.dispatchEvent(new WheelEvent('wheel', { deltaX: 6.5, deltaY: 4.25, clientX: x, clientY: y, bubbles: true, cancelable: true })); })", [px, py])
+        b2 = await z()
+        check(abs(b2['s'] - a['s']) < 1e-6 and (b2['x'] != a['x'] or b2['y'] != a['y']), 'zoom: two fingers on a trackpad pan')
+        await pg.evaluate("(([x, y]) => { const el = document.getElementById('arMap'); for (let i = 0; i < 4; i++) el.dispatchEvent(new WheelEvent('wheel', { deltaY: 8, ctrlKey: true, clientX: x, clientY: y, bubbles: true, cancelable: true })); })", [px, py])
+        c = await z()
+        check(c['s'] < b2['s'], 'zoom: a trackpad pinch zooms')
+        # dragging pans; the click that ends the drag doesn't trace a device
+        lb = await pg.evaluate("(() => { const l = [...document.querySelectorAll('#arMapLabels .ar-lb')].find(l => { const r = l.getBoundingClientRect(), m = document.getElementById('arMap').getBoundingClientRect(); return r.width && r.left > m.left + 40 && r.right < m.right - 40 && r.top > m.top + 40 && r.bottom < m.bottom - 40; }); if (!l) return null; const r = l.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+        if lb:
+            d0 = await z()
+            await pg.mouse.move(lb[0], lb[1]); await pg.mouse.down(); await pg.mouse.move(lb[0] + 60, lb[1] + 40, steps=6); await pg.mouse.up()
+            await pg.wait_for_timeout(100)
+            d1 = await z()
+            check((d1['x'], d1['y']) != (d0['x'], d0['y']) and await pg.evaluate('Arteria.state.sel') is None, 'zoom: dragging pans, and doesn\'t trace the device it started on')
+        # no scrollbars, and nothing scrolls, not even when the keyboard reaches a label that is off screen
+        for _ in range(12): await pg.keyboard.press('Tab')
+        sc = await pg.evaluate("(() => { const s = document.querySelector('#ar .ar-stage'), m = document.getElementById('arMap'); return [s.scrollLeft, s.scrollTop, m.scrollLeft, m.scrollTop, s.offsetWidth - s.clientWidth - 2, m.offsetWidth - m.clientWidth]; })()")
+        check(max(sc) <= 0 and min(sc) >= 0, 'zoom: zoomed and panned, no scrollbars, nothing scrolls (%s)' % sc)
+        # never past the map's edges: the map always covers the stage
+        await pg.mouse.move(cx, cy); await pg.mouse.down(); await pg.mouse.move(cx + 3000, cy + 3000, steps=4); await pg.mouse.up()
+        e = await z()
+        check(e['x'] <= 0.01 and e['y'] <= 0.01, 'zoom: panning stops at the map\'s edges')
+        # the buttons: in, out, and back to the whole map; zooming out stops there
+        s0 = (await z())['s']; await pg.click('#arZoomIn'); s1 = (await z())['s']
+        await pg.click('#arZoomFit'); f = await z()
+        await pg.mouse.move(px, py); await pg.mouse.wheel(0, 600); g = await z()
+        check(s1 > s0 and f['s'] == 1 and f['x'] == 0 and g['s'] == 1 and await pg.evaluate(tf) == 'none', 'zoom: the buttons zoom in and back to the whole map; zooming out stops there')
+        # closing the expanded view and opening it again shows the whole map
+        await pg.click('#arZoomIn'); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+        await pg.click('#arBig'); await pg.wait_for_timeout(300)
+        check((await z())['s'] == 1, 'zoom: the expanded view opens on the whole map')
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def main():
     if not CHROME:
         sys.exit('page-browser.py needs Chrome or Chromium (or its path as the argument)')
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792))
         await b.close()
 
 

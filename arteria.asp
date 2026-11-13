@@ -64,12 +64,22 @@
 #ar .ar-live.warn .dot { background: var(--accent); }
 #ar .ar-ibtn { width: 44px; height: 44px; flex: none; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 22px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); }
 #ar .ar-ibtn:hover { background: #3a4549; }
-#ar .ar-stage { position: relative; width: 728px; height: 518px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
+#ar .ar-stage { position: relative; width: 728px; height: 518px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; overflow: clip; }   /* clip: never scrolled, not even to show a focused label */
 #ar .ar-view { display: none; position: absolute; left: 0; top: 0; width: 726px; height: 516px; }
 #ar .ar-view.on { display: block; }
 #ar .ar-view > svg { position: absolute; left: -1px; top: -1px; display: block; }
 #ar .eyebrow { font-size: 10.5px; line-height: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 #ar .ar-over { position: absolute; font-size: 11px; line-height: 15px; color: var(--ink-2); pointer-events: none; }
+/* the expanded map zooms and pans: the scene and the labels share one transform; the text overlays stay put between them */
+#ar #arMapScene, #ar #arMapLabels { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+#ar #arMapLabels { pointer-events: none; } #ar #arMapLabels .ar-lb { pointer-events: auto; }
+#ar #arMap { overflow: hidden; overflow: clip; }
+#ar.big #arMap { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; } #ar.big #arMap.grabbing { cursor: grabbing; }
+#ar .ar-zoom { display: none; position: absolute; right: 16px; bottom: 12px; height: 44px; border: 1px solid #6b7b80; border-radius: 22px; overflow: hidden; background: var(--surface); }
+#ar.big .ar-zoom { display: flex; }
+#ar .ar-zoom button { background: none; border: 0; margin: 0; padding: 0 14px; min-width: 44px; color: #e3eaec; font-size: 15px; font-weight: 600; cursor: pointer; }
+#ar .ar-zoom #arZoomFit { font-size: 12px; min-width: 58px; color: #c3c2b7; font-variant-numeric: tabular-nums; border-left: 1px solid #4a585d; border-right: 1px solid #4a585d; }
+#ar .ar-zoom button:hover { background: #3a4549; } #ar .ar-zoom button:disabled { color: #6b7b80; cursor: default; background: none; }
 #ar .ar-legend { display: flex; flex-direction: column; gap: 5px; }
 #ar .ar-legend span.sw { display: inline-block; width: 8px; height: 8px; border-radius: 4px; margin-right: 6px; vertical-align: 0; }
 #ar .ar-notice { display: flex; align-items: center; gap: 7px; max-width: 420px; font-size: 11.5px; color: var(--ink); }
@@ -227,7 +237,7 @@ var A = {
 	tab: 'map', mode: 'dn', unit: 'Mb', sel: null, paused: false,
 	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false,
 	prev: {}, sm: {}, bk: {}, names: null, namesAt: 0,
-	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowMem: {}, flowK: {},
+	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowMem: {}, flowK: {}, pz: { s: 1, x: 0, y: 0 }, pzEat: 0,
 	hist: [], timers: {}, mapRefs: null, flowRefs: null, big: false, narrow: false, slotBy: {}
 };
 
@@ -2350,6 +2360,7 @@ function renderMap(net) {
 }
 
 /* ---------------------------------------------------------------- the flow (Sankey) */
+var PZMAX = 4;   /* the expanded map zooms in up to four times */
 var FBW = { src: 10, rt: 12, link: 10, mesh: 10, dev: 8 }, FGAP = 3, FGGAP = 11, FSGAP = 34, FKCAP = 11.5;
 /* The big view's flow: columns spread across the stage, a row for every device (up to 60), wider rows
    with more columns, and no height limit: the stage scrolls instead of the ribbons shrinking. */
@@ -2491,13 +2502,16 @@ function flowLayout(gs, net, mode) {
 		return { slot: slot, grp: grp, bottom: y };
 	};
 	var total = gs.reduce(function (a, g) { return a + flowGroupVal(g, bf); }, 0), LIM = G.flow.limit, KK = G.key + f;
+	/* What the ribbons must fit in: the page's stage; in the big view the window's height, so a speed test's thick river
+	   never makes it scroll. It scrolls only when there are more rows than fit even at their least height. */
+	var FIT = LIM || Math.max(G.SH - 14, lay(0, f).bottom + 8);
 	/* the scale the traffic asks for, made smaller as far as needed to fit; the last scale is kept while it still fits and
 	   isn't far below that, so ribbons don't all resize at every sample */
 	var k = Math.min(FKCAP, G.flow.target / Math.max(total, 1e-6)), k0 = A.flowK && A.flowK[KK], kT = k;
-	for (var i = 0; LIM && i < 120 && lay(k, bf).bottom > LIM - 6; i++) k *= 0.97;
-	if (k0 && k0 <= kT * 1.6 && k0 >= k * 0.6 && (!LIM || lay(k0, bf).bottom <= LIM - 6)) k = k0;
+	for (var i = 0; i < 160 && lay(k, bf).bottom > FIT - 6; i++) k *= 0.97;
+	if (k0 && k0 <= kT * 1.6 && k0 >= k * 0.6 && lay(k0, bf).bottom <= FIT - 6) k = k0;
 	var Lf = lay(k, f);
-	for (var j = 0; LIM && j < 80 && Lf.bottom > LIM; j++) { k *= 0.97; Lf = lay(k, f); }
+	for (var j = 0; j < 120 && Lf.bottom > FIT; j++) { k *= 0.97; Lf = lay(k, f); }
 	(A.flowK || (A.flowK = {}))[KK] = k;
 	var grp = Lf.grp, first = grp[gs[0].id], last = grp[gs[gs.length - 1].id];
 	var Hr = gs.reduce(function (a, g) { return a + grp[g.id].H; }, 0);
@@ -2508,7 +2522,7 @@ function flowLayout(gs, net, mode) {
 	var stop = rc - (Hr + FSGAP) / 2;
 	return { k: k, slot: Lf.slot, grp: grp, bottom: Lf.bottom, Hr: Hr, rtop: rc - Hr / 2,
 		src: { wan: { top: stop, h: hi }, loc: { top: stop + hi + FSGAP, h: Hr - hi } },
-		height: LIM ? G.SH : Math.max(G.SH, Math.ceil(Lf.bottom + 12)) };   /* the big view: the stage grows and scrolls */
+		height: LIM ? G.SH : Math.max(G.SH - 2, Math.ceil(Lf.bottom + 12)) };   /* the big view: inside its border; it grows and scrolls only for rows that don't fit */
 }
 /* What a Flow row says: name, second line, icon, state, the big view's two columns. */
 function flowRowInfo(g, r) {
@@ -2924,6 +2938,84 @@ function fit() {
 	var st = root.querySelector('.ar-stage');
 	st.style.width = g.big ? g.SW + 'px' : ''; st.style.height = g.big ? g.SH + 'px' : '';
 	['arMap', 'arFlow'].forEach(function (id) { $(id).style.width = g.big ? g.SW - 2 + 'px' : ''; $(id).style.height = g.big ? g.SH - 2 + 'px' : ''; });
+	if (!g.big) A.pz = { s: 1, x: 0, y: 0 }; else pzClamp();   /* a resized window keeps the zoom, within the map's new edges */
+	if ($('arZoomFit')) pzApply();
+}
+/* Zoom and pan in the expanded map, as on a whiteboard: the mouse wheel and a trackpad pinch zoom around the pointer;
+   dragging with the mouse (or one finger) and scrolling with two fingers on a trackpad pan; two fingers on a touch screen
+   pinch. Never past the map's edges; zooming out stops at the whole map. The page's own view never zooms. */
+function pzApply() {
+	var z = A.pz, t = z.s > 1 ? 'translate(' + z.x.toFixed(1) + 'px,' + z.y.toFixed(1) + 'px) scale(' + z.s.toFixed(4) + ')' : '';
+	$('arMapScene').style.transform = t; $('arMapLabels').style.transform = t;
+	$('arZoomFit').textContent = Math.round(z.s * 100) + '%';
+	$('arZoomOut').disabled = z.s <= 1; $('arZoomIn').disabled = z.s >= PZMAX;
+}
+function pzClamp() {
+	var z = A.pz, W = G.SW - 2, H = G.SH - 2;
+	z.x = Math.min(0, Math.max(W - W * z.s, z.x)); z.y = Math.min(0, Math.max(H - H * z.s, z.y));
+}
+function pzSet(s, px, py) {   /* zoom to s, keeping the stage point (px, py) where it is: the middle when none is given */
+	var z = A.pz;
+	s = Math.max(1, Math.min(PZMAX, s));
+	if (px == null) { px = (G.SW - 2) / 2; py = (G.SH - 2) / 2; }
+	z.x = px - (px - z.x) * s / z.s; z.y = py - (py - z.y) * s / z.s; z.s = s;
+	if (s === 1) z.x = z.y = 0;
+	pzClamp(); pzApply();
+}
+function pzReset() { A.pz = { s: 1, x: 0, y: 0 }; pzApply(); }
+function pzWire() {
+	var el = $('arMap'), ptr = {}, drag = null, pinch = null, wAt = -1e9, wPad = false, gs0 = 1;
+	var at = function (e) { var r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+	el.addEventListener('wheel', function (e) {
+		if (!A.big) return;   /* the page's view: the page scrolls as usual */
+		e.preventDefault();
+		var k = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 400 : 1), dx = e.deltaX * k, dy = e.deltaY * k, p = at(e);
+		/* a mouse wheel turns in whole notches (100 or more, straight up and down); a trackpad scrolls in small or fractional
+		   steps, often sideways too. One gesture's events (each within 200 ms of the last) are judged together. */
+		var pad = e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40 || e.deltaY % 1 !== 0);
+		wPad = e.timeStamp - wAt > 200 ? pad : wPad || pad; wAt = e.timeStamp;
+		if (e.ctrlKey) pzSet(A.pz.s * Math.exp(-dy * 0.01), p[0], p[1]);                  /* a trackpad pinch (Chrome, Firefox, Edge) */
+		else if (wPad) { A.pz.x -= dx; A.pz.y -= dy; pzClamp(); pzApply(); }               /* two fingers on a trackpad: pan */
+		else pzSet(A.pz.s * Math.exp(-dy * 0.002), p[0], p[1]);                            /* the mouse wheel: zoom */
+	}, { passive: false });
+	/* Safari sends a trackpad pinch as gesture events, with the pinch's scale */
+	el.addEventListener('gesturestart', function (e) { if (A.big) { e.preventDefault(); gs0 = A.pz.s; } });
+	el.addEventListener('gesturechange', function (e) { if (A.big) { e.preventDefault(); var p = at(e); pzSet(gs0 * e.scale, p[0], p[1]); } });
+	el.addEventListener('gestureend', function (e) { if (A.big) e.preventDefault(); });
+	el.addEventListener('pointerdown', function (e) {
+		if (!A.big || (e.pointerType === 'mouse' && e.button !== 0) || e.target.closest('.ar-zoom')) return;
+		ptr[e.pointerId] = at(e); A.pzEat = 0;
+		var ids = Object.keys(ptr);
+		if (ids.length === 1) drag = { p: at(e), x: A.pz.x, y: A.pz.y, moved: false };
+		if (ids.length === 2) { var a = ptr[ids[0]], b = ptr[ids[1]]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, s: A.pz.s }; drag = null; }
+	});
+	window.addEventListener('pointermove', function (e) {
+		if (!ptr[e.pointerId]) return;
+		ptr[e.pointerId] = at(e);
+		var ids = Object.keys(ptr);
+		if (pinch && ids.length === 2) {
+			var a = ptr[ids[0]], b = ptr[ids[1]];
+			pzSet(pinch.s * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+		} else if (drag) {
+			var p = at(e), dx = p[0] - drag.p[0], dy = p[1] - drag.p[1];
+			if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; el.classList.add('grabbing'); }
+			if (drag.moved) { A.pz.x = drag.x + dx; A.pz.y = drag.y + dy; pzClamp(); pzApply(); }
+		}
+	});
+	var up = function (e) {
+		if (!ptr[e.pointerId]) return;
+		delete ptr[e.pointerId];
+		if (drag && drag.moved) A.pzEat = Date.now();   /* the click that ends a drag doesn't trace a device */
+		if (pinch) A.pzEat = Date.now();
+		drag = null; if (Object.keys(ptr).length < 2) pinch = null;
+		el.classList.remove('grabbing');
+	};
+	window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+	el.addEventListener('click', function (e) { if (A.pzEat && Date.now() - A.pzEat < 400) { A.pzEat = 0; e.stopPropagation(); e.preventDefault(); } }, true);
+	$('arZoomIn').addEventListener('click', function () { pzSet(A.pz.s * 1.4); });
+	$('arZoomOut').addEventListener('click', function () { pzSet(A.pz.s / 1.4); });
+	$('arZoomFit').addEventListener('click', pzReset);
+	pzApply();
 }
 function setBig(on) {
 	var root = $('ar'), b = $('arBig');
@@ -2948,7 +3040,8 @@ function setBig(on) {
 	b.setAttribute('aria-label', on ? 'Close the expanded view' : 'Expand');
 	b.title = on ? 'Back to the page (Esc)' : 'Expand: a bigger view with more detail';
 	$('arFull').className = on && fsCan() ? 'ar-ibtn' : 'ar-ibtn hide';
-	fit(); render();
+	A.pz = { s: 1, x: 0, y: 0 };   /* each time it opens, the whole map */
+	fit(); render(); pzApply();
 	b.focus();
 }
 /* While expanded, Tab stays inside and Escape closes it (the "+N more" list and the report close first). */
@@ -2985,6 +3078,7 @@ function boot() {
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
+	pzWire();
 	/* a name, a maker or a path cut short with "…" shows in full on hover: only the text itself (a few inline parts at most),
 	   never a container, and never the map's labels (tap one for its details) */
 	$('ar').addEventListener('mouseover', function (e) {
@@ -3097,6 +3191,7 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 			</div>
 			<div id="arMapLabels"></div>
 			<div class="ar-over ar-notice" id="arNoticeMap" style="left:16px;bottom:12px"><span class="sw"></span><span class="tx">Starting the sampler on the router…</span></div>
+			<div class="ar-zoom" role="group" aria-label="Zoom"><button type="button" id="arZoomOut" aria-label="Zoom out">−</button><button type="button" id="arZoomFit" aria-label="Show the whole map" title="Show the whole map">100%</button><button type="button" id="arZoomIn" aria-label="Zoom in">+</button></div>
 		</div>
 		<!-- ============ FLOW ============ -->
 		<div class="ar-view" id="arFlow">
