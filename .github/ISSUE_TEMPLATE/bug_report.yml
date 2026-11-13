@@ -66,7 +66,7 @@ body:
     attributes:
       value: |
         ## Your router
-        Arteria's version is at the bottom of its page (Arteria 1.0.0 · …), or run `arteria.sh version`.
+        Arteria's version is at the bottom of its page (Arteria 2.0.0 · …), or run `arteria.sh version`.
         The firmware version is at the top of every router page.
 
   - type: input
@@ -89,7 +89,7 @@ body:
     id: version
     attributes:
       label: Arteria version
-      placeholder: "1.0.0"
+      placeholder: "2.0.0"
     validations:
       required: true
 
