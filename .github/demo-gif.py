@@ -4,12 +4,13 @@ made-up data ("home" scenario), driven by a drawn cursor. It traces a device, op
 renames another one (its drawing changes), switches to Flow and the units, then opens the expanded
 view and zooms and pans its map. Re-run it when the page changes.
 
-With --map it records docs/map.gif instead: the map alone, about 10 seconds at 600 px wide, small
-enough (about 1 MB) to embed in a forum post (forums show GIFs, not animated WebP).
+With --forum it records docs/forum.gif instead, for forum posts (forums show GIFs, not animated WebP;
+posts link to it on main): a quicker tour of the same page, the Map with a device traced, then Flow,
+about 15 seconds at 560 px wide and small enough to embed (about 1.2 MB).
 
 Needs: Python 3 with Playwright (pip install playwright), Chrome or Chromium, Pillow and ffmpeg
-(with libwebp). Usage: python3 .github/demo-gif.py [--map] [path to chrome]   (the full demo takes
-about 4 minutes: the page runs for two minutes first, so the 2-minute internet chart is full)
+(with libwebp). Usage: python3 .github/demo-gif.py [--forum] [path to chrome]   (about 4 minutes:
+the page runs for two minutes first, so the 2-minute internet chart is full)
 """
 import asyncio, base64, io, os, shutil, subprocess, sys, tempfile, time
 from playwright.async_api import async_playwright
@@ -17,13 +18,13 @@ from PIL import Image
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
-MAP = '--map' in sys.argv
-ARGS = [a for a in sys.argv[1:] if a != '--map']
-OUT = os.path.join(REPO, 'docs', 'map.gif' if MAP else 'demo.webp')
+FORUM = '--forum' in sys.argv
+ARGS = [a for a in sys.argv[1:] if a != '--forum']
+OUT = os.path.join(REPO, 'docs', 'forum.gif' if FORUM else 'demo.webp')
 CHROME = ARGS[0] if ARGS else (shutil.which('google-chrome') or shutil.which('chromium') or None)
-FPS = 12 if MAP else 15
-COLORS = 96 if MAP else 192
-WIDTH = 600 if MAP else None   # the map GIF is scaled down: every moving packet costs bytes in every frame
+FPS = 10 if FORUM else 15
+COLORS = 96 if FORUM else 192
+WIDTH = 560 if FORUM else None   # the forum GIF is scaled down: every moving packet costs bytes in every frame
 port = 8871
 
 CURSOR = """
@@ -51,9 +52,11 @@ async def record():
         pg = await b.new_page(viewport={'width': 900, 'height': 1000}, device_scale_factor=1)
         await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
         await pg.evaluate("localStorage.clear()")
-        await pg.wait_for_timeout(25000 if MAP else 125000)   # warm up: rates, stand slots (and for the full demo, a full 2-minute chart)
+        await pg.wait_for_timeout(125000)   # warm up: rates, stand slots and a full 2-minute internet chart
         await pg.evaluate(CURSOR)
-        box = await pg.evaluate("() => { const s = document.querySelector('#ar .ar-stage').getBoundingClientRect(); return [s.left, s.top, s.width, s.height]; }") if MAP else await pg.evaluate("() => { const r = document.getElementById('ar').getBoundingClientRect(); const c = document.getElementById('arHist').closest('.ar-cards') || document.getElementById('arHist').parentElement; const cb = c.getBoundingClientRect(); return [r.left, r.top, r.width, cb.bottom - r.top]; }")
+        if FORUM:   # a quicker cursor
+            await pg.evaluate("document.getElementById('demoCursor').style.transition = 'transform .45s cubic-bezier(.45,.05,.25,1)'")
+        box = await pg.evaluate("() => { const r = document.getElementById('ar').getBoundingClientRect(); const c = document.getElementById('arHist').closest('.ar-cards') || document.getElementById('arHist').parentElement; const cb = c.getBoundingClientRect(); return [r.left, r.top, r.width, cb.bottom - r.top]; }")
         cdp = await pg.context.new_cdp_session(pg)
         def on_frame(ev):
             frames.append((ev['metadata']['timestamp'], ev['data']))
@@ -61,18 +64,22 @@ async def record():
         cdp.on('Page.screencastFrame', on_frame)
         await cdp.send('Page.startScreencast', {'format': 'png', 'everyNthFrame': 1})
 
-        async def click(sel, before=900, after=0):
+        async def click(sel, before=550 if FORUM else 900, after=0):
             bb = await (await pg.query_selector(sel)).bounding_box()
             x, y = bb['x'] + bb['width'] / 2, bb['y'] + bb['height'] / 2
             await pg.evaluate('([x, y]) => demoMove(x, y)', [x, y]); await pg.wait_for_timeout(before)
             await pg.evaluate('([x, y]) => demoRipple(x, y)', [x, y]); await pg.click(sel, force=True)
             await pg.wait_for_timeout(after)
 
-        if MAP:
-            await pg.wait_for_timeout(3000)                                   # the map, flowing
-            await click('.ar-lb[data-id="00:00:5E:00:53:11"]', after=3400)     # trace a TV behind the node
-            await click('.ar-lb[data-id="00:00:5E:00:53:11"]', before=600, after=900)   # let go
-            await pg.evaluate('demoMove(820, 560)'); await pg.wait_for_timeout(1500)   # rest where it started, for a clean loop
+        if FORUM:
+            await pg.wait_for_timeout(1600)                                   # the map, flowing
+            await click('.ar-lb[data-id="00:00:5E:00:53:11"]', after=2400)     # trace a TV behind the node
+            await click('.ar-lb[data-id="00:00:5E:00:53:11"]', before=400, after=500)   # let go
+            await click('#arTabFlow', after=2400)                              # Flow: download
+            await click('#arUp', after=1800)                                   # Flow: upload
+            await click('#arDn', before=400, after=300)
+            await click('#arTabMap', after=600)                                # back to the map
+            await pg.evaluate('demoMove(820, 560)'); await pg.wait_for_timeout(900)   # rest where it started, for a clean loop
             await cdp.send('Page.stopScreencast')
             await pg.wait_for_timeout(300)
             await b.close()
@@ -130,7 +137,7 @@ def frame(ts, data):
     return im.crop((int(box[0]), int(box[1]), int(box[0]) + w, int(box[1]) + h))
 
 def build(tmp):
-    """Resample to FPS, then encode a looping GIF with one shared palette (--map), or an animated WebP."""
+    """Resample to FPS, then encode a looping GIF with one shared palette (--forum), or an animated WebP."""
     t0 = frames[0][0]
     seq = [(ts - t0, ts, data) for ts, data in frames]
     n, j, shown, img = int(seq[-1][0] * FPS), 0, -1, None
@@ -140,7 +147,7 @@ def build(tmp):
             shown, img = j, frame(seq[j][1], seq[j][2])
         img.save(os.path.join(tmp, 's%05d.png' % i))
     src = ['-framerate', str(FPS), '-i', os.path.join(tmp, 's%05d.png')]
-    if MAP:
+    if FORUM:
         pal = os.path.join(tmp, 'palette.png')
         sc = 'scale=%d:-1:flags=lanczos,' % WIDTH if WIDTH else ''
         subprocess.run(['ffmpeg', '-v', 'error', '-y'] + src + ['-vf', sc + 'palettegen=max_colors=%d:stats_mode=diff' % COLORS, pal], check=True)
