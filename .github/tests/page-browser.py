@@ -7,7 +7,8 @@
      closing puts the stage back where it was, 728 x 518, inside the router's page;
   3. the "hostile" scenario: names and AiMesh client-list keys that look like HTML stay text and run nothing;
   4. two Arteria tabs: closing one doesn't tell the router to stop sampling while the other is open;
-  5. in every scenario, labels keep off other devices' drawings, and what is cut short shows in full on hover.
+  5. in every scenario, labels keep off other devices' drawings, what is cut short shows in full on hover, and the
+     totals in the tab bar don't move as their numbers change.
 
 Needs Python 3 with Playwright (pip install playwright; the browser is the system's Chrome or Chromium).
 Usage: python3 .github/tests/page-browser.py [path to chrome]
@@ -17,7 +18,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile']
+SCENARIOS = ['home', 'bulbs', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile']
 fails = []
 
 
@@ -106,6 +107,16 @@ async def scenario(b, scn, port):
         after = await pg.evaluate(STAGE)
         await pg.wait_for_timeout(2200)   # one more sample after all of it: errors in the next render show up too
         inj = await pg.evaluate(INJECTED)
+        # the totals in the tab bar keep their place whatever the numbers: the narrowest and the widest leave "Internet" where it is
+        still = await pg.evaluate('''() => {
+            const s = document.getElementById('arSum'), k = s && s.querySelector('.k'), bs = s ? [...s.querySelectorAll('.v b')] : [];
+            if (!k || bs.length !== 2) return null;
+            const at = () => k.getBoundingClientRect().left, old = bs.map(b => b.textContent), x0 = at();
+            bs.forEach(b => { b.textContent = '99.9 MB/s'; }); const x1 = at();
+            bs.forEach(b => { b.textContent = '0 kb/s'; }); const x2 = at();
+            bs.forEach((b, i) => { b.textContent = old[i]; });
+            return Math.max(Math.abs(x1 - x0), Math.abs(x2 - x0));
+        }''')
         # a device's label doesn't cover another device's drawing (on a crowded floor, one may have to)
         cover = await pg.evaluate('''() => {
             const objs = [...document.querySelectorAll('#ar g[data-obj]')].map(g => [g.getAttribute('data-obj'), g.getBoundingClientRect()]);
@@ -131,7 +142,8 @@ async def scenario(b, scn, port):
         check(out == 0, tag + 'Tab stays inside the expanded view')
         check(after == small, tag + 'closing the expanded view puts the stage back as it was')
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
-        check(cover <= (1 if scn in ('bulbs', 'busy', 'hostile') else 0), tag + 'labels don\'t cover other devices (%d)' % cover)
+        check(cover <= (1 if scn in ('bulbs', 'busy', 'hostile', 'newer') else 0), tag + 'labels don\'t cover other devices (%d)' % cover)
+        check(still is not None and still < 0.5, tag + 'the totals keep their place as the numbers change (%s px)' % still)
         if tip is not None:
             check(tip['bad'] == 0 and tip['btn'], tag + 'what is cut short shows in full on hover (%d)' % tip['n'])
     finally:

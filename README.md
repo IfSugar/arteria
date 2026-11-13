@@ -46,14 +46,15 @@ Arteria draws each device as one of these kinds, with a drawing on the map and a
 |---|---|
 | Computers | Desktop PC, Mac desktop (iMac, Mac mini, Mac Studio, Mac Pro), laptop, Raspberry Pi (single-board computer) |
 | Phones and wearables | phone, tablet, watch |
-| Entertainment | TV, streaming box (Apple TV, Fire TV Cube, Shield), streaming stick (Fire TV Stick, Chromecast), speaker, smart speaker (Echo, HomePod, Nest Audio), home cinema (soundbar), game console |
-| Home and office | printer, NAS, network device (switch, access point) |
-| Smart home | camera, doorbell, smart lock, thermostat, light, smart switch, smart-home hub, air conditioner, air purifier or humidifier, robot vacuum, washing machine, dryer, dishwasher, appliance, smart plug, door or window sensor, sensor (motion, leak, smoke...), other smart device |
+| Entertainment | TV, streaming box (Apple TV, Fire TV Cube, Shield), streaming stick (Fire TV Stick, Chromecast), speaker, smart speaker (Echo, HomePod, Nest Audio), smart display (Echo Show, Nest Hub), home cinema (soundbar), projector, game console, VR headset |
+| Home and office | printer, 3D printer, NAS, network device (switch, access point), fitness equipment (Peloton, treadmill) |
+| Smart home | camera, doorbell, smart lock, garage door, thermostat, light, smart switch, smart blinds, smart-home hub, air conditioner, air purifier or humidifier, robot vacuum, washing machine, dryer, dishwasher, appliance, smart plug, door or window sensor, sensor (motion, leak, smoke...), pet device (feeder, pet camera), other smart device |
+| Outdoors and energy | car, EV charger, solar inverter or home battery, robot mower, sprinkler |
 
 **How a kind is chosen**, first match wins:
 
-1. **The icon you chose** for the device in the router's client list (*Network Map → Clients*), when it's a specific one.
-2. **Its name**: the nickname you gave it, or its own host name (`DESKTOP-…` is a Windows PC, `Mac-Studio` a Mac desktop, `wiz_…` a bulb, `LGwebOSTV` a TV...).
+1. **The icon you chose** for the device in the router's client list (*Network Map → Clients*), when it's a specific one. Saving a nickname there also saves the icon the router was showing; when that is just the router's own guess, the name comes first.
+2. **Its name**: the nickname you gave it, or its own host name (`DESKTOP-…` is a Windows PC, `Mac-Studio` a Mac desktop, `wiz_…` a bulb, `LGwebOSTV` a TV...). The rules look for words, not your device names, and words run together count too: *JohnsNas*, *KidsTV*, *nas01* and *office_printer* are found like *John's NAS*. Some devices are known by the name their Wi-Fi module gives together with its maker (Daikin's Wi-Fi adapters call themselves `Client` on a Murata chip).
 3. **What the router detected**, and whether a Windows device is wired (a desktop) or on Wi-Fi (a laptop).
 4. **Its maker** (from the MAC address) and the DHCP vendor class it sent.
 
@@ -191,7 +192,7 @@ Arteria follows amtm's conventions for third-party scripts:
 ## What it changes on your router
 
 - **Nothing until the checks pass.** `install` first verifies the firmware, the Addons API, the Broadcom driver's per-client counters, the shell tools it needs, JFFS space and a free page slot. If anything fails it stops without changing anything. Run `arteria.sh check` to see the checklist on its own.
-- **JFFS (flash):** about 275 KB of addon files and the node key, written at install (JFFS2 compresses them, so they take roughly half that on flash). One tagged line is added to each of `/jffs/scripts/services-start` and `service-event`. Nothing is written to flash while sampling.
+- **JFFS (flash):** about 300 KB of addon files and the node key, written at install (JFFS2 compresses them, so they take roughly half that on flash). One tagged line is added to each of `/jffs/scripts/services-start` and `service-event`. Nothing is written to flash while sampling.
 - **Settings:** *JFFS custom scripts and configs* is switched on if it's off. When you run `nodekey`, Arteria's key line is added to the router's own *Administration → System → Authorized Keys*, so AiMesh keeps it on the nodes (see [AiMesh nodes](#aimesh-nodes)); `uninstall` takes it out again. Nothing else is changed.
 - **AiMesh nodes:** when you run `nodekey` (or say yes at install), one line is added to each node's authorized keys (*Administration → System → Authorized Keys*, stored in the node's nvram), and AiMesh keeps it there from the router's list. Nothing else on a node is changed.
 - **RAM only (gone after a reboot, recreated at boot):** the web page, the menu entry and the sample files (a few KB). The menu is edited on a copy and swapped in only if the result is exactly one new line in a tab list (after *Statistic*, or last in *Network Tools*); otherwise it's left alone and the installer prints the page's direct link.

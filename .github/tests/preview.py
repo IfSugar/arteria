@@ -3,7 +3,7 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), nokey, offline, weak, busy, quiet, nonode, bulbs, kinds1..kinds4, hostile.
+Scenarios: home (default), nokey, offline, weak, busy, quiet, nonode, bulbs, kinds1..kinds6, newer, hostile.
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -61,8 +61,18 @@ ZOO = [('Garage desktop', 'desktop'), ('Mac mini', 'mac'), ('Work laptop', 'lapt
        ('Hall thermostat', 'thermostat'), ('Desk lamp', 'light'), ('Zigbee hub', 'hub'), ('Bedroom AC', 'air'), ('Robot vacuum', 'vacuum'), ('Washing machine', 'washer'), ('Heater plug', 'plug'), ('Leak sensor', 'sensor'),
        ('Tasmota relay', 'iot'), ('Mystery box', 'generic'), ('Fire TV Stick', 'stick'), ('Echo Studio', 'smartspeaker'), ('Raspberry Pi', 'pi'),
        ('Air purifier', 'purifier'), ('Hall light switch', 'wallswitch'), ('Front door sensor', 'contact'),
-       ('Tumble dryer', 'dryer'), ('Kitchen dishwasher', 'dishwasher'), ('Kitchen fridge', 'appliance')]
-if SCN.startswith('kinds'):   # kinds1..kinds4: every kind of device on a stand, nine at a time
+       ('Tumble dryer', 'dryer'), ('Kitchen dishwasher', 'dishwasher'), ('Kitchen fridge', 'appliance'), ('Study iMac', 'mac')]
+NEWER = [('Driveway charger', 'charger'), ('Tesla Model Y', 'car'), ('Fronius inverter', 'solar'), ('Automower', 'mower'), ('Quest 3', 'vr'),
+         ('Lounge projector', 'projector'), ('Garage door', 'garage'), ('Bambu printer', 'printer3d'), ('Kitchen Echo Show', 'display'),
+         ('Bedroom blinds', 'blinds'), ('Garden sprinkler', 'sprinkler'), ('Cat feeder', 'pet'), ('Peloton', 'fitness')]
+ZOO += NEWER
+if SCN == 'newer':   # the newer kinds together, for a look at their drawings
+    DEVICES = []
+    for i, (nm, kind) in enumerate(NEWER):
+        where, band = [('router', '5'), ('router', '2.4'), ('router', '5'), ('node', '5'), ('node', '2.4'), ('wired', 'eth4'), ('router', '5')][i % 7]
+        if where == 'wired' and i > 6: where, band = 'node', '5'
+        dev('02:CC:00:00:05:%02X' % i, nm, where, band, 6.0 + i * 1.3, 0.8 + i / 3, None if where == 'wired' else -48 - i)
+if SCN.startswith('kinds'):   # kinds1..kinds6: every kind of device on a stand, nine at a time
     n = int(SCN[5:] or 1) - 1
     DEVICES = []
     for i, (nm, kind) in enumerate(ZOO[n * 9:n * 9 + 9]):
