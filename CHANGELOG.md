@@ -4,6 +4,7 @@ What changed in each release of Arteria. The release workflow copies a version's
 
 ## Unreleased
 
+- **A rename leaves no copy of the client list behind**: the router deletes the copy it wrote for a rename as soon as that rename is saved, also while the page is paused. The log now says sampling stopped because no page is open (closed, paused or in a hidden tab), not just "page closed".
 - **Renames are logged**: the system log gets a line when the page reads the router's client list for a rename and one when the rename is saved, with how many names the list holds before and after. No names or addresses.
 - **`doctor` looks for known problems, and `doctor fix` fixes them** (also *d* in the menu): a hook line left by going back to 1.0.0 or by an older version, files older versions left, page files any program could change, a copy of the client list or a node session left after the page closed, and on each node, whether Arteria's script runs without anything crashing. What only you can fix it reports, and nothing in it names a device or an address.
 - **A node where something crashes says so**: when a command on a node crashes while Arteria reads it (*Segmentation fault*), the page says so instead of "isn't answering", and `nodes test` (like `doctor`) names the command and saves what the node ran, without addresses, to `/tmp/arteria/node-trace.txt` for a bug report.
