@@ -3,11 +3,12 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), nokey, offline, weak, busy, quiet, nonode, bulbs, kinds1..kinds4, hostile.
+Scenarios: home (default), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile.
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
-import json, math, os, random, sys, time, re
+import json
+import urllib.parse, math, os, random, sys, time, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -51,6 +52,16 @@ if SCN == 'bulbs':   # the real-world mix: a desktop PC, a Mac desktop, an AC un
     for i in range(18):
         dev('02:CC:00:00:03:%02X' % i, '', 'router' if i % 3 else 'node', '2.4', 0.002 + (i % 6) * 0.004, 0.001 + (i % 4) * 0.002, -52 - i,
             nick=False, host='wiz_%06x' % (0xa1b2c3 + i * 7919), vendor='WiZ Connected Lighting Company Limited' if i % 2 else '', ntype=60 if i % 5 == 0 else 0, vc='udhcp 1.24.2')
+if SCN == 'crowd':   # a real-world crowd: 28 clients, many quiet and unnamed, half of them on the node
+    for i, (nm, where, band, host, vendor) in enumerate([
+            ('Work MacBook', 'router', '5', '', ''), ('', 'router', '2.4', '', ''), ('LGwebOSTV', 'router', '5', 'LGwebOSTV', ''),
+            ('', 'node', '5', 'amazon-1a2b3c4d5', 'Amazon Technologies Inc.'), ('', 'router', '5', 'amazon-9f8e7d6c5', 'Amazon Technologies Inc.'),
+            ('Studio Mac', 'router', '5', 'Mac-Studio', ''), ('ems-esp-boiler', 'node', '2.4', 'ems-esp', 'Espressif Inc.'),
+            ('tado-bridge-x', 'node', '2.4', 'tado-bridge-x', ''), ('Philips Air', 'node', '2.4', 'mxchip', 'Shanghai MXCHIP Information Technology Co., Ltd.'),
+            ('', 'node', '2.4', '', 'Beijing Xiaomi Mobile Software Co., Ltd'), ('', 'node', '5', '', ''), ('', 'node', '2.4', '', ''),
+            ('Lounge Daikin AC', 'node', '2.4', 'Client', 'Murata Manufacturing Co., Ltd.'), ('', 'router', '2.4', 'L630', ''), ('', 'node', '2.4', '', '')]):
+        dev('02:CC:00:00:03:%02X' % i, nm, where, band, 0.002 + (i % 4) * 0.004, 0.001 + (i % 3) * 0.002, -44 - i * 2,
+            nick=bool(nm), **({'host': host} if host else {}), **({'vendor': vendor} if vendor else {}))
 if SCN == 'hostile':   # names that look like HTML (host names, makers): the page must show them as text and never run them
     dev('02:CC:00:00:05:01', 'Tom\'s "test" & co', 'router', '5', 9.0, 1.0, -55, host='<b>bold</b>', vendor='<img src=x onerror="window.__xss=1">', vc='<i>vc</i>')
     dev('02:CC:00:00:05:02', '', 'node', '2.4', 0.01, 0.01, -60, nick=False, host='<svg/onload=window.__xss=2>', vendor='"><script>window.__xss=3</script>')
@@ -58,9 +69,22 @@ if SCN == 'hostile':   # names that look like HTML (host names, makers): the pag
         dev('02:CC:00:00:05:%02X' % (i + 3), '', 'router', '2.4', 0.001, 0.001, -70 - i, nick=False, host='<u>q%d</u>' % i, vendor='<a href=javascript:window.__xss=4>x</a>')
 ZOO = [('Garage desktop', 'desktop'), ('Mac mini', 'mac'), ('Work laptop', 'laptop'), ('Pixel 9', 'phone'), ('Kindle', 'tablet'), ('Sport watch', 'watch'), ('Office printer', 'printer'), ('Lounge TV', 'tv'),
        ('Apple TV', 'streamer'), ('Kitchen speaker', 'speaker'), ('Lounge soundbar', 'soundbar'), ('PlayStation 5', 'console'), ('Attic NAS', 'nas'), ('Garden camera', 'camera'), ('Front doorbell', 'doorbell'), ('Porch lock', 'lock'),
-       ('Hall thermostat', 'thermostat'), ('Desk lamp', 'light'), ('Zigbee hub', 'hub'), ('Bedroom AC', 'air'), ('Robot vacuum', 'vacuum'), ('Washing machine', 'appliance'), ('Heater plug', 'plug'), ('Leak sensor', 'sensor'),
-       ('Tasmota relay', 'iot'), ('Mystery box', 'generic'), ('Fire TV Stick', 'stick'), ('Echo Studio', 'smartspeaker'), ('Raspberry Pi', 'pi')]
-if SCN.startswith('kinds'):   # kinds1..kinds4: every kind of device on a stand, nine at a time
+       ('Hall thermostat', 'thermostat'), ('Desk lamp', 'light'), ('Zigbee hub', 'hub'), ('Bedroom AC', 'air'), ('Robot vacuum', 'vacuum'), ('Washing machine', 'washer'), ('Heater plug', 'plug'), ('Leak sensor', 'sensor'),
+       ('Tasmota relay', 'iot'), ('Mystery box', 'generic'), ('Fire TV Stick', 'stick'), ('Echo Studio', 'smartspeaker'), ('Raspberry Pi', 'pi'),
+       ('Air purifier', 'purifier'), ('Hall light switch', 'wallswitch'), ('Front door sensor', 'contact'),
+       ('Tumble dryer', 'dryer'), ('Kitchen dishwasher', 'dishwasher'), ('Kitchen fridge', 'appliance'), ('Study iMac', 'mac')]
+NEWER = [('Driveway charger', 'charger'), ('Tesla Model Y', 'car'), ('Fronius inverter', 'solar'), ('Automower', 'mower'), ('Quest 3', 'vr'),
+         ('Lounge projector', 'projector'), ('Garage door', 'garage'), ('Bambu printer', 'printer3d'), ('Kitchen Echo Show', 'display'),
+         ('Bedroom blinds', 'blinds'), ('Garden sprinkler', 'sprinkler'), ('Cat feeder', 'pet'), ('Peloton', 'fitness'),
+         ('Desk LED strip', 'strip'), ('Gas boiler', 'boiler')]
+ZOO += NEWER
+if SCN == 'newer':   # the newer kinds together, for a look at their drawings
+    DEVICES = []
+    for i, (nm, kind) in enumerate(NEWER):
+        where, band = [('router', '5'), ('router', '2.4'), ('router', '5'), ('node', '5'), ('node', '2.4'), ('wired', 'eth4'), ('router', '5')][i % 7]
+        if where == 'wired' and i > 6: where, band = 'node', '5'
+        dev('02:CC:00:00:05:%02X' % i, nm, where, band, 6.0 + i * 1.3, 0.8 + i / 3, None if where == 'wired' else -48 - i)
+if SCN.startswith('kinds'):   # kinds1..kinds6: every kind of device on a stand, nine at a time
     n = int(SCN[5:] or 1) - 1
     DEVICES = []
     for i, (nm, kind) in enumerate(ZOO[n * 9:n * 9 + 9]):
@@ -70,6 +94,8 @@ if SCN == 'busy':
     for i in range(14):
         DEVICES.append(('02:CC:00:00:01:%02X' % i, ['Phone', 'Bulb', 'Plug', 'Tablet', 'Laptop', 'Speaker', 'Camera'][i % 7] + ' %d' % (i + 1),
                         'router' if i % 3 else 'node', '2.4' if i % 2 else '5', 0.5 + (i % 5) * 1.7, 0.1 + (i % 3) * 0.4, -50 - i))
+if SCN == 'speedtest':   # a speed test on one laptop: a river far thicker than everything else
+    DEVICES.append(('02:CC:00:00:01:40', 'Speed test laptop', 'router', '5', 880.0, 42.0, -46))
 if SCN == 'quiet':
     DEVICES = [(m, n, w, b, d * 0.003, u * 0.003, r) for (m, n, w, b, d, u, r) in DEVICES]
 if SCN == 'nonode':
@@ -156,6 +182,8 @@ def names():
         cl[NODE]['2G']['"><img src=x onerror="window.__xss=5">'] = {'ip': '192.168.50.250', 'rssi': '-40'}
     custom = ''.join('<%s>%s>0>%d>>' % (n, m, X.get(m, {}).get('ctype', 0)) for (m, n, w, b, d, u, r) in DEVICES if X.get(m, {}).get('nick', True))
     custom += ''.join('<%s>%s>0>%d>>' % (x['nickonly'], m, x.get('ctype', 0)) for m, x in X.items() if 'nickonly' in x)
+    if SAVED['custom'] is not None:   # the page renamed something: the router's client list as it saved it
+        custom = SAVED['custom']
     leases = '|'.join('%d %s 192.168.50.%d %s 01:%s' % (int(time.time()) + 79000 - i * 3000, m.lower(), 20 + i, x['host'], m.lower()) for i, (m, x) in enumerate(X.items()) if x.get('host'))
     nmp = {m: {'mac': m, 'name': x.get('host', ''), 'vendor': x.get('vendor', ''), 'vendorclass': x.get('vc', ''), 'type': x.get('ntype', 0), 'os_type': x.get('os', 0)}
            for m, x in X.items() if any(k in x for k in ('ntype', 'vendor', 'vc', 'os', 'nickonly'))}
@@ -166,6 +194,9 @@ def names():
     arp = ''.join('%s 192.168.50.%d|' % (m.lower(), 100 + i) for i, m in enumerate(macs) if not X.get(m, {}).get('host'))
     n6 = ''.join('%s 2001:db8::%x|%s fe80::%x|' % (m.lower(), 0x100 + i, m.lower(), 0x200 + i) for i, m in enumerate(macs[:6]))
     return {'custom': custom, 'leases': leases, 'nmp': nmp, 'cl': cl, 'fixed': fixed, 'arp': arp, 'n6': n6}
+
+
+SAVED = {'custom': None, 'posts': []}   # what the page saved, as the router would keep it
 
 
 class H(BaseHTTPRequestHandler):
@@ -202,7 +233,12 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get('Content-Length') or 0)
-        self.rfile.read(n)
+        form = urllib.parse.parse_qs(self.rfile.read(n).decode('utf-8'), keep_blank_values=True)
+        acts = form.get('action_script', [''])[0].split(';')
+        # the router's settings handler: a known setting posted with action_mode=apply is saved; saveNvram commits it
+        if 'custom_clientlist' in form and form.get('action_mode', [''])[0] == 'apply' and 'saveNvram' in acts:
+            SAVED['custom'] = form['custom_clientlist'][0]
+        SAVED['posts'].append(acts)
         return self.send('<html></html>')
 
 

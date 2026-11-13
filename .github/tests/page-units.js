@@ -42,10 +42,150 @@ const CASES = [
 	['Front doorbell', 0, 0, 0, 'wifi', '', '', 'doorbell'],
 	['Garden camera', 0, 0, 0, 'wifi', '', '', 'camera'],
 	['Roborock-S8', 0, 0, 0, 'wifi', '', '', 'vacuum'],
-	['Washing machine', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Washing machine', 0, 0, 0, 'wifi', '', '', 'washer'],
+	['BOSCH-WAX32EH0EU-00005E0053A1', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'washer'],
+	['BOSCH-WTX87EH0EU-00005E0053A2', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'dryer'],
+	['SIEMENS-SN85TX00CE-00005E0053A3', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'dishwasher'],
+	['BOSCH-SMV4HVX31E-00005E0053A4', 0, 0, 0, 'wifi', '', '', 'dishwasher'],
+	['BOSCH-KGN39AIAT-00005E0053A5', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Kitchen dishwasher', 0, 0, 0, 'wifi', '', '', 'dishwasher'],
+	['Tumble dryer', 0, 0, 0, 'wifi', '', '', 'dryer'],
+	['Electrolux_Appliance', 0, 0, 0, 'wifi', 'Electrolux Appliances AB', '', 'appliance'],
+	['Device …00:A6', 0, 0, 0, 'wifi', 'Electrolux Appliances AB', '', 'appliance'],
+	['ems-esp', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'boiler'],
 	['Hall thermostat', 0, 0, 0, 'wifi', '', '', 'thermostat'],
 	['Smart plug', 0, 0, 0, 'wifi', '', '', 'plug'],
-	['Door sensor', 0, 0, 0, 'wifi', '', '', 'sensor'],
+	['Door sensor', 0, 0, 0, 'wifi', '', '', 'contact'],
+	['Philips Air', 0, 0, 0, 'wifi', 'Shanghai MXCHIP Information Technology Co., Ltd.', '', 'purifier'],
+	['mxchip', 0, 0, 0, 'wifi', 'Shanghai MXCHIP Information Technology Co., Ltd.', '', 'iot'],
+	['Bedroom humidifier', 0, 0, 0, 'wifi', '', '', 'purifier'],
+	['L630', 0, 0, 0, 'wifi', '', '', 'light'],
+	['L530E', 0, 0, 0, 'wifi', '', '', 'light'],
+	['KL130(EU)', 0, 0, 0, 'wifi', '', '', 'light'],
+	['P110', 0, 0, 0, 'wifi', '', '', 'plug'],
+	['C200', 0, 0, 0, 'wifi', '', '', 'camera'],
+	['S505', 0, 0, 0, 'wifi', '', '', 'wallswitch'],
+	['HS220(US)', 0, 0, 0, 'wifi', '', '', 'wallswitch'],
+	['H200', 0, 0, 0, 'wired', '', '', 'hub'],
+	['RV30_Max_Plus', 0, 0, 0, 'wifi', '', '', 'vacuum'],
+	['ihoment_H6159_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'strip'],      // Govee's H61… are LED strips
+	['ihoment_H6008_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],      // ...its H600… bulbs
+	['ihoment_H7070_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],
+	['ihoment_H7121_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'purifier'],
+	['ihoment_H5075_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'sensor'],
+	['shelly1-A1B2C3', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'wallswitch'],
+	['Hall light switch', 0, 0, 0, 'wifi', '', '', 'wallswitch'],
+	['Patio window sensor', 0, 0, 0, 'wifi', '', '', 'contact'],
+	['shellydw2-A1B2C3', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'contact'],
+	['Nintendo Switch', 0, 0, 0, 'wifi', '', '', 'console'],
+	['Office switch', 0, 2, 0, 'wired', '', '', 'switch'],
+	// words run together: a name rule finds "nas" in JohnsNas, nas01, johns_nas and ExampleDSPNAS; a first name that ends in it isn't one
+	['JohnsNas', 0, 0, 0, 'wired', '', '', 'nas'],
+	['nas01', 0, 0, 0, 'wired', '', '', 'nas'],
+	['johns_nas', 0, 0, 0, 'wired', '', '', 'nas'],
+	['ExampleDSPNAS', 0, 0, 0, 'wired', '', '', 'nas'],
+	['KidsTV', 0, 0, 0, 'wifi', '', '', 'tv'],
+	['LivingRoomLamp', 0, 0, 0, 'wifi', '', '', 'light'],
+	['office_printer', 0, 0, 0, 'wifi', '', '', 'printer'],
+	['OfficePC', 0, 0, 0, 'wired', '', '', 'desktop'],
+	['BedroomAC', 0, 0, 0, 'wifi', '', '', 'air'],
+	['JONAS-iPhone', 0, 0, 0, 'wifi', '', '', 'phone'],
+	['Jonas', 0, 0, 0, 'wifi', '', '', 'generic'],
+	['RT-AC1200', 0, 0, 0, 'wifi', '', '', 'generic'],
+	// a saved icon that is just the router's own guess (the client editor saves it with a nickname): the name comes first
+	['Lounge Daikin AC', 7, 7, 0, 'wifi', 'Murata Manufacturing Co., Ltd.', '', 'air'],
+	// ... or a computer, phone, tablet, watch or console icon on a device named after a home device: nobody picks a console
+	// for an air conditioner. Other icons still win over the name: a plug named for its lamp stays a plug (Hall lamp, above).
+	['Lounge Daikin AC', 7, 0, 0, 'wifi', 'Murata Manufacturing Co., Ltd.', '', 'air'],
+	['Kitchen fridge', 25, 0, 0, 'wifi', '', '', 'appliance'],
+	['Kids PS5', 7, 0, 0, 'wifi', '', '', 'console'],
+	['Living room', 7, 0, 0, 'wifi', '', '', 'console'],
+	['TV speaker', 47, 0, 0, 'wifi', '', '', 'soundbar'],
+	['Living room', 7, 7, 0, 'wifi', '', '', 'console'],
+	['Kids room', 23, 7, 0, 'wifi', '', '', 'tv'],
+	// the newer kinds
+	['Wallbox Pulsar', 0, 0, 0, 'wifi', '', '', 'charger'],
+	['Tesla Wall Connector', 0, 0, 0, 'wifi', '', '', 'charger'],
+	['easee-home', 0, 0, 0, 'wifi', '', '', 'charger'],
+	['Tesla Model Y', 0, 0, 0, 'wifi', '', '', 'car'],
+	['Polestar 2', 0, 0, 0, 'wifi', '', '', 'car'],
+	['Tesla Powerwall', 0, 0, 0, 'wifi', '', '', 'solar'],
+	['Fronius Symo', 0, 0, 0, 'wifi', '', '', 'solar'],
+	['OpenDTU-1A2B3C', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'solar'],
+	['Device …01:F2', 0, 0, 0, 'wifi', 'SolarEdge Technologies', '', 'solar'],
+	['Automower 430X', 0, 0, 0, 'wifi', '', '', 'mower'],
+	['Ecovacs GOAT G1', 0, 0, 0, 'wifi', '', '', 'mower'],
+	['Landroid', 0, 0, 0, 'wifi', '', '', 'mower'],
+	['Quest-3', 0, 0, 0, 'wifi', '', '', 'vr'],
+	['Oculus Quest 2', 0, 0, 0, 'wifi', '', '', 'vr'],
+	['XGIMI Horizon', 0, 0, 0, 'wifi', '', '', 'projector'],
+	['Epson EH-LS800', 0, 0, 0, 'wifi', '', '', 'projector'],
+	['Garage', 0, 0, 0, 'wifi', '', '', 'garage'],
+	['Garage light', 0, 0, 0, 'wifi', '', '', 'light'],
+	['ratgdo-1a2b3c', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'garage'],
+	['Bambu Lab P1S', 0, 0, 0, 'wifi', '', '', 'printer3d'],
+	['octopi', 0, 0, 0, 'wifi', '', '', 'printer3d'],
+	['Kitchen Echo Show', 0, 0, 0, 'wifi', '', '', 'display'],
+	['Nest Hub', 0, 0, 0, 'wifi', '', '', 'display'],
+	['Echo Dot', 0, 0, 0, 'wifi', '', '', 'smartspeaker'],
+	['Bedroom blinds', 0, 0, 0, 'wifi', '', '', 'blinds'],
+	['Somfy TaHoma', 0, 0, 0, 'wired', '', '', 'hub'],
+	['Rachio-3', 0, 0, 0, 'wifi', '', '', 'sprinkler'],
+	['Gardena smart gateway', 0, 0, 0, 'wifi', '', '', 'sprinkler'],
+	['Cat feeder', 0, 0, 0, 'wifi', '', '', 'pet'],
+	['Furbo', 0, 0, 0, 'wifi', '', '', 'pet'],
+	['Peloton', 0, 0, 0, 'wifi', '', '', 'fitness'],
+	// LED strips
+	['Desk LED strip', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['TV backlight', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Kitchen strip', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Bed LEDs', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['GoveeStrip', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Govee', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Govee floor lamp', 0, 0, 0, 'wifi', '', '', 'light'],
+	['Govee light bar', 0, 0, 0, 'wifi', '', '', 'light'],
+	['Govee purifier', 0, 0, 0, 'wifi', '', '', 'purifier'],
+	['Govee thermometer', 0, 0, 0, 'wifi', '', '', 'sensor'],
+	['Nanoleaf Lightstrip', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['yeelink-light-strip2_miio123', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['L930', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['KL430(US)', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['LED-Streifen Flur', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['LED лента', 0, 0, 0, 'wifi', '', '', 'strip'],
+	['Power strip', 0, 0, 0, 'wifi', '', '', 'plug'],
+	['Smart strip', 0, 0, 0, 'wifi', '', '', 'generic'],
+	['Desk LED strip', 60, 0, 0, 'wifi', '', '', 'strip'],                 // renamed here: the router's light icon was saved with it
+	['Desk lamp', 60, 0, 0, 'wifi', '', '', 'light'],
+	['Hall lamp', 70, 0, 0, 'wifi', '', '', 'plug'],
+	// boilers
+	['ems-esp-boiler', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'boiler'],
+	['Gas boiler', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['Vitoconnect', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['otgw-1A2B3C', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['Water heater', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['Газов котел', 0, 0, 0, 'wifi', '', '', 'boiler'],
+	['Boiler thermostat', 0, 0, 0, 'wifi', '', '', 'thermostat'],
+	['Bathroom heater', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Device …01:F5', 0, 0, 0, 'wifi', 'Viessmann Climate Solutions SE', '', 'boiler'],
+	['Gas boiler', 50, 0, 0, 'wifi', '', '', 'boiler'],                    // the router's appliance icon, saved with the name
+	['Washing machine', 50, 0, 0, 'wifi', '', '', 'washer'],
+	// more names for the older kinds
+	['NPI3C2AF4', 0, 0, 0, 'wifi', '', '', 'printer'],
+	['BRW0123456789AB', 0, 0, 0, 'wifi', '', '', 'printer'],
+	['Fire TV Omni', 0, 0, 0, 'wifi', '', '', 'tv'],
+	['Fire TV Stick 4K', 0, 0, 0, 'wifi', '', '', 'stick'],
+	['Vizio Soundbar', 0, 0, 0, 'wifi', '', '', 'soundbar'],
+	['Hisense AC', 0, 0, 0, 'wifi', '', '', 'air'],
+	['Eufy RoboVac', 0, 0, 0, 'wifi', '', '', 'vacuum'],
+	['Wyze Bulb', 0, 0, 0, 'wifi', '', '', 'light'],
+	['Baby monitor', 0, 0, 0, 'wifi', '', '', 'camera'],
+	['SM-S918B', 0, 0, 0, 'wifi', '', '', 'phone'],
+	['SM-X710', 0, 0, 0, 'wifi', '', '', 'tablet'],
+	['LibreELEC', 0, 0, 0, 'wired', '', '', 'streamer'],
+	['WiiM Pro', 0, 0, 0, 'wifi', '', '', 'speaker'],
+	['Hive Hub', 0, 0, 0, 'wifi', '', '', 'thermostat'],
+	['Device …01:F3', 0, 0, 0, 'wifi', 'Amazon Technologies Inc.', '', 'smartspeaker'],
+	['Device …01:F4', 0, 0, 0, 'wifi', 'Shenzhen Intellirocks Tech. Co., Ltd.', '', 'strip'],
 	['Front door lock', 0, 0, 0, 'wifi', '', '', 'lock'],
 	['Apple Watch', 0, 0, 5, 'wifi', '', '', 'watch'],
 	['Kindle', 0, 25, 0, 'wifi', '', '', 'tablet'],
@@ -69,7 +209,7 @@ const CASES = [
 	['ring-floodlightcam', 0, 0, 0, 'wifi', '', '', 'camera'],
 	['ring-chime', 0, 0, 0, 'wifi', '', '', 'plug'],
 	['ring-bridge', 0, 0, 0, 'wifi', '', '', 'hub'],
-	['myqdoor-left', 0, 0, 0, 'wifi', '', '', 'hub'],
+	['myqdoor-left', 0, 0, 0, 'wifi', '', '', 'garage'],
 	['tstat-up', 0, 0, 0, 'wifi', '', '', 'thermostat'],
 	['kd-43x85j', 0, 0, 0, 'wifi', '', '', 'tv'],
 	['hpenvy-7640', 0, 0, 0, 'wifi', '', '', 'printer'],
@@ -79,9 +219,9 @@ const CASES = [
 	['Redmi Note 13', 0, 0, 1, 'wifi', '', '', 'phone'],
 	['Kamera Warsztat', 0, 0, 0, 'wifi', '', '', 'camera'],
 	['Lennox iComfort S40', 0, 0, 0, 'wifi', '', '', 'thermostat'],
-	['Rav4 ChargePoint', 0, 0, 0, 'wifi', '', '', 'plug'],
+	['Rav4 ChargePoint', 0, 0, 0, 'wifi', '', '', 'charger'],
 	['SP111 nr4', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'plug'],
-	['wled-WLED', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],
+	['wled-WLED', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'strip'],
 	['Lampa Salon', 0, 0, 0, 'wifi', '', '', 'light'],
 	['Firestick', 0, 0, 0, 'wifi', '', '', 'stick'],
 ];
@@ -261,7 +401,7 @@ const flbad = [];
 	const keepG = T.G(); T.useGeom(g);
 	try {
 		['dn', 'up'].forEach(mode => {
-			A.flowAt = 0;
+			A.flowPick = null; A.flowMem = {}; A.flowK = {};
 			const gs = T.flowGroups(fnet), L = T.flowLayout(gs, fnet, mode), tag = (g.big ? 'big ' : 'small ') + mode + ': ';
 			let prev = -1, rows = 0;
 			gs.forEach(gr => gr.rows.forEach(r => {
@@ -282,5 +422,62 @@ const flbad = [];
 	T.useGeom(keepG);
 });
 ok(!flbad.length, 'Flow layout: rows apart and tap-sized, ribbons in their rows, internet + local = router, fits or scrolls', flbad.slice(0, 5).join('; '));
+
+// ---- 12b. Flow rows stay put while traffic wobbles: once the first few samples have sized the rows, sample after sample
+// (each device +-40%, the total too) rows hardly move (only when a row reaches a new high step) and devices don't swap in
+// or out of "+N more"; a device whose traffic jumps
+// fivefold moves the rows below it a few times while its new level shows, then they settle again
+const fstill = [];
+[T.geomSmall(), T.geomBig(1184, 790, 0)].forEach(g => {
+	const keepG = T.G(); T.useGeom(g);
+	try {
+		A.flowPick = null; A.flowMem = {}; A.flowK = {};
+		let rnd = 7; const r = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647;
+		const base = fdevs.map(d => d.dn), tops = [], moves = [];
+		for (let sIdx = 0; sIdx < 40; sIdx++) {
+			fdevs.forEach((d, i) => { const surge = sIdx >= 20 && i === 4 ? 5 : 1; d.dn = d.sdn = base[i] * surge * (0.6 + 0.8 * r()); });
+			fnet.wan.dn = fnet.wan.sdn = 30 * (0.6 + 0.8 * r());
+			const gs = T.flowGroups(fnet), L = T.flowLayout(gs, fnet, 'dn'), at = {};
+			gs.forEach(gr => gr.rows.forEach(rw => { at[rw.id] = Math.round(L.slot[rw.id].top * 10) / 10; }));
+			tops.push(at);
+			if (sIdx) moves.push(Object.keys(at).some(id => at[id] !== tops[sIdx - 1][id]) || Object.keys(tops[sIdx - 1]).length !== Object.keys(at).length);
+		}
+		// moves[i] compares sample i+1 with sample i: 0-2 size the rows, 3-18 wobble, 19 is the jump, 19-28 its new level shows, 29-38 settled
+		const quiet = moves.slice(3, 19).filter(Boolean).length, after = moves.slice(19, 29).filter(Boolean).length, settled = moves.slice(29).filter(Boolean).length;
+		if (quiet > 2) fstill.push((g.big ? 'big' : 'small') + ': rows moved ' + quiet + ' times in 16 samples while traffic only wobbled');   /* the old layout: 15 */
+		if (after > 4 || settled) fstill.push((g.big ? 'big' : 'small') + ': after one device\'s traffic jumped, rows moved ' + after + ' times, then ' + settled + ' more');
+	} catch (e) { fstill.push('ERROR ' + e.message); }
+	fdevs.forEach((d, i) => { d.dn = d.sdn = (i % 5) * 3.1; });
+	T.useGeom(keepG);
+});
+ok(!fstill.length, 'Flow rows stay put while traffic wobbles, and settle again when a device gets much busier', fstill.join('; '));
+
+// ---- 13. a nickname the router's client editor saved by itself (its DHCP software, the maker) isn't a name
+const NM = '00:00:5E:00:53:F2', nk = (nick, host, vendor) => { A.names = AR.parseNames({ custom: '<' + nick + '>' + NM + '>0>0>>', leases: '1999999999 ' + NM.toLowerCase() + ' 192.168.50.88 ' + host + ' *',
+	nmp: { [NM]: { name: '', vendor: vendor, vendorclass: '', type: 0, os_type: 0 } } }); return T.nameInfo(NM); };
+let ni = nk('dhcpcd-6 8 2 Linux-5 4 1', 'roborock-vacuum-s5e', 'Beijing Xiaomi Mobile Software Co.,Ltd');
+ok(ni.name === 'roborock-vacuum-s5e' && ni.src === 'device', 'a nickname that is only DHCP software gives way to the device\'s own name', JSON.stringify(ni));
+ni = nk('Beijing Xiaomi Mobile Software C', 'roborock-vacuum-s5e', 'Beijing Xiaomi Mobile Software Co.,Ltd');
+ok(ni.name === 'roborock-vacuum-s5e', 'so does a nickname that is only the maker (cut short or not)', JSON.stringify(ni));
+ni = nk('Vacuum', 'roborock-vacuum-s5e', 'Beijing Xiaomi Mobile Software Co.,Ltd');
+ok(ni.name === 'Vacuum' && ni.src === 'nick', 'a nickname you gave still wins', JSON.stringify(ni));
+A.names = AR.parseNames({ custom: '<dhcpcd-6 8 2 Linux-5 4 1>' + NM + '>0>61>>', nmp: { [NM]: { name: '', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
+ok(T.classify(NM, '', 'wifi').kind === 'vacuum', '... and the icon saved with it still counts');
+
+// ---- 14. renaming a device rewrites only its entry in the router's client list, the way the router's own editor writes it
+const RL = T.renameList, M1 = '02:CC:00:00:00:05', M2 = '02:CC:00:00:00:13', M3 = '02:CC:00:00:00:21';
+const rlbad = [];
+const eq = (got, want, what) => { if (got !== want) rlbad.push(what + ': ' + JSON.stringify(got)); };
+eq(RL('<Living room TV>' + M1 + '>0>23>><Kids>' + M2 + '>0>21>>', M1, 'Lounge TV', 23), '<Lounge TV>' + M1 + '>0>23>><Kids>' + M2 + '>0>21>>', 'rename, other entry untouched');
+eq(RL('<Kids>' + M2 + '>0>21>>', M1, 'Hall lamp', 60), '<Kids>' + M2 + '>0>21>><Hall lamp>' + M1 + '>0>60>>', 'a new entry, as the editor writes it');
+eq(RL('Kids>' + M2 + '>0>0>>>><Den>' + M3 + '>0>2>>>>', M1, 'Den plug', 70), '<Kids>' + M2 + '>0>0>>>><Den>' + M3 + '>0>2>>>><Den plug>' + M1 + '>0>70>>>>', 'newer firmware: the first entry\'s lost "<" back, the new one shaped like the others');
+eq(RL('<Old>' + M1.toLowerCase() + '>0>7>>x>y<Kids>' + M2 + '>0>21>>', M1, 'Bedroom AC', 49), '<Bedroom AC>' + M1 + '>0>49>>x>y<Kids>' + M2 + '>0>21>>', 'a lower-case MAC found; its other fields kept');
+eq(RL('<A>' + M1 + '>0>7>><B>' + M1 + '>0>9>>', M1, 'Only one', 0), '<Only one>' + M1 + '>0>0>>', 'a duplicate goes');
+eq(RL('<A>' + M1 + '>0>7>><Kids>' + M2 + '>0>21>>', M1, '', 0), '<Kids>' + M2 + '>0>21>>', 'no name: the entry goes');
+eq(RL('<A>' + M1 + '>0>7>>', M1, '', 0), '', 'the last entry removed: an empty list');
+eq(RL('', M1, 'Ünïcode lamp ✓', 60), '<Ünïcode lamp ✓>' + M1 + '>0>60>>', 'an empty list, any letters');
+/* each kind's saved icon reads back as that kind: the same icon, or a broader one its name narrows (LED strip -> light) */
+Object.keys(T.ASUS_TYPE).forEach(k => { const b = T.TYPE_KIND[T.ASUS_TYPE[k]]; if (b !== k && T.SUB[k] !== b) rlbad.push('icon ' + T.ASUS_TYPE[k] + ' for ' + k + ' reads back as ' + b); });
+ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s client list, as the router writes it', rlbad.join('; '));
 
 process.exit(fails ? 1 : 0);

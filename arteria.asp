@@ -41,32 +41,46 @@
 #ar * { box-sizing: border-box; }
 #ar button { font-family: inherit; cursor: pointer; }
 #ar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-#ar .ar-bar { display: flex; align-items: center; gap: 10px; height: 46px; border-bottom: 1px solid #7d8c90; margin: 4px 0 12px; }
-#ar .ar-tabs { display: flex; gap: 10px; align-self: stretch; }
-#ar .ar-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: #e3eaec; font-size: 13px; padding: 0 6px; min-width: 44px; margin-bottom: -1px; }
+/* The tab bar: its controls 6px clear of its line, and 6px below the panel's top (the panel's own 5px, plus 1px) */
+#ar .ar-bar { display: flex; align-items: center; gap: 10px; height: 41px; padding-bottom: 6px; border-bottom: 1px solid #7d8c90; margin: 1px 0 12px; }
+#ar .ar-tabs { display: flex; gap: 10px; align-self: stretch; margin-bottom: -6px; }   /* the tabs reach down to the line, their text level with the controls' */
+#ar .ar-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: #e3eaec; font-size: 13px; padding: 0 6px 5px; min-width: 44px; margin-bottom: -1px; }
 #ar .ar-tabs button:hover { color: #fff; }
 #ar .ar-tabs button.on { color: #fff; border-bottom-color: var(--accent); font-weight: 600; cursor: default; }
 #ar .ar-sum { flex: 1; display: flex; align-items: baseline; justify-content: flex-end; gap: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink); }
 #ar .ar-sum .k { color: #e3eaec; }
 #ar .ar-sum b { font-weight: 600; }
+#ar .ar-sum .v { display: inline-block; min-width: 10.6ch; }   /* room for the widest number ("↓ 99.9 MB/s"), so nothing moves as numbers change */
+#ar .ar-sum .n { display: inline-block; min-width: 9.6ch; text-align: right; }
 #ar .ar-sum .dn { color: var(--dnt); font-weight: 700; }
 #ar .ar-sum .up { color: var(--upt); font-weight: 700; }
-#ar .ar-unit { display: flex; flex: none; height: 32px; border: 1px solid #6b7b80; border-radius: 16px; overflow: hidden; }
-#ar .ar-unit button { background: none; border: 0; margin: 0; padding: 0 9px; min-width: 44px; color: #c3c2b7; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Every pill-shaped control is the same: 34px tall overall, a dark fill, the same border, 12px text, 14px sides */
+#ar .ar-unit { display: flex; flex: none; height: 34px; border: 1px solid #6b7b80; border-radius: 17px; overflow: hidden; background: var(--surface); }
+#ar .ar-unit button { background: none; border: 0; margin: 0; padding: 0 14px; min-width: 34px; color: #c3c2b7; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 #ar .ar-unit button:hover { color: #fff; }
 #ar .ar-unit button.on { background: #3a4549; color: #fff; cursor: default; }
-#ar .ar-live { min-height: 44px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-radius: 22px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
+#ar .ar-live { height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-radius: 17px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
 #ar .ar-live .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); flex: none; }
 #ar .ar-live.live .dot { background: #3ddc97; animation: arblink 1.6s ease-in-out infinite; }
 #ar .ar-live.warn .dot { background: var(--accent); }
-#ar .ar-ibtn { width: 44px; height: 44px; flex: none; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 22px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); }
+#ar .ar-ibtn { width: 34px; height: 34px; flex: none; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 17px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); }
 #ar .ar-ibtn:hover { background: #3a4549; }
-#ar .ar-stage { position: relative; width: 728px; height: 518px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
+#ar .ar-stage { position: relative; width: 728px; height: 518px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; overflow: clip; }   /* clip: never scrolled, not even to show a focused label */
 #ar .ar-view { display: none; position: absolute; left: 0; top: 0; width: 726px; height: 516px; }
 #ar .ar-view.on { display: block; }
 #ar .ar-view > svg { position: absolute; left: -1px; top: -1px; display: block; }
 #ar .eyebrow { font-size: 10.5px; line-height: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 #ar .ar-over { position: absolute; font-size: 11px; line-height: 15px; color: var(--ink-2); pointer-events: none; }
+/* the expanded map zooms and pans: the scene and the labels share one transform; the text overlays stay put between them */
+#ar #arMapScene, #ar #arMapLabels { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+#ar #arMapLabels { pointer-events: none; } #ar #arMapLabels .ar-lb { pointer-events: auto; }
+#ar #arMap { overflow: hidden; overflow: clip; }
+#ar.big #arMap { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; } #ar.big #arMap.grabbing { cursor: grabbing; }
+#ar .ar-zoom { display: none; position: absolute; right: 16px; bottom: 12px; height: 34px; border: 1px solid #6b7b80; border-radius: 17px; overflow: hidden; background: var(--surface); }
+#ar.big .ar-zoom { display: flex; }
+#ar .ar-zoom button { background: none; border: 0; margin: 0; padding: 0 12px; min-width: 34px; color: #e3eaec; font-size: 15px; font-weight: 600; cursor: pointer; }
+#ar .ar-zoom #arZoomFit { font-size: 12px; min-width: 58px; color: #c3c2b7; font-variant-numeric: tabular-nums; border-left: 1px solid #4a585d; border-right: 1px solid #4a585d; }
+#ar .ar-zoom button:hover { background: #3a4549; } #ar .ar-zoom button:disabled { color: #6b7b80; cursor: default; background: none; }
 #ar .ar-legend { display: flex; flex-direction: column; gap: 5px; }
 #ar .ar-legend span.sw { display: inline-block; width: 8px; height: 8px; border-radius: 4px; margin-right: 6px; vertical-align: 0; }
 #ar .ar-notice { display: flex; align-items: center; gap: 7px; max-width: 420px; font-size: 11.5px; color: var(--ink); }
@@ -90,6 +104,15 @@
 #ar .ar-ico { width: 36px; height: 36px; border-radius: 9px; background: #1c2427; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; flex: none; }
 #ar .ar-ro-name { font-size: 16px; line-height: 19px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ar .ar-ro-link { font-size: 12px; line-height: 15px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* renaming in place: a device's name is a button to its own text field, with a check and a cross beside it */
+#ar .ar-ro-name.ed { cursor: text; border-radius: 4px; outline-offset: 2px; }
+#ar .ar-ro-name.ed:hover, #ar .ar-ro-name.ed:focus-visible { text-decoration: underline dotted #8f9a9e; text-underline-offset: 4px; }
+/* one row: the field, then the check and the cross, rounded squares exactly as tall as the field */
+#ar .ar-ro-ed { display: flex; align-items: stretch; gap: 6px; height: 26px; margin: -4px 0 -1px; }
+#ar .ar-ro-in { flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0 7px; border: 1px solid #6b7b80; border-radius: 6px; background: #1f272a; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 24px; box-sizing: border-box; }
+#ar .ar-ro-in:focus { outline: none; border-color: #59c3ff; box-shadow: 0 0 0 2px rgba(89,195,255,.25); }
+#ar .ar-ro-ed button { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border-radius: 6px; border: 1px solid #6b7b80; background: #1f272a; display: flex; align-items: center; justify-content: center; cursor: pointer; box-sizing: border-box; }
+#ar .ar-ro-ed button:hover { background: #3a4549; }
 #ar .ar-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 #ar .ar-metric { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 #ar .ar-metric .top { display: flex; align-items: baseline; gap: 5px; height: 28px; }
@@ -132,8 +155,8 @@
 #ar .ar-hist .vals span.n { font-size: 18px; line-height: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 #ar .ar-hist .vals span.u, #ar .ar-hist .vals span.l { font-size: 11px; color: var(--muted); }
 #ar .ar-flowbar { position: absolute; left: 12px; top: 10px; right: 16px; height: 44px; display: flex; align-items: center; gap: 14px; }
-#ar .ar-seg { display: flex; border-radius: 22px; border: 1px solid #6b7b80; overflow: hidden; flex: none; }
-#ar .ar-seg button { height: 44px; margin: 0; padding: 0 16px; border: 0; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+#ar .ar-seg { display: flex; height: 34px; border-radius: 17px; border: 1px solid #6b7b80; overflow: hidden; flex: none; background: var(--surface); }
+#ar .ar-seg button { height: 32px; margin: 0; padding: 0 14px; border: 0; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 #ar .ar-seg button.on-dn { background: #1f4a63; color: var(--dnt); }
 #ar .ar-seg button.on-up { background: #5a3520; color: var(--upt); }
 #ar .ar-scale { display: flex; align-items: center; gap: 7px; flex: none; font-size: 11px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -180,9 +203,20 @@
 /* Animation: CSS only, so the browser does the work and the router just answers a poll every 2 s. */
 #ar .df-a { animation-timing-function: linear; animation-iteration-count: infinite; }
 #ar .df-led { animation-name: arled; }
+#ar .df-rgb { animation-name: arrgb; }
+#ar .df-flame { animation-name: arflame; }
 #ar .df-ripple { transform-box: fill-box; transform-origin: center; animation-name: arripple; animation-duration: 2.6s; animation-timing-function: ease-out; }
 #ar.paused .df-a, #ar.paused .ar-live .dot { animation-play-state: paused !important; }
+#ar.moving .df-a { animation-play-state: paused !important; }   /* while the map is dragged or zoomed: it only has to move */
+/* The pulsing rings, the LEDs and a boiler's flame animate a scale or an opacity, which the browser draws as layers of their
+   own, even paused; zooming has to redraw and move each in step with the map, and one a frame late flickers. While the map
+   moves they don't animate at all, so it is drawn as one picture. */
+#ar.moving .df-ripple, #ar.moving .df-led, #ar.moving .df-flame { animation: none !important; }
 #ar .lk, #ar .ob, #ar .rb { transition: opacity .3s ease; }
+/* Zoomed in, tracing a device dims the rest at once: a fade makes the browser draw every fading part as a layer of its own
+   for its .3 s, dozens of them and large at 400%, and that flickers. */
+#ar.zoomed .lk, #ar.zoomed .ob, #ar.zoomed .rb, #ar.zoomed .ar-lb { transition: none; }
+#ar .ob { cursor: pointer; }
 #ar .lk.dim { opacity: .14; } #ar .ob.dim { opacity: .38; } #ar .ob.off { opacity: .3; }
 #ar .rb.dim { opacity: .2; } #ar .rb.mid { opacity: .55; }
 #ar .alt-off { stroke: #ff9c8a; } #ar .alt-nd { stroke: #c3c2b7; } #ar .alt-warn { stroke: #ffcc00; }
@@ -199,6 +233,8 @@
 #ar .sk { stroke-opacity: .9; fill: none; stroke-width: 2.2px; stroke-linecap: round; }
 @keyframes arblink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 @keyframes arled { 0%, 40%, 60%, 100% { opacity: 1; } 50% { opacity: .15; } }
+@keyframes arrgb { 0%, 100% { fill: #ff5e7a; } 17% { fill: #ffb03d; } 33% { fill: #ffe45c; } 50% { fill: #3ddc97; } 67% { fill: #59c3ff; } 83% { fill: #a99cf5; } }
+@keyframes arflame { 0%, 100% { opacity: 1; } 22% { opacity: .62; } 47% { opacity: .92; } 71% { opacity: .55; } }
 @keyframes arripple { from { transform: scale(1); opacity: .75; } to { transform: scale(2.3); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #ar .df-a, #ar .ar-live .dot { animation: none !important; } #ar .lk, #ar .ob, #ar .rb, #ar .ar-lb { transition: none; } }
 </style>
@@ -223,7 +259,7 @@ var A = {
 	tab: 'map', mode: 'dn', unit: 'Mb', sel: null, paused: false,
 	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false,
 	prev: {}, sm: {}, bk: {}, names: null, namesAt: 0,
-	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowAt: 0,
+	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowMem: {}, flowK: {}, pz: { s: 1, x: 0, y: 0 }, pzEat: 0, ren: null, renMsg: null,
 	hist: [], timers: {}, mapRefs: null, flowRefs: null, big: false, narrow: false, slotBy: {}
 };
 
@@ -294,6 +330,7 @@ function rr(x, y, w, h, r) {
 }
 function ci(cx, cy, r) { return 'M' + (cx - r) + ' ' + cy + 'a' + r + ' ' + r + ' 0 1 0 ' + (2 * r) + ' 0a' + r + ' ' + r + ' 0 1 0 ' + (-2 * r) + ' 0z'; }
 var ICON = {
+	tick: 'M5 12.5l4.5 4.5L19 7.5', cross: 'M6.5 6.5l11 11M17.5 6.5l-11 11',
 	globe: ci(12, 12, 9) + 'M3 12h18M12 3c3.2 3.4 3.2 14.6 0 18M12 3c-3.2 3.4-3.2 14.6 0 18',
 	router: rr(3, 13, 18, 6, 2) + 'M7 13V7M12 13V5M17 13V7M7 16h.01M10 16h.01',
 	mesh: rr(7, 3, 10, 18, 3) + 'M10 8a3 3 0 0 1 4 0M12 15h.01',
@@ -308,6 +345,7 @@ var ICON = {
 	desktop: rr(2.5, 6, 12, 9, 1.5) + 'M6 19h5M8.5 15v4' + rr(17, 4, 4.5, 16, 1.2) + 'M19.25 7.5h.01',
 	mac: rr(3, 3, 18, 11, 1.5) + rr(7, 17, 10, 4, 1.5) + 'M9.5 19h.01',
 	light: 'M9.5 18h5M10.5 21h3M12 3a6 6 0 0 0-3.7 10.7c.7.6 1.2 1.3 1.2 2.3h5c0-1 .5-1.7 1.2-2.3A6 6 0 0 0 12 3z',
+	strip: 'M2.5 10.8c3 0 3.6-3.2 6.4-3.2S12.3 10.8 15.1 10.8s3.6-3.2 6.4-3.2M2.5 16.3c3 0 3.6-3.2 6.4-3.2S12.3 16.3 15.1 16.3s3.6-3.2 6.4-3.2M2.5 10.8v5.5M21.5 7.6v5.5M5.8 11.95h.01M12 11.95h.01M18.3 11.95h.01',
 	air: rr(3, 5, 18, 8, 2) + 'M6.5 10h11M8 16v2M12 16v3.5M16 16v2',
 	speaker: rr(6.5, 3, 11, 18, 2.5) + ci(12, 14, 3) + 'M12 7.5h.01',
 	printer: 'M7 8V4h10v4' + rr(3.5, 8, 17, 8, 2) + 'M7 13.5h10V20H7z',
@@ -322,14 +360,34 @@ var ICON = {
 	lock: rr(5, 10.5, 14, 10, 2) + 'M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3M12 14.5v2',
 	sensor: ci(12, 12, 3) + 'M5.6 7.5a8 8 0 0 0 0 9M18.4 7.5a8 8 0 0 1 0 9',
 	thermostat: ci(12, 12, 8.5) + 'M12 12l3-3.5M8 16.5h8',
+	boiler: rr(6, 2.5, 12, 15, 2) + 'M12 6.3c.5 1.6 3 3 3 5.6a3 3 0 0 1-6 0c0-1.3.6-2.3 1.4-3 .1 1 .6 1.7 1.3 1.8-.2-1.7.1-3.2.3-4.4zM9.5 17.5v4M12 17.5v4M14.5 17.5v4',
 	plug: 'M9 3v5M15 3v5' + rr(6, 8, 12, 7, 2) + 'M12 15v6',
 	hub: rr(4, 13, 16, 6, 2) + 'M8 16h.01M12 16h.01M16 16h.01M8.5 9.5a5 5 0 0 1 7 0M10.6 11.4a2 2 0 0 1 2.8 0',
 	vacuum: ci(12, 12, 8.5) + ci(12, 9, 2) + 'M9.5 16.5h5',
 	appliance: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5',
+	washer: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5M10 14.5c.7-.6 1.3-.6 2 0s1.3.6 2 0',
+	dryer: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5M10.5 12.5h3M10.5 14.5h3',
+	dishwasher: rr(5, 3, 14, 18, 2) + 'M5 8.5h14M8 6h.01M11 6h5M9 11.5h6',
 	iot: rr(5, 5, 14, 14, 3) + 'M12 9.5v2.5M12 14.5h.01',
 	pi: rr(2.5, 6, 19, 12, 2) + rr(8.5, 10, 5, 5, 1) + 'M5.5 8.5h7' + rr(16, 9.5, 3.5, 6, .8),
 	stick: rr(2.5, 9, 13.5, 6, 2) + 'M16 10.5h3.5v3H16M6 12h.01',
 	smartspeaker: 'M6 5.5c0-1.4 2.7-2.5 6-2.5s6 1.1 6 2.5v13c0 1.4-2.7 2.5-6 2.5s-6-1.1-6-2.5zM6 5.5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5',
+	purifier: rr(6.5, 3, 11, 18, 3.5) + 'M9.5 6.5h5M9.5 10v5M12 10v5M14.5 10v5' + rr(8.5, 16.5, 7, 2.5, .8),
+	wallswitch: rr(4, 4, 16, 16, 2.5) + rr(9, 7, 6, 10, 1.5) + 'M12 9v2',
+	contact: rr(3.5, 5, 6, 14, 1.5) + rr(12, 8, 3.5, 8, 1) + 'M6.5 8.5h.01M19.5 3v18',
+	charger: rr(4, 3, 10, 13, 2) + 'M9.6 6l-2 3.5h3l-2 3.5M9 16v2a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-6' + rr(17.2, 8, 3.6, 4, .8),
+	car: 'M5 17H3.5v-4l2.2-4.5a1.5 1.5 0 0 1 1.3-.8h10a1.5 1.5 0 0 1 1.3.8l2.2 4.5v4H19M3.5 13h17M9.5 17h5' + ci(7.5, 17, 2) + ci(16.5, 17, 2),
+	solar: 'M3 15l2.5-9h13l2.5 9zM4.3 10.5h15.4M9.5 6l-1.3 9M14.5 6l1.3 9M12 15v5M8.5 20h7',
+	mower: 'M3.5 16c0-4.1 3.8-7.5 8.5-7.5s8.5 3.4 8.5 7.5zM12 8.5V6.5M10.5 5.2h3' + ci(7, 18, 2) + ci(17, 18, 2),
+	vr: 'M3 10.5A2.5 2.5 0 0 1 5.5 8h13a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-2.5 2.5h-3.6l-1.4-2.2h-3l-1.4 2.2H5.5A2.5 2.5 0 0 1 3 14.5zM1.5 12H3M21 12h1.5',
+	projector: rr(2.5, 8.5, 19, 8.5, 2) + ci(15.5, 12.75, 2.5) + 'M6 11.5h4M6 14h2.5M5 17v2M19 17v2M15.5 6V4M19 6.5l1.4-1.4M12 6.5l-1.4-1.4',
+	garage: 'M3 21V9.5l9-5.5 9 5.5V21M7 21v-8.5h10V21M7 15.3h10M7 18.1h10',
+	printer3d: 'M3 21h18M5 21V3.5h14V21M5 8.5h14' + rr(10, 8.5, 4, 3.2, .6) + 'M12 11.7v1.3' + rr(9.5, 15, 5, 6, 1),
+	display: rr(3, 3.5, 18, 11.5, 2) + 'M5.5 15l-1.5 5.5h16L18.5 15M7 7.5h5M7 10.5h3',
+	blinds: 'M3 4h18M5 4v10.5h14V4M5 7.5h14M5 11h14M16 14.5V18' + ci(16, 19.4, 1.4),
+	sprinkler: 'M9.5 21h5M11 21v-5h2v5M12 16c-1.2-3.8-4.3-6.6-8-7M12 16c1.2-3.8 4.3-6.6 8-7M12 16V7.5M5 13.5h.01M19 13.5h.01M8.5 6.5h.01M15.5 6.5h.01',
+	pet: 'M4 16h16l-1.4 3.8a2 2 0 0 1-1.9 1.2H7.3a2 2 0 0 1-1.9-1.2z' + ci(12, 10.2, 2.2) + ci(7.2, 7.6, 1.3) + ci(10.1, 4.2, 1.3) + ci(13.9, 4.2, 1.3) + ci(16.8, 7.6, 1.3),
+	fitness: rr(4.5, 6.5, 3.2, 11, 1) + rr(16.3, 6.5, 3.2, 11, 1) + 'M2.5 9.5v5M21.5 9.5v5M7.7 12h8.6',
 	more: ci(6, 12, 1.6) + ci(12, 12, 1.6) + ci(18, 12, 1.6),
 	expand: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
 	collapse: 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5',
@@ -351,7 +409,7 @@ function page() { return window.location.pathname.substring(1) || 'index.asp'; }
 function pokeBody(action) {
 	var f = document.formScriptActions, pid = f && f.productid ? f.productid.value : '';
 	return (pid ? 'productid=' + encodeURIComponent(pid) + '&' : '') + 'current_page=' + encodeURIComponent(page()) +
-		'&next_page=' + encodeURIComponent(page()) + '&action_mode=apply&action_script=' + action + '&action_wait=';
+		'&next_page=' + encodeURIComponent(page()) + '&action_mode=apply&action_script=' + encodeURIComponent(action) + '&action_wait=';
 }
 function poke(action) {
 	if (A.useForm && action === 'start_arteria') {   // fallback: the same form other addon pages submit
@@ -425,6 +483,7 @@ function suspend() {
 var JUNK_NAME = /^(dhcpcd|android-dhcp|udhcp|unknown|client|localhost|espressif|esp[_-]|wlan|\*|-)|:|^[0-9a-f]{10,}$/i;
 function parseNames(n) {
 	var out = { custom: {}, nmp: {}, lease: {}, cl: n && n.cl || {}, arp: {}, n6: {}, fixed: {} };
+	out.raw = String(n && n.custom || '');   /* as the router has it: renaming rewrites one entry of it */
 	String(n && n.custom || '').split('<').forEach(function (e) {
 		var f = e.split('>');
 		if (f.length >= 2 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) out.custom[f[1].toUpperCase()] = { name: f[0], type: +f[3] || 0 };
@@ -433,7 +492,7 @@ function parseNames(n) {
 	Object.keys(nmp).forEach(function (k) { if (nmp[k]) out.nmp[k.toUpperCase()] = nmp[k]; });
 	String(n && n.leases || '').split('|').forEach(function (l) {
 		var f = l.split(' ');
-		if (f.length >= 4 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) out.lease[f[1].toUpperCase()] = { exp: f[0], ip: f[2], host: f[3], cid: f[4] || '' };
+		if (f.length >= 4 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) out.lease[f[1].toUpperCase()] = { exp: f[0], ip: f[2], host: f[3] === '*' ? '' : f[3], cid: f[4] || '' };   /* "*": no host name */
 	});
 	/* addresses the router has seen without a lease (static ones), IPv6 neighbours (globals first), reservations */
 	String(n && n.arp || '').split('|').forEach(function (e) { var f = e.split(' '); if (f.length === 2 && /^[0-9A-Fa-f:]{17}$/.test(f[0])) out.arp[f[0].toUpperCase()] = f[1]; });
@@ -448,9 +507,18 @@ function parseNames(n) {
 /* A device's label, and where it came from: your nickname, a nickname matched by host name (al, see
    buildAliases), the name the device gave, its maker, or nothing ('tail': buildNet then uses the kind,
    "Light …F5:86", once the device is classified). */
+/* The router's client editor fills its name box with what it shows, so saving just an icon can store "dhcpcd-6 8 2 …"
+   or the maker's name as a nickname: those aren't yours, and the device's own name is better. */
+var JUNK_NICK = /^(dhcpcd|android-dhcp|udhcp|espressif|esp[_-]|unknown|localhost|wlan\d*$)/i;
+function nickOf(c, m) {
+	var n = String(c && c.name || '').trim(), k = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }, kn = k(n);
+	if (!n || JUNK_NICK.test(n)) return '';
+	if (m && kn.length >= 6 && [m.vendor, m.vendorclass].some(function (v) { return v && k(v).indexOf(kn) === 0; })) return '';
+	return n;
+}
 function nameInfo(mac, al) {
 	var N = A.names, c = N && N.custom[mac], m = N && N.nmp[mac], l = N && N.lease[mac];
-	if (c && c.name) return { name: c.name, src: 'nick' };
+	if (nickOf(c, m)) return { name: nickOf(c, m), src: 'nick' };
 	if (al && al.name) return { name: al.name, src: 'alias' };
 	if (m && m.name && !JUNK_NAME.test(m.name) && m.name !== m.vendor) return { name: String(m.name).trim(), src: 'device' };
 	if (l && l.host && !JUNK_NAME.test(l.host)) return { name: l.host, src: 'device' };
@@ -479,66 +547,173 @@ var TYPE_KIND = {
 };
 /* Icon numbers networkmap hands out from one loose keyword ("mac" -> 6, "win"/"pc"/"nb" -> 1, "desktop" -> 34,
    a DHCP vendor class -> 9/22/30/31): a clear name beats these, even when they were saved with a nickname. */
+/* Renaming a device on the page saves the router's icon for what the name says, so the router's client list shows the same
+   kind; a kind the router has no icon for saves none (0), so a stale guess doesn't outrank the name. An LED strip saves the
+   router's light icon and a boiler its appliance icon: the name still makes them a strip and a boiler (see SUB). */
+var ASUS_TYPE = { desktop: 34, mac: 14, laptop: 35, phone: 10, tablet: 20, tv: 23, streamer: 11, soundbar: 47, speaker: 43, console: 7, nas: 4,
+	printer: 18, camera: 5, doorbell: 85, lock: 63, air: 49, light: 60, vacuum: 61, plug: 70, sensor: 62, watch: 64, appliance: 50, strip: 60, boiler: 50 };
+/* Kinds that are a closer look at a broader one the router has an icon for: a name saying one of these narrows that icon */
+var SUB = { strip: 'light', boiler: 'appliance', washer: 'appliance', dryer: 'appliance', dishwasher: 'appliance' };
+/* The router's client list (custom_clientlist) with one device's entry changed, as the router's own editor writes it:
+   "<name>MAC>0>icon>>", other fields kept as they were (newer firmware writes a few more empty ones: a new entry takes the
+   shape of the others). No name removes the entry: the router's own name and icon come back. Every other entry stays as it
+   is; a duplicate of the device's entry goes; and the list starts with "<" even if the router lost the first one. */
+function renameList(raw, mac, name, type) {
+	var MAC = String(mac).toUpperCase(), out = [], found = false, len = 0;
+	String(raw || '').split('<').forEach(function (e) {
+		if (!e) return;
+		var f = e.split('>');
+		if (!len && f.length >= 4 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) len = f.length;
+		if ((f[1] || '').toUpperCase() !== MAC) { out.push(e); return; }
+		if (found || !name) return;
+		found = true;
+		f[0] = name; f[1] = MAC; while (f.length < 4) f.push('');
+		f[2] = f[2] || '0'; f[3] = String(type || 0);
+		out.push(f.join('>'));
+	});
+	if (name && !found) { var f = [name, MAC, '0', String(type || 0)]; while (f.length < Math.max(len, 6)) f.push(''); out.push(f.join('>')); }
+	return out.length ? '<' + out.join('<') : '';
+}
 var TYPE_LOOSE = { 1: 1, 6: 1, 9: 1, 22: 1, 30: 1, 31: 1, 32: 1, 34: 1 };
 /* Names that say what a device is. First match wins, so the specific ones come first. */
 var KIND_STRONG = [
+	/* LED strips by what people call them (also in German, French, Spanish, Italian, Dutch and Bulgarian), TV backlights,
+	   WLED, LED controllers, Govee's strips (ihoment_H61…), Tapo L900-L930 and Kasa KL400-KL430; "strip" on its own unless
+	   the name says it's a power strip */
+	['strip', /(led|light|lights|rgb|rgbw|rgbic|neon)[ _-]?(strip|stripe|tape|rope)|lightstrip|ledstrip|strip[ _-]?lights?|\bleds\b|backlight|neon[ _-]?(flex|rope|sign)|rope[ _-]?lights?|led[ _-]?(streifen|band|lint|leiste)|lichtstreifen|ruban[ _-]?led|tira[ _-]?(de[ _-]?)?led|striscia[ _-]?led|(led|лед)[ _-]?лента|ihoment[_-]?h61|^(tapo[ _-]?)?l9\d\d(-\d+)?[a-z]?$|^kl4\d\d|\bwled\b|led[ _-]?controller|gledopto|lifx[ _-]?(z|neon)\b|^(?!.*(power|surge|outlet|socket|plug|extension|smart)).*\bstrips?\b/i],
 	['mac', /\bmac[ _-]?(studio|mini|pro)\b|\bimac/i],
-	['laptop', /mac[ _-]?book|\bmbp\b|\bmba\b|laptop|notebook|thinkpad|latitude|zenbook|vivobook|ideapad|chromebook|surface|elitebook|probook|\bxps\b|\byoga\b/i],
+	['laptop', /mac[ _-]?book|\bmbp\b|\bmba\b|laptop|notebook|thinkpad|latitude|zenbook|vivobook|ideapad|chromebook|surface|elitebook|probook|\bxps\b|\byoga\b|magicbook|matebook|galaxy[ _-]?book|zephyrus|\bspectre\b/i],
 	['pi', /raspberry|\brpi\d*\b|^rpi?\d([-_.]|$)|\bpi[ _-]?[345]\b|pi[ _-]?hole/i],   /* before desktop and nas: a Pi often runs a server */
-	['desktop', /^desktop-[a-z0-9]{4,}|^win-[a-z0-9]{6,}|desktop|workstation|\btower\b|\bpc\b|optiplex|\bnuc\b/i],
-	['nas', /\bnas\b|synology|diskstation|qnap|dxp\d|truenas|unraid|terramaster|asustor|ugreen|proxmox|\bserver\b/i],
-	['stick', /fire[ _-]?tv(?![ _-]?cube)|fire[ _-]?stick|chromecast|roku[ _-]?(stick|express)|streaming[ _-]?stick|\bmi[ _-]?stick/i],
-	['streamer', /apple[ _-]?tv|fire[ _-]?tv[ _-]?cube|\bshield\b|\broku\b|set[ -]?top|\bstb\b|\bmi ?box/i],
-	['tv', /\btv\b|tv$|television|bravia|webos|tizen|\b[oq]led|hisense|vizio|^(kd|xr|xbr|kdl)[-_]?\d{2}[a-z]|^(qn|un|qe|ue|gq)\d{2}[a-z]/i],   /* with Sony and Samsung model numbers */
-	['soundbar', /sound ?bar|sonos[ _-]?(arc|beam|ray)|playbar|playbase|av[ -]?receiver|\bavr\b|denon|marantz|yamaha|onkyo|home[ -]?(cinema|theat)/i],
-	['smartspeaker', /homepod|\becho\b|echo[ _-]?(dot|show|pop|studio|spot)|alexa(?!['\u2019]s)|google[ _-]?home|nest[ _-]?(mini|audio|hub)/i],
-	['speaker', /speaker|sonos|subwoofer|\bsubw\b|\bbose\b|\bheos\b|\bjbl\b/i],
-	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?deck|\bswitch[ _-]?(oled|lite)\b/i],
-	['tablet', /ipad|tablet|[ _-]pad([ _-]|\d|$)|matepad|lenovo[ _-]?tab|kindle|\bkobo\b|e-?reader|paperwhite|galaxy[ _-]?tab|\btab\b/i],
-	['watch', /watch\b|fitbit|garmin|\bmi ?band\b|bracelet/i],
-	['phone', /iphone|\bpixel[ _-]?\d|galaxy[ _-]?[asz]\d|phone\b|redmi|oneplus|\bpoco\b/i],
-	['printer', /printer|laserjet|officejet|deskjet|envy[ _-]?\d|\bepson|\bbrother\b|\bcanon\b|\bet-\d|\bmfc-|\bhl-l|scanner/i],
-	['doorbell', /doorbell|ring[ _-]?pro|\bring[ _-]?(door|video)/i],
-	['camera', /\bcam\b|[a-z]cam(\b|\d)|camera|kamera|ipcam|reolink|\barlo\b|\bblink|\bwyze|\beufy|hikvision|dahua|\bnvr\b|nest[ _-]?cam/i],
-	['lock', /\block\b|smart ?lock|\bnuki\b|\byale\b|schlage/i],
-	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning/i],
-	['light', /bulb|\blamp|\bwled\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee/i],
-	['hub', /\bbridge\b|\bhub\b|\bmyq|garage[ _-]?(door|opener)|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee/i],
-	['air', /\bac\b|a\/c|air ?con|daikin|heat ?pump|climate|mitsubishi|sensibo|midea|\bgree\b/i],
-	['vacuum', /vacuum|roborock|rockrobo|roomba|irobot|deebot|ecovacs|dreame|\bmop\b/i],
-	['appliance', /washer|washing|dryer|fridge|refrigerator|freezer|\boven\b|dishwasher|microwave|kettle|coffee|purifier|humidifier|\bfan\b|heater|boiler|cooker|air ?fryer/i],
-	['plug', /\bplug|\bchime|\bsp1\d\d\b|chargepoint|ev[ _-]?charger|wallbox|juicebox|\beasee\b|\bzappi\b|wall[ _-]?connector|smart ?plug|\boutlet\b|socket|wall ?switch|power ?strip|\bhs1\d\d\b|\bkp1\d\d\b/i],
-	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara/i],
-	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life/i]
+	['desktop', /^desktop-[a-z0-9]{4,}|^win-[a-z0-9]{6,}|desktop|workstation|\btower\b|\bpc\b|optiplex|\bnuc\b|thinkcentre|prodesk|\bhtpc\b/i],
+	['nas', /\bnas\b|synology|diskstation|qnap|dxp\d|truenas|freenas|unraid|terramaster|asustor|ugreen|proxmox|\bserver\b|openmediavault|\bomv\b|xpenology|my[ _-]?cloud|readynas|\bdrobo\b|zimacube|jellyfin|\bplex\b|nextcloud/i],
+	['vr', /\bquest[ _-]?\d?\b|oculus|\bvr\b|vision[ _-]?pro|\bpico[ _-]?(neo|[34])\b|\bvive\b|valve[ _-]?index|\bpsvr/i],
+	['stick', /fire[ _-]?tv(?![ _-]?(cube|edition|omni))|fire[ _-]?stick|chromecast|roku[ _-]?(stick|express)|streaming[ _-]?stick|\bmi[ _-]?stick/i],
+	['streamer', /apple[ _-]?tv|fire[ _-]?tv[ _-]?cube|\bshield\b|\broku\b|set[ -]?top|\bstb\b|\bmi ?box|tv[ _-]?(box|streamer)|android[ _-]?box|\bmag\d{3}\b|formuler|ugoos|homatics|dune[ _-]?hd|zappiti|\bmecool|\bzidoo|\bosmc\b|libreelec|coreelec|\bkodi\b|\btivo|\bsky[ _-]?(q|stream)\b|\bhumax|dreambox|enigma2|\bvu[ _-]?(\+|plus|uno|duo|zero|solo)/i],
+	['projector', /projector|beamer|xgimi|\boptoma\b|\bbenq\b|nebula[ _-]?(capsule|mars|cosmos)|dangbei|formovie|\bepson[ _-]?(eh|ef|co|tw)[ _-]?\w|\bvava\b|\bwemax\b|\bvidda\b|hisense[ _-]?(c[12]|pl[12])\b|freestyle|cinebeam|\bjmgo\b/i],
+	['soundbar', /sound ?bar|sonos[ _-]?(arc|beam|ray)|playbar|playbase|av[ -]?receiver|\bavr\b|denon(?![ _-]?home)|marantz|yamaha|onkyo|home[ -]?(cinema|theat)|\bhw-[a-z]{1,2}\d{2,3}|\bpolk\b|\barcam\b/i],   /* before TV: "Vizio soundbar" */
+	['tv', /\btv\b|tv$|television|bravia|webos|tizen|\b[oq]led|hisense(?![ _-]?(ac|a\/c|air|fridge))|vizio|^(kd|xr|xbr|kdl)[-_]?\d{2}[a-z]|^(qn|un|qe|ue|gq)\d{2}[a-z]|\btcl\b(?![ _-]?(ac|a\/c|air|phone|tab))|viera|aquos|ambilight|vidaa|the[ _-]?frame|grundig|\bmetz\b|loewe/i],   /* with Sony and Samsung model numbers */
+	['display', /echo[ _-]?(show|spot|hub)|nest[ _-]?hub|google[ _-]?home[ _-]?hub|smart[ _-]?(display|clock)|\bportal\b|lenovo[ _-]?smart|(photo|picture|digital)[ _-]?frame|nixplay|aura[ _-]?frame|meural|frameo|pix-?star/i],   /* before smart speaker: an Echo Show */
+	['smartspeaker', /homepod|\becho\b|echo[ _-]?(dot|pop|studio)|alexa(?!['’]s)|google[ _-]?home|nest[ _-]?(mini|audio)|^amazon-[0-9a-f]{6,}$/i],   /* Amazon's own devices call themselves amazon-<hex>: Echos, most often */
+	['speaker', /speaker|sonos|subwoofer|\bsubw\b|\bbose\b|\bheos\b|\bjbl\b|bluesound|\bwiim\b|libratone|bang[ _-]?(&|and)?[ _-]?olufsen|\bbeo(play|sound|lab)|harman|marshall|ultimate[ _-]?ears|\bnaim\b|devialet|\bkef\b|audio[ _-]?pro|volumio|moode|squeezebox|picoreplayer|denon[ _-]?home/i],
+	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?deck|\bswitch[ _-]?(oled|lite)\b|rog[ _-]?ally|legion[ _-]?go|ayaneo|retroid|anbernic|\bwii\b|msi[ _-]?claw/i],
+	['fitness', /peloton|\btonal\b|treadmill|exercise|fitness|\browing|\brower\b|concept[ _-]?2|ergometer|hydrow|wahoo|\bkickr|\btacx|\bzwift|elliptical|spin[ _-]?bike|indoor[ _-]?(bike|cycle)|\bechelon|nordictrack|\bifit\b|technogym|bowflex|speediance/i],
+	['tablet', /ipad|tablet|[ _-]pad([ _-]|\d|$)|matepad|lenovo[ _-]?tab|kindle|\bkobo\b|e-?reader|paperwhite|galaxy[ _-]?tab|\btab\b|\bsm-[tpx]\d{3}|\bmi[ _-]?pad|\bboox\b|remarkable|supernote|pocketbook|\btolino|\bnook\b|fire[ _-]?(hd|max)/i],
+	['watch', /watch\b|fitbit|garmin|\bmi ?band\b|bracelet|\bsm-r\d{3}/i],
+	['phone', /iphone|\bpixel[ _-]?\d|galaxy[ _-]?[asz]\d|phone\b|redmi|oneplus|\bpoco\b|galaxy[ _-]?(note|fold|flip|xcover)|\bsm-[asgfmnze]\d{3}|\bmoto[ _-]?(g|e|x|edge|razr|one)\b|motorola[ _-]?(edge|razr|one|moto)|\boppo\b|\bvivo\b|realme|xperia|\bhonor[ _-]?(\d|magic|x\d)|zenfone|fairphone|\bxiaomi[ _-]?\d|\bmi[ _-]?\d{1,2}\b|huawei[ _-]?(p\d|mate|nova|y\d)|\bnokia[ _-]?(\d|[cgx]\d|xr)|\bnubia|\balcatel|\btecno|\binfinix/i],
+	['printer3d', /3d[ _-]?print|\bbambu|\bprusa|creality|octoprint|\boctopi\b|\bvoron|klipper|mainsail|fluidd|moonraker|\belegoo|anycubic|flashforge|snapmaker|\bqidi\b|\bender[ _-]?\d|\bsovol/i],   /* before printer */
+	['printer', /printer|laserjet|officejet|deskjet|envy[ _-]?\d|\bepson|\bbrother\b|\bcanon\b|\bet-\d|\bmfc-|\bhl-l|scanner|^npi[0-9a-f]{6}\b|^hp[0-9a-f]{6}$|^br[nw][0-9a-f]{12}$|^epson[0-9a-f]{6}$|xerox|kyocera|ricoh|lexmark|pantum|\bmfp\b|\bdymo\b|\bzebra\b|konica|bizhub|\boki\b/i],   /* with HP's, Brother's and Epson's own host names: NPI3C2AF4, BRW…, EPSON3C2AF4 */
+	['contact', /(door|window)[ _-]?(\/ ?window[ _-]?)?(sensor|contact)|contact[ _-]?sensor|shelly[ _-]?(door|dw)/i],
+	['doorbell', /doorbell|ring[ _-]?pro|\bring[ _-]?(door|video)|nest[ _-]?hello|doorbird|intercom|door[ _-]?station|akuvox|video[ _-]?door/i],
+	['pet', /pet[ _-]?(feeder|fountain|cam|door|camera)|feeder|litter|petlibro|petkit|whisker|sure[ _-]?(petcare|feed|flap)|cat[ _-]?flap|furbo|petcube|petsafe|\bdog[ _-]?cam|\bcat[ _-]?(cam|fountain)|tractive|bird[ _-]?buddy/i],   /* before camera: a pet camera */
+	['camera', /\bcam\b|[a-z]cam(\b|\d)|camera|kamera|ipcam|reolink|\barlo\b|\bblink|\bwyze(?![ _-]?(bulb|plug|lock|vac|robot|scale|watch|band|switch|light))|\beufy(?![ _-]?(robo|clean|vac|bulb|lock|smart ?lock|scale|plug))|hikvision|dahua|\bnvr\b|nest[ _-]?cam|^(tapo[ _-]?)?c[1-5]\d\d(ws?)?$|\bimou\b|ezviz|annke|amcrest|foscam|\blorex|\bswann\b|\buvc[ _-]|baby[ _-]?(monitor|cam)|nanit|\bowlet|\bmiku\b|webcam|imilab|\bkc\d{3}\b|wansview|\bzosi\b|heimvision|simplisafe|\bcanary\b/i],   /* Tapo cameras name themselves by model: C200 */
+	['lock', /\block\b|smart ?lock|\bnuki\b|\byale\b|schlage|tedee|ultraloq|lockly|danalock|igloohome|\blevel[ _-]?(lock|bolt|touch)|\bwelock|kwikset|\bloqed|deadbolt/i],
+	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?(learning|thermostat)|\bhive\b|\bwiser\b|evohome|plugwise|remeha|\bnefit\b|bosch[ _-]?(easy[ _-]?control|ct\d{3})/i],
+	/* after thermostat: a "boiler thermostat" is a thermostat. EMS-ESP, ebusd, OpenTherm Gateway, Vitoconnect and Buderus KM200
+	   are gateways on the boiler itself; boiler and water heater in German, French, Italian, Spanish, Dutch and Bulgarian */
+	['boiler', /boiler|\bcombi\b|ems[-_]?esp|ebusd|\botgw\b|opentherm|vitoconnect|viessmann|vaillant|buderus|\bkm\d{3}\b|intergas|incomfort|ariston|\bbaxi\b|worcester|ferroli|immergas|junkers|water[ _-]?heater|\bgeyser\b|bojler|бойлер|котел|\bkessel\b|heizung|chaudi[eè]re|caldaia|caldera|\bketel\b/i],
+	['blinds', /blind|curtain|\bshades?\b|shutter|rollo|rolladen|jalousie|\bsomfy(?![ _-]?(garage|gate|alarm|cam|tahoma|box|connexoon))|smartwings|motion[ _-]?blinds|powerview|\bbrel\b|\btuiss|awning/i],   /* before switch and light: "blind switch" */
+	['wallswitch', /wall ?switch|light ?switch|smart ?switch|switch ?module|\bdimmer\b|shelly[ _-]?(1|2|plus ?[12]|pro ?[12]|i4|dimmer)\b|sonoff[ _-]?(t[0-4]|tx|mini)\b|^(tapo[ _-]?)?s5\d\d[a-z]?$|^(hs2[0-2]0|ks2\d\d|es20m)\b/i],
+	/* Tapo and Kasa devices name themselves by model (L630, KL130), Govee's by its maker and model (ihoment_H6159_…) */
+	['light', /bulb|\blamp|light\b|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|^(tapo[ _-]?)?l[5-9]\d\d[a-z]?$|^(kl|lb)\d{3}\b|ihoment[_-]?h(6|70)|twinkly|sengled|\bcync\b|lumary|magic[ _-]?home|flux[ _-]?led|\bhue[ _-]?(lamp|bulb|play|go|iris|bloom|gradient|signe)\b/i],
+	['garage', /garage[ _-]?(door|opener|gate)|^garage$|\bmyq|liftmaster|chamberlain|tailwind|ratgdo|ismartgate|gogogate|aladdin[ _-]?connect|gate[ _-]?opener|meross[ _-]?msg/i],   /* before hub */
+	['hub', /\bbridge\b|\bhub\b|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee|^(tapo[ _-]?)?h[12]00$|dirigera|tradfri|fibaro|\bezlo\b|\bvera(plus|edge|secure)?\b|homebridge|deconz|phoscon|zigbee2mqtt|\bz2m\b|z-?wave|\bmatter\b|openhab|node-?red|domoticz|iobroker|jeedom|homematic|\bccu3\b|raspberrymatic|\bslzb|smlight|tubeszb|\bajax\b|tahoma|connexoon|lutron|caseta|broadlink|harmony|\bihost\b|\bhoobs\b/i],
+	['purifier', /purifier|humidifier|air[ _-]?(cleaner|performer|treatment)|philips[ _-]?air\b|\bblueair|levoit|\bcoway|\bwinix|airmega|ihoment[_-]?h71[24]|dyson[ _-]?(pure|hot|cool|purifier|humidify)|\bzhimi|\bmi[ _-]?air\b|smartmi|rabbit[ _-]?air|molekule/i],
+	['air', /\bac\b|a\/c|air ?con|daikin|heat ?pump|climate|mitsubishi|sensibo|midea|\bgree\b|fujitsu|haier[ _-]?(ac|air)|tosot|cooper[ _-]?hunter|\bhvac\b|split[ _-]?(ac|unit)|airzone|intesis|\bdkn\b|onecta|melcloud|comfort[ _-]?cloud|windfree|\bcarrier\b|\btrane\b/i],
+	['charger', /ev[ _-]?(charger|box|station)|car[ _-]?charger|charge ?point|wallbox|juicebox|\beasee\b|\bzappi\b|myenergi|wall[ _-]?connector|\bohme\b|pod[ _-]?point|\bgo-?e(charger)?\b|openevse|\bkeba\b|\balfen\b|zaptec|\bevse\b|emporia[ _-]?(ev|charger)|grizzl-?e|hypervolt|nrgkick|\bcharger\b/i],   /* before solar and car: a Tesla Wall Connector */
+	['solar', /solar|(pv|hybrid|string)[ _-]?inverter|^inverter\b|\bpv\b|fronius|solaredge|enphase|\benvoy\b|sunny[ _-]?(boy|tripower|island)|sun2000|growatt|goodwe|\bsofar|solax|victron|\bcerbo|sungrow|powerwall|\bdeye\b|hoymiles|apsystems|\bsolix\b|ecoflow|zendure|bluetti|jackery|home[ _-]?battery|power[ _-]?station|kostal|\bsolis\b|sigenergy|\bsenec\b|sonnen|shine[ _-]?(wifi|lan|x)|opendtu|ahoy[ _-]?dtu|\bdtu\b|marstek|sunsynk/i],   /* before car: a Tesla Powerwall */
+	['car', /\btesla\b|model[ _-]?[3sxy]\b|cybertruck|polestar|rivian|\blucid\b|\bvolvo\b|\bbmw\b|ioniq|mach[ _-]?e\b|\bcar\b|\bvw[ _-]?id|\bid\.?[3457]\b|e-?tron|enyaq|nissan[ _-]?leaf/i],
+	['mower', /mower|landroid|\bworx\b|navimow|sileno|\bluba\b|mammotion|\byuka\b|ecovacs[ _-]?goat|\bgoat[ _-]?[goa]\d|husqvarna|\bstiga\b|robomow|\bindego\b|ambrogio|yarbo|\bkress\b|\blawn|dreame[ _-]?a\d|sunseeker|terramow/i],   /* before vacuum: Ecovacs and Dreame make both */
+	['sprinkler', /sprinkler|irrigation|\brachio|rain[ _-]?bird|b-?hyve|hydrawise|gardena|opensprinkler|\bnetro\b|watering|eve[ _-]?aqua|linktap|hoselink|water[ _-]?timer/i],
+	['vacuum', /vacuum|roborock|rockrobo|roomba|irobot|deebot|ecovacs|dreame|\bmop\b|^(tapo[ _-]?)?rv\d\d|robovac|\bneato|shark[ _-]?(iq|robot|ai|vac)|narwal|\bviomi|roidmi|proscenic|\blefant|\bmova\b|braava|kobold|\bconga|jet[ _-]?bot|robot[ _-]?(vacuum|cleaner|mop)|dyson[ _-]?360/i],
+	/* Bosch, Siemens and Neff machines name themselves "BOSCH-WAX32EH0EU-…": the model number says what each is
+	   (WA, WG, WM, WU washers; WT, WQ dryers; WN, WD, WV washer-dryers; SM, SN, SB, SP, SX dishwashers) */
+	['dishwasher', /dish ?washer|geschirr|^(bosch|siemens|neff|gaggenau|bsh|constructa|balay|pitsos|profilo)[-_ ]s[mnbpgrx][a-z]{0,2}\d/i],
+	['dryer', /tumble|dryer|trockner|^(bosch|siemens|neff|bsh|constructa|balay|pitsos|profilo)[-_ ]w[tq][a-z]{0,2}\d/i],
+	['washer', /washer|washing|waschmaschine|^(bosch|siemens|neff|bsh|constructa|balay|pitsos|profilo)[-_ ]w[agmnuvdx][a-z]{0,2}\d/i],
+	['appliance', /appliance|fridge|refrigerator|freezer|\boven\b|microwave|kettle|coffee|\bfan\b|heater|cooker|air ?fryer|ihoment[_-]?h7|^(bosch|siemens|neff|gaggenau|bsh)[-_ ][a-z]{2}|thermomix|nespresso|de'?[ _-]?longhi|\bjura\b|\bsmeg\b|\banova|\bmeater|instant[ _-]?pot|breville|cosori|\bthinq\b|espresso/i],
+	['plug', /\bplug|\bchime|\bsp1\d\d\b|smart ?plug|\boutlet\b|socket|power ?strip|\bhs1\d\d\b|\bkp\d{3}\b|^(tapo[ _-]?)?p[13]\d\d[a-z]?$|^ep\d\d\b|meross[ _-]?mss|gosund|teckin|blitzwolf/i],
+	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara|ihoment[_-]?h5|thermometer|hygrometer|air[ _-]?(quality|monitor)|\bawair|airthings|\bco2\b|\bradon|purpleair|qingping|\bflood|(energy|power)[ _-]?meter|shelly[ _-]?(ht|h&t|flood|smoke|3?em)|emporia[ _-]?vue|iotawatt|\bsiren\b/i],
+	['strip', /\bgovee/i],   /* a Govee with no other word in its name: most of Govee's Wi-Fi lights are LED strips */
+	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life|ihoment/i]
+];
+/* Words as people run them together, split apart so the rules above find them: JohnsNas, KidsTV, LivingRoomLamp (camelCase),
+   nas01, Camera2 (a number after a word), office_printer, ExampleDSPNAS (an acronym stuck to another, after a lower-case letter).
+   Both the name as it is and this one are tried, so model numbers (DXP2800, L630) still match as written. */
+function nameWords(s) {
+	return String(s).replace(/([a-z])([A-Z]*?)(NAS|NVR|PC)(?![a-z])/g, '$1$2 $3').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+		.replace(/([a-z]{3,})(\d+)\b/gi, '$1 $2').replace(/[_.]+/g, ' ');
+}
+/* What a name says a device is: the first rule that matches the name as written, then (only when none did) with words run
+   together split apart, so "Somfy TaHoma" stays a hub. Null when no rule matches. */
+function nameKind(s) {
+	var w, i;
+	if (!s) return null;
+	for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(s)) return { kind: KIND_STRONG[i][0], i: i, split: false };
+	if ((w = nameWords(s)) !== s) for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(w)) return { kind: KIND_STRONG[i][0], i: i, split: true };
+	return null;
+}
+/* A Wi-Fi module's maker and the host name its firmware sends, when the two together say what the device is:
+   Daikin's Wi-Fi adapters (BRP069…) carry a Murata module and call themselves "Client". */
+var MODULE_KIND = [
+	['air', /murata/i, /^client$/i]
 ];
 /* Weaker hints: the maker (from the MAC address) and the DHCP vendor class. Used only when nothing above matched. */
 var KIND_WEAK = [
-	['light', /signify|wiz connected|lifx|yeelight/i],
-	['air', /daikin|sensibo/i],
-	['speaker', /sonos|bose corp/i],
-	['printer', /seiko epson|brother industries|canon|hewlett.*print/i],
+	['strip', /intellirocks/i],   /* Shenzhen Intellirocks: Govee, whose Wi-Fi lights are LED strips most often */
+	['light', /signify|wiz connected|lifx|yeelight|nanoleaf|twinkly|ledworks/i],
+	['air', /daikin|sensibo|gree electric|midea/i],
+	['smartspeaker', /amazon technologies/i],   /* Amazon's own Wi-Fi: Echo speakers, most often */
+	['speaker', /sonos|bose corp|bluesound|lenbrook|harman|bang & olufsen|devialet|linkplay/i],
+	['printer3d', /bambu|creality|prusa|elegoo|anycubic|flashforge|snapmaker|qidi/i],
+	['printer', /seiko epson|brother industries|canon|hewlett.*print|xerox|kyocera|ricoh|lexmark|pantum|zebra tech|konica/i],
+	['vr', /oculus|meta platforms tech/i],
+	['charger', /wallbox|easee|myenergi|chargepoint|zaptec|alfen|keba|ohme|pod point|go-e|juicebox|hypervolt/i],
+	['solar', /fronius|solaredge|enphase|sma solar|growatt|goodwe|victron|sungrow|hoymiles|kostal|solax|sofar|sigenergy|sonnen|apsystems|ecoflow|zendure|bluetti|jackery/i],
+	['car', /tesla/i],
+	['mower', /husqvarna|positec|mammotion|stiga|robomow|segway|kress/i],
+	['sprinkler', /rachio|rain bird|orbit irrigation|hunter industries|gardena/i],
+	['garage', /chamberlain|tailwind|nexx|genie company/i],
+	['blinds', /somfy|hunter douglas|smartwings|dooya/i],
+	['pet', /petlibro|petkit|automated pet care|sure petcare|tomofun|petcube|whisker/i],
+	['fitness', /peloton|tonal|ifit|echelon|technogym|hydrow|wahoo/i],
+	['thermostat', /tado|ecobee|netatmo|resideo/i],
+	['boiler', /viessmann|vaillant|bosch thermotechnik|ariston|baxi/i],
 	['tv', /lg innotek|hisense|vizio|tcl king/i],
 	['streamer', /\broku\b/i],
 	['nas', /synology|qnap|ugreen/i],
 	['pi', /raspberry/i],
 	['console', /nintendo|sony interactive/i],
-	['camera', /hikvision|dahua|reolink|arlo/i],
-	['vacuum', /roborock|irobot|ecovacs/i],
-	['iot', /espressif|tuya|shelly|itead|texas instruments|murata|azurewave|\budhcp/i]
+	['camera', /hikvision|dahua|reolink|arlo|ezviz|amcrest|foscam|wyze/i],
+	['vacuum', /roborock|irobot|ecovacs|dreame|narwal|neato|sharkninja/i],
+	['appliance', /electrolux|\baeg\b|bsh hausger|miele|whirlpool|bauknecht|haier|candy|beko|arcelik|liebherr|vorwerk/i],
+	['iot', /espressif|tuya|shelly|itead|texas instruments|murata|azurewave|mxchip|\budhcp/i]
 ];
+/* The kinds people carry or sit at: an icon of these saved on a home device is the router's guess (see classify) */
+var PERSONAL = { desktop: 1, mac: 1, laptop: 1, phone: 1, tablet: 1, watch: 1, console: 1 };
 /* Why a device got its kind: kept for the readout's Details and the classification report. */
 function classify(mac, name, link, al) {
 	var N = A.names, c = al ? { name: al.name, type: al.type || 0 } : N && N.custom[mac], m = N && N.nmp[mac], l = N && N.lease[mac];
 	var ct = (c && c.type) || 0, nt = (m && +m.type) || 0, os = (m && +m.os_type) || 0;
 	var res = function (kind, rule, tok) { return { kind: kind, rule: rule, tok: tok || '', ct: ct, nt: nt, os: os }; };
-	/* 1. the icon you picked in the router's client list (not one the router saved along with a nickname) */
-	if (ct && TYPE_KIND[ct] && (!TYPE_LOOSE[ct] || (nt && ct !== nt))) return res(TYPE_KIND[ct], 'your icon');
+	var KEYS = ['nickname', 'label', 'hostname', 'router name'], names = [al ? c.name : nickOf(c, m), name, l && l.host, m && m.name], i, j, r;
+	/* What a name says: as written first, then with words run together split apart (only when nothing matched as written,
+	   so "Somfy TaHoma" stays a hub) */
+	var byName = function (s, j) { var k = nameKind(s); return k ? res(k.kind, 'name', KEYS[j] + ' #' + k.i + (k.split ? ' split' : '')) : null; };
+	/* 1. the icon you picked in the router's client list. Saving a nickname there also saves whatever icon the editor showed,
+	   often only the router's guess at the time, so the name comes first when the saved icon is:
+	   - the router's own guess (the same icon it detects), or a loose one (any computer, any phone);
+	   - a computer, phone, tablet, watch or console icon on a device you named after a home device ("Daikin AC"): nobody
+	     picks a game console for their air conditioner. A nickname the editor filled in with the device's own name
+	     (DESKTOP-…) isn't one you typed. Other icons you picked win over the name: a plug named for its lamp stays a plug.
+	   A name that says a closer kind of what the icon shows narrows it: a light named "Desk LED strip" is an LED strip. */
+	var key = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+	var typed = names[0] && [l && l.host, m && m.name].every(function (h) { return !h || key(h) !== key(names[0]); }), mine = typed ? byName(names[0], 0) : null;
+	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt) && !(mine && PERSONAL[TYPE_KIND[ct]] && !PERSONAL[mine.kind]) && !(mine && SUB[mine.kind] === TYPE_KIND[ct])) return res(TYPE_KIND[ct], 'your icon');
 	/* 2. a name that says what it is: your nickname, then the names the device gave */
-	var names = [c && c.name, name, l && l.host, m && m.name], i, j;
-	for (j = 0; j < names.length; j++) {
-		if (!names[j]) continue;
-		for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(names[j])) return res(KIND_STRONG[i][0], 'name', ['nickname', 'label', 'hostname', 'router name'][j] + ' #' + i);
-	}
+	for (j = 0; j < names.length; j++) if ((r = byName(names[j], j))) return r;
+	/* a Wi-Fi module's maker with the name its firmware gives, when the pair says what the device is */
+	var mk = [m && m.vendor, m && m.vendorclass].join(' ');
+	for (i = 0; i < MODULE_KIND.length; i++) if (MODULE_KIND[i][1].test(mk) && [l && l.host, m && m.name].some(function (h) { return h && MODULE_KIND[i][2].test(h); })) return res(MODULE_KIND[i][0], 'module', '#' + i);
 	/* 3. the router's own icon number */
 	var t = ct || nt;
 	if (t === 30 || (!TYPE_KIND[t] && os === 2)) return res(link === 'wired' ? 'desktop' : 'laptop', 'windows + link');
@@ -595,9 +770,11 @@ function buildAliases(N, online) {
 var OS_NAME = { 1: 'Android', 2: 'Windows', 3: 'Linux', 4: 'ASUS', 5: 'Apple' };   /* networkmap.h BASE_TYPE_* */
 var WIFI_STD = { n: 'Wi-Fi 4 (802.11n)', ac: 'Wi-Fi 5 (802.11ac)', ax: 'Wi-Fi 6 (802.11ax)', be: 'Wi-Fi 7 (802.11be)' };
 var KIND_LABEL = { desktop: 'Desktop PC', mac: 'Mac desktop', laptop: 'Laptop', phone: 'Phone', tablet: 'Tablet', watch: 'Watch', printer: 'Printer', tv: 'TV', streamer: 'Streaming box',
-	speaker: 'Speaker', soundbar: 'Home cinema', console: 'Game console', nas: 'NAS', camera: 'Camera', doorbell: 'Doorbell', lock: 'Smart lock', thermostat: 'Thermostat', light: 'Light',
-	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
-	pi: 'Single-board computer', stick: 'Streaming stick', smartspeaker: 'Smart speaker' };
+	speaker: 'Speaker', soundbar: 'Home cinema', console: 'Game console', nas: 'NAS', camera: 'Camera', doorbell: 'Doorbell', lock: 'Smart lock', thermostat: 'Thermostat', light: 'Light', strip: 'LED strip', boiler: 'Boiler',
+	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', washer: 'Washing machine', dryer: 'Dryer', dishwasher: 'Dishwasher', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
+	pi: 'Single-board computer', stick: 'Streaming stick', smartspeaker: 'Smart speaker', purifier: 'Air purifier', wallswitch: 'Smart switch', contact: 'Door sensor',
+	charger: 'EV charger', car: 'Car', solar: 'Solar or battery', mower: 'Robot mower', vr: 'VR headset', projector: 'Projector', garage: 'Garage door', printer3d: '3D printer',
+	display: 'Smart display', blinds: 'Smart blinds', sprinkler: 'Sprinkler', pet: 'Pet device', fitness: 'Fitness equipment' };
 function ago(s) {
 	if (s === null || s === undefined || isNaN(s)) return '—';
 	s = Math.max(0, Math.round(s));
@@ -630,7 +807,7 @@ function detailsFor(net, dv) {
 	var priv = mac && isPrivate(mac), wifi = dv.link === 'wifi';
 	var std = WIFI_STD[dv.std] ? WIFI_STD[dv.std].split(' (')[0].slice(6) + (dv.band === '6' && dv.std === 'ax' ? 'E' : '') : '';   /* "6", "6E": the label says Wi-Fi */
 	var kl = KIND_LABEL[dv.kind] || 'Device', why = { 'your icon': 'the icon you chose in the router\'s client list', name: 'its name', 'windows + link': 'Windows, and how it is connected',
-		'saved icon': 'the icon saved in the router\'s client list', 'router icon': 'the type the router detected', maker: 'its maker', android: 'Android' }[w.rule];
+		'saved icon': 'the icon saved in the router\'s client list', 'router icon': 'the type the router detected', maker: 'its maker', module: 'its Wi-Fi module\'s maker and the name it gives', android: 'Android' }[w.rule];
 	var wifiTxt = (std || '—') + (dv.nss ? ' · ' + dv.nss + '×' + dv.nss : '') + (dv.bw ? ' · ' + dv.bw + ' MHz' : '');
 	/* four columns; the second is the widest, for the MAC, the Wi-Fi details and IPv6 */
 	var cells = [
@@ -646,7 +823,7 @@ function detailsFor(net, dv) {
 		['IPv6', v6.length ? v6[0] + (v6.length > 1 ? ' +' + (v6.length - 1) : '') : '—', v6.join('\n')],
 		['Address', lease, l && left > 0 ? 'DHCP lease, ' + ago(left) + ' left' : ''],
 		al ? ['Matched', 'by host name', 'This private address has no name of its own. It uses the host name of the device you named "' + al.name + '", which is not connected now, so it is shown under that name.']
-			: ['Name from', (N.custom[mac] && N.custom[mac].name) ? 'your client list' : ((l && l.host) || (m && m.name) ? 'the device' : 'its maker or kind')]
+			: ['Name from', nickOf(N.custom[mac], m) ? 'your client list' : ((l && l.host) || (m && m.name) ? 'the device' : 'its maker or kind')]
 	];
 	return cells;
 }
@@ -857,6 +1034,7 @@ function px(v) { return n1(v * G.U / 24); }   /* a size in pixels that grows wit
 function ptsS(ps) { return ps.map(function (p) { return n1(p[0]) + ',' + n1(p[1]); }).join(' '); }
 function poly(ps, st) { return '<polygon points="' + ptsS(ps) + '" style="' + st + '"/>'; }
 function pline(ps, st, dy) { return '<path d="M' + ps.map(function (p) { return n1(p[0]) + ' ' + n1(p[1] + (dy || 0)); }).join(' L') + '" style="' + st + '"/>'; }
+function ellPts(o, c, r) { var rx = 1.2247 * r * G.U + 2, ry = 0.7071 * r * G.U + 2; o.pts.push([c[0] - rx, c[1] - ry], [c[0] + rx, c[1] + ry]); }   /* an ell()'s extent, in a drawing's outline */
 function ell(c, r, st, cls) { return '<ellipse cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" rx="' + n1(1.2247 * r * G.U) + '" ry="' + n1(0.7071 * r * G.U) + '"' + (cls ? ' class="' + cls + '"' : '') + ' style="' + st + '"/>'; }
 /* Four tones from one base colour: top, left (lit), right (shade), deep; plus edge and rim. Light comes from the upper left. */
 function MAT(base, light) {
@@ -1188,8 +1366,52 @@ function drawLight(id, kind, cx, cy, face) {   /* a lit bulb on a small lamp foo
 	g = P(cx, cy, 0.62);
 	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="15" style="fill:url(#ar-glow)"/>');
 	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="7.5" style="fill:url(#ar-bulb);stroke:#ffe9a3;stroke-width:.9"/>');
-	o.pts.push([g[0] - 9, g[1] - 9], [g[0] + 9, g[1] + 9]);
+	o.pts.push([g[0] - 15, g[1] - 15], [g[0] + 15, g[1] + 15]);   /* its glow */
 	o.target = P(cx, cy, 1.0);
+	return o;
+}
+var M_WOOD = MAT('#7c6450'), M_COPPER = MAT('#b87333');
+/* An LED strip under a shelf on a piece of wall: its LEDs run through the colours one after another and wash the wall below. */
+function drawStrip(id, kind, cx, cy, face) {
+	var o, w, i, n = 9, d = 3.2, k = G.U / 24, col = ['#ff5e7a', '#ffb03d', '#ffe45c', '#3ddc97', '#59c3ff', '#a99cf5'];
+	var anim = function (j) { return 'animation-duration:' + d + 's;animation-delay:' + (-d * j / n).toFixed(2) + 's'; };
+	o = new Obj(id, cx, cy, 1.3);
+	o.box(cx - 0.6, cy - 0.2, 0, 1.2, 0.14, 1.25, M_WALL, { shadow: true });
+	w = o.last;
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	[[0.15, 0.1], [0.4, 0.15]].forEach(function (a) {
+		o.svg.push('<polygon class="df-a df-rgb" points="' + ptsS([o.fp('L', 0.1, 0.65, w), o.fp('L', 0.9, 0.65, w), o.fp('L', 0.98, a[0], w), o.fp('L', 0.02, a[0], w)]) +
+			'" style="fill:' + col[4] + ';opacity:' + a[1] + ';' + anim(4) + '"/>');
+	});
+	o.box(cx - 0.5, cy - 0.06, 0.82, 1.0, 0.3, 0.07, M_WOOD, { shadow: true });
+	o.box(cx - 0.36, cy + 0.02, 0.89, 0.08, 0.18, 0.28, MAT('#5f7f9a'), { rim: false });
+	o.box(cx - 0.27, cy + 0.02, 0.89, 0.07, 0.18, 0.24, MAT('#a0574f'), { rim: false });
+	o.box(cx + 0.14, cy + 0.04, 0.89, 0.16, 0.14, 0.14, M_WHITE);
+	for (i = 0; i < n; i++) {
+		var p = P(cx - 0.44 + 0.88 * i / (n - 1), cy + 0.22, 0.8);
+		o.svg.push('<circle class="df-a df-rgb" cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="' + n1(2.7 * k) + '" style="fill:' + col[i % 6] + ';opacity:.35;' + anim(i) + '"/>',
+			'<circle class="df-a df-rgb" cx="' + n1(p[0]) + '" cy="' + n1(p[1]) + '" r="' + n1(1.2 * k) + '" style="fill:' + col[i % 6] + ';' + anim(i) + '"/>');
+	}
+	o.target = P(cx, cy, 1.3);
+	return o;
+}
+/* A wall-hung boiler: its white case on a piece of wall, the display, the flame flickering in its window, the pipes below. */
+function drawBoiler(id, kind, cx, cy, face) {
+	var o, g, k = G.U / 24, f = function (x, y) { return n1(g[0] + x * k) + ' ' + n1(g[1] + y * k); };
+	o = new Obj(id, cx, cy, 1.5);
+	o.box(cx - 0.45, cy - 0.2, 0, 0.9, 0.14, 1.5, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	[[-0.22, M_METAL], [-0.08, M_COPPER], [0.06, M_COPPER], [0.2, M_METAL]].forEach(function (q) { o.box(cx + q[0], cy - 0.02, 0.12, 0.05, 0.05, 0.46, q[1], { rim: false }); });
+	o.box(cx - 0.32, cy - 0.06, 0.56, 0.64, 0.34, 0.84, M_WHITE, { ao: true, shadow: true });
+	o.face('L', 0.18, 0.7, 0.82, 0.88, 'fill:#11181b');
+	o.face('L', 0.25, 0.74, 0.52, 0.84, 'fill:' + DN + ';opacity:.85');
+	o.led('L', 0.7, 0.79, '#3ddc97', 0, 0, 0.7);
+	o.face('L', 0.3, 0.14, 0.7, 0.52, 'fill:#1b2225;stroke:#9aa5a9;stroke-width:.6');
+	g = o.fp('L', 0.5, 0.31);
+	o.svg.push('<g class="df-a df-flame" style="animation-duration:1.9s"><circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + n1(4.6 * k) + '" style="fill:' + UP + ';opacity:.35"/>' +
+		'<path d="M' + f(0, -5.5) + ' C' + f(2.6, -2.4) + ' ' + f(3.4, 0.2) + ' ' + f(0, 3.2) + ' C' + f(-3.4, 0.2) + ' ' + f(-2.6, -2.4) + ' ' + f(0, -5.5) + 'Z" style="fill:' + UP + '"/>' +
+		'<path d="M' + f(0, -1.6) + ' C' + f(1.3, 0) + ' ' + f(1.6, 1.4) + ' ' + f(0, 2.6) + ' C' + f(-1.6, 1.4) + ' ' + f(-1.3, 0) + ' ' + f(0, -1.6) + 'Z" style="fill:#ffe45c"/></g>');
+	o.target = P(cx, cy, 1.5);
 	return o;
 }
 function drawAir(id, kind, cx, cy, face) {   /* a split air conditioner on a piece of wall */
@@ -1371,16 +1593,255 @@ function drawVacuum(id, kind, cx, cy, face) {   /* a robot vacuum */
 	o.target = P(cx, cy, 0.3);
 	return o;
 }
-function drawAppliance(id, kind, cx, cy, face) {   /* white goods: washer, dryer, fridge, oven, purifier, fan, heater */
+function drawAppliance(id, kind, cx, cy, face) {   /* white goods: a washing machine, a dryer, a dishwasher, or another appliance */
 	var o;
 	o = new Obj(id, cx, cy, 1.2);
 	o.box(cx - 0.5, cy - 0.5, 0, 1.0, 1.0, 1.15, M_WHITE, { ao: true, shadow: true });
-	o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
-	o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
-	o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
-	o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');
 	[0.3, 0.45, 0.6].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#7f8a8e', 1.1); });
+	if (kind === 'dishwasher') {   /* a plain door: the control strip along its top, a handle under it */
+		o.face('L', 0.04, 0.84, 0.96, 0.96, 'fill:#20282b;stroke:#8f9a9e;stroke-width:.6');
+		o.led('L', 0.84, 0.9, '#3ddc97', 0, 0, 0.9);
+		o.face('L', 0.14, 0.88, 0.5, 0.92, 'fill:url(#ar-scr4);opacity:.7');
+		o.face('L', 0.3, 0.7, 0.7, 0.75, 'fill:#8f9a9e');
+		o.line('L', 0.04, 0.06, 0.96, 0.06, '#aab4b8', 1);
+	} else {
+		o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
+		o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
+		o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
+		if (kind === 'dryer') {   /* an empty drum: no water, a lint filter under the door */
+			o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:#3a4448');
+			[0.36, 0.48].forEach(function (v) { o.line('L', 0.38, v, 0.62, v, '#56646a', 1); });
+			o.face('L', 0.36, 0.04, 0.64, 0.09, 'fill:#8f9a9e');
+		} else o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');   /* water behind the glass */
+	}
 	o.target = P(cx, cy, 1.2);
+	return o;
+}
+function drawPurifier(id, kind, cx, cy, face) {   /* an air purifier or humidifier: a white tower, its water tank, side grilles, an air ring on top */
+	var o, c;
+	o = new Obj(id, cx, cy, 1.25);
+	o.box(cx - 0.32, cy - 0.32, 0, 0.64, 0.64, 1.2, M_WHITE, { ao: true, shadow: true });
+	o.face('L', 0.1, 0.06, 0.9, 0.34, 'fill:#8fc3e3;fill-opacity:.55;stroke:#8f9a9e;stroke-width:.6');   /* the water tank */
+	o.line('L', 0.1, 0.12, 0.9, 0.12, 'rgba(255,255,255,.5)', 0.8);
+	[0.22, 0.36, 0.5, 0.64, 0.78].forEach(function (u) { o.line('L', u, 0.44, u, 0.9, '#9aa5a9', 1.1); o.line('R', u, 0.44, u, 0.9, '#8a9599', 1); });
+	c = P(cx, cy, 1.2);
+	o.svg.push(ell(c, 0.24, 'fill:#20282b;stroke:#8f9a9e;stroke-width:.8'), ell(c, 0.15, 'fill:none;stroke:' + DN + ';stroke-width:1.3'));
+	o.led('L', 0.5, 0.96, '#3ddc97', 0, 0, 0.9);
+	o.target = P(cx, cy, 1.26);
+	return o;
+}
+function drawWallSwitch(id, kind, cx, cy, face) {   /* a smart light switch on a piece of wall */
+	var o;
+	o = new Obj(id, cx, cy, 1.3);
+	o.box(cx - 0.4, cy - 0.2, 0, 0.8, 0.14, 1.25, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	o.box(cx - 0.21, cy - 0.06, 0.52, 0.42, 0.05, 0.42, M_WHITE);
+	o.face('L', 0.26, 0.16, 0.74, 0.84, 'fill:#dfe4e6;stroke:#8f9a9e;stroke-width:.7');   /* the rocker */
+	o.line('L', 0.3, 0.5, 0.7, 0.5, '#aab4b8', 0.8);
+	o.led('L', 0.5, 0.72, '#3ddc97', 0, 0, 0.8);
+	o.target = P(cx, cy, 1.3);
+	return o;
+}
+function drawContact(id, kind, cx, cy, face) {   /* a door or window sensor: the sensor and its magnet, either side of a door's edge */
+	var o;
+	o = new Obj(id, cx, cy, 1.3);
+	o.box(cx - 0.4, cy - 0.2, 0, 0.8, 0.14, 1.25, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	o.line('L', 0.56, 0.0, 0.56, 1, 'rgba(0,0,0,.45)', 1.4);                     /* the door's edge */
+	o.box(cx - 0.3, cy - 0.06, 0.6, 0.16, 0.06, 0.42, M_WHITE);                 /* the sensor */
+	o.led('L', 0.5, 0.82, DN, 2.8 + (hash(id) % 10) / 4, 0, 0.8);
+	o.box(cx + 0.02, cy - 0.06, 0.66, 0.12, 0.06, 0.3, M_WHITE);                /* its magnet */
+	o.target = P(cx, cy, 1.3);
+	return o;
+}
+/* ---- the newer kinds: an EV charger, a car, solar, a robot mower, a VR headset, a projector, a garage door, a 3D printer,
+   a smart display, smart blinds, a sprinkler, a pet feeder, a treadmill ---- */
+var M_CAR = MAT('#b5473f'), M_GRASS = MAT('#4f8a3c'), M_PRINT = MAT('#e0a33a'), M_RED = MAT('#c0392b');
+function curve(a, c1, c2, b, st) { return '<path d="M' + n1(a[0]) + ' ' + n1(a[1]) + ' C' + [c1, c2, b].map(function (p) { return n1(p[0]) + ' ' + n1(p[1]); }).join(' ') + '" style="' + st + '"/>'; }
+function drawCharger(id, kind, cx, cy, face) {   /* an EV charger: a wallbox with its light strip, its cable looped down to the holster */
+	var o;
+	o = new Obj(id, cx, cy, 1.35);
+	o.box(cx - 0.45, cy - 0.2, 0, 0.9, 0.14, 1.3, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	o.box(cx - 0.32, cy - 0.06, 0.55, 0.5, 0.12, 0.62, M_DARK, { shadow: true });
+	o.face('L', 0.14, 0.64, 0.86, 0.86, 'fill:#141b1e;stroke:#56646a;stroke-width:.6');
+	o.line('L', 0.24, 0.36, 0.76, 0.36, '#3ddc97', 1.8);
+	o.led('L', 0.5, 0.75, DN, 2.2 + (hash(id) % 10) / 4, 0, 0.9);
+	o.box(cx + 0.24, cy - 0.06, 0.62, 0.12, 0.1, 0.2, M_DARK);                     /* the holster */
+	o.svg.push(curve(P(cx - 0.12, cy + 0.06, 0.55), P(cx - 0.14, cy + 0.12, -0.05), P(cx + 0.32, cy + 0.12, -0.05), P(cx + 0.3, cy + 0.04, 0.62),
+		'fill:none;stroke:#1d2427;stroke-width:2.4;stroke-linecap:round'));
+	o.target = P(cx, cy, 1.35);
+	return o;
+}
+function drawCar(id, kind, cx, cy, face) {   /* an electric car: a red body, its cabin and windows, headlights, the charge light */
+	var o;
+	o = new Obj(id, cx, cy, 0.72);
+	[cx - 0.55, cx + 0.3].forEach(function (x) { o.box(x, cy - 0.4, 0, 0.26, 0.08, 0.26, M_BLACK, { rim: false }); });   /* the far wheels, mostly hidden */
+	o.box(cx - 0.75, cy - 0.36, 0.1, 1.5, 0.72, 0.3, M_CAR, { ao: true, shadow: true });
+	o.face('R', 0.1, 0.5, 0.3, 0.75, 'fill:#ffe9a8'); o.face('R', 0.7, 0.5, 0.9, 0.75, 'fill:#ffe9a8');
+	o.led('L', 0.08, 0.72, '#3ddc97', 1.6, 0, 0.9);
+	o.box(cx - 0.45, cy - 0.3, 0.4, 0.82, 0.6, 0.26, M_CAR);
+	o.face('L', 0.06, 0.14, 0.47, 0.86, 'fill:#1b2a33;stroke:#0d1214;stroke-width:.5'); o.face('L', 0.53, 0.14, 0.94, 0.86, 'fill:#1b2a33;stroke:#0d1214;stroke-width:.5');
+	o.face('R', 0.08, 0.14, 0.92, 0.86, 'fill:#22343f;stroke:#0d1214;stroke-width:.5');
+	o.face('T', 0.06, 0.08, 0.94, 0.92, 'fill:#2a3d48;opacity:.85');   /* a glass roof */
+	[cx - 0.42, cx + 0.43].forEach(function (x) {   /* the near wheels: round, in the car's side */
+		var ring = function (r) { var ps = []; for (var t = 0; t < 16; t++) ps.push(P(x + r * Math.cos(t * Math.PI / 8), cy + 0.37, 0.14 + r * Math.sin(t * Math.PI / 8))); return ps; };
+		o.svg.push(poly(ring(0.14), 'fill:#1d2427;stroke:#0b1012;stroke-width:.7'), poly(ring(0.065), 'fill:#8f9a9e'));
+	});
+	o.target = P(cx, cy, 0.72);
+	return o;
+}
+function drawSolar(id, kind, cx, cy, face) {   /* solar and a home battery: a battery tower with its charge level, a panel tilted to the sun */
+	var o, a, b, c, d, i, f;
+	o = new Obj(id, cx, cy, 1.2);
+	o.box(cx + 0.05, cy - 0.32, 0, 0.6, 0.42, 1.15, M_WHITE, { ao: true, shadow: true });
+	for (i = 0; i < 4; i++) o.face('L', 0.32, 0.34 + i * 0.12, 0.68, 0.42 + i * 0.12, 'fill:' + (i < 3 ? '#3ddc97' : '#56646a'));
+	o.led('L', 0.5, 0.9, DN, 0, 0, 0.8);
+	o.svg.push(pline([P(cx - 0.45, cy + 0.05, 0), P(cx - 0.45, cy + 0.05, 0.42)], 'fill:none;stroke:#56646a;stroke-width:1.6'));   /* its leg */
+	a = P(cx - 0.85, cy + 0.42, 0.1); b = P(cx - 0.05, cy + 0.42, 0.1); c = P(cx - 0.05, cy - 0.16, 0.66); d = P(cx - 0.85, cy - 0.16, 0.66);
+	o.svg.push(poly([a, b, c, d], 'fill:#1d3a5c;stroke:#8f9a9e;stroke-width:.8'));
+	f = function (p, q, t) { return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]; };
+	[0.25, 0.5, 0.75].forEach(function (t) { o.svg.push(pline([f(a, b, t), f(d, c, t)], 'fill:none;stroke:rgba(159,214,255,.45);stroke-width:.7')); });
+	[0.5].forEach(function (t) { o.svg.push(pline([f(a, d, t), f(b, c, t)], 'fill:none;stroke:rgba(159,214,255,.45);stroke-width:.7')); });
+	o.svg.push(poly([f(d, c, 0.08), f(d, c, 0.4), f(f(a, d, 0.62), f(b, c, 0.62), 0.3)], 'fill:#ffffff;opacity:.1'));
+	o.pts.push(a, b, c, d);
+	o.target = P(cx + 0.2, cy, 1.2);
+	return o;
+}
+function drawMower(id, kind, cx, cy, face) {   /* a robot lawn mower: a low body, its green shell and red stop button, a few blades of grass */
+	var o;
+	o = new Obj(id, cx, cy, 0.45);
+	[[cx - 0.62, cy + 0.42], [cx + 0.66, cy - 0.1], [cx + 0.1, cy + 0.5], [cx - 0.2, cy + 0.55]].forEach(function (g) {
+		o.svg.push(pline([P(g[0], g[1], 0), P(g[0] - 0.03, g[1], 0.13)], 'fill:none;stroke:#5fa04a;stroke-width:1.3;stroke-linecap:round'), pline([P(g[0] + 0.05, g[1], 0), P(g[0] + 0.09, g[1], 0.1)], 'fill:none;stroke:#5fa04a;stroke-width:1.3;stroke-linecap:round')); });
+	[cx - 0.48, cx + 0.22].forEach(function (x) { o.box(x, cy - 0.44, 0, 0.26, 0.08, 0.24, M_BLACK, { rim: false }); });
+	o.box(cx - 0.6, cy - 0.38, 0.06, 1.2, 0.76, 0.18, M_BODY, { ao: true, shadow: true });
+	o.face('R', 0.1, 0.3, 0.9, 0.6, 'fill:#20282b');                              /* its bumper */
+	o.box(cx - 0.46, cy - 0.3, 0.24, 0.86, 0.6, 0.1, M_GRASS);
+	o.disc(cx + 0.06, cy - 0.02, 0.34, 0.1, 0.05, M_RED, 'ar-cd', { track: false });
+	[cx - 0.48, cx + 0.22].forEach(function (x) { o.box(x, cy + 0.36, 0, 0.26, 0.08, 0.24, M_BLACK, { rim: false }); o.face('L', 0.3, 0.3, 0.7, 0.7, 'fill:#56646a'); });
+	o.led('L', 0.88, 0.5, '#3ddc97', 2.4, 0, 0.8, [cx - 0.6, cy - 0.38, 0.06, 1.2, 0.76, 0.18]);
+	o.target = P(cx, cy, 0.45);
+	return o;
+}
+function drawVr(id, kind, cx, cy, face) {   /* a VR headset: a white visor, its dark front with two cameras, the strap behind; two controllers */
+	var o;
+	o = new Obj(id, cx, cy, 0.5);
+	o.svg.push(ell(P(cx, cy - 0.42, 0.24), 0.4, 'fill:none;stroke:#1d2427;stroke-width:' + px(2.6)), ell(P(cx, cy - 0.42, 0.24), 0.4, 'fill:none;stroke:#3b484e;stroke-width:' + px(1.2)));   /* the head strap */
+	o.box(cx - 0.42, cy - 0.16, 0.08, 0.84, 0.34, 0.32, M_WHITE, { ao: true, shadow: true });
+	o.face('L', 0.03, 0.08, 0.97, 0.92, 'fill:#20282b;stroke:#8f9a9e;stroke-width:.7');   /* the visor */
+	[0.27, 0.73].forEach(function (u) { var g = o.fp('L', u, 0.5); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + px(3.2) + '" style="fill:#2c363a;stroke:#56646a;stroke-width:.8"/>'); });
+	o.led('L', 0.5, 0.78, DN, 2.6, 0, 0.7);
+	[[cx + 0.52, cy + 0.02], [cx + 0.56, cy + 0.38]].forEach(function (g) {   /* two controllers, each with its tracking ring */
+		o.box(g[0], g[1], 0, 0.12, 0.12, 0.26, M_WHITE, { shadow: true });
+		o.svg.push(ell(P(g[0] + 0.06, g[1] + 0.06, 0.32), 0.14, 'fill:none;stroke:#d3dadc;stroke-width:' + px(1.6)));
+		ellPts(o, P(g[0] + 0.06, g[1] + 0.06, 0.32), 0.14);
+	});
+	ellPts(o, P(cx, cy - 0.42, 0.24), 0.4);
+	o.target = P(cx, cy, 0.5);
+	return o;
+}
+function drawProjector(id, kind, cx, cy, face) {   /* a projector: a white box, its lens and a soft beam forward */
+	var o, l, r;
+	o = new Obj(id, cx, cy, 0.42);
+	o.box(cx - 0.42, cy - 0.32, 0, 0.84, 0.64, 0.32, M_WHITE, { ao: true, shadow: true });
+	[0.25, 0.4, 0.55, 0.7].forEach(function (u) { o.line('R', u, 0.3, u, 0.75, '#9aa5a9', 1); });
+	o.face('L', 0.08, 0.35, 0.4, 0.65, 'fill:#aab4b8');
+	l = o.fp('L', 0.7, 0.5); r = px(5.5);
+	o.svg.push(poly([l, P(cx - 0.12, cy + 1.05, 0.5), P(cx + 0.46, cy + 1.05, -0.02)], 'fill:' + DNT + ';opacity:.13'));
+	o.pts.push(P(cx - 0.12, cy + 1.05, 0.5), P(cx + 0.46, cy + 1.05, -0.02));   /* its beam */
+	o.svg.push('<circle cx="' + n1(l[0]) + '" cy="' + n1(l[1]) + '" r="' + r + '" style="fill:#141b1e;stroke:#56646a;stroke-width:1.2"/>',
+		'<circle cx="' + n1(l[0]) + '" cy="' + n1(l[1]) + '" r="' + px(2.6) + '" style="fill:' + DN + ';opacity:.85"/>');
+	o.led('T', 0.85, 0.2, '#3ddc97', 0, 0, 0.8);
+	o.target = P(cx, cy, 0.42);
+	return o;
+}
+function drawGarage(id, kind, cx, cy, face) {   /* a garage door: a sectional door in a piece of wall, the opener's box above it */
+	var o;
+	o = new Obj(id, cx, cy, 1.3);
+	o.box(cx - 0.6, cy - 0.2, 0, 1.2, 0.14, 1.25, M_WALL, { shadow: true });
+	o.face('L', 0.1, 0, 0.9, 0.76, 'fill:#aab4b8;stroke:#7f8a8e;stroke-width:.8');
+	[0.19, 0.38, 0.57].forEach(function (v) { o.line('L', 0.1, v, 0.9, v, '#7f8a8e', 1); });
+	o.line('L', 0.44, 0.1, 0.56, 0.1, '#56646a', 1.4);
+	o.box(cx - 0.12, cy - 0.06, 1.0, 0.24, 0.08, 0.14, M_DARK);
+	o.led('L', 0.5, 0.5, '#3ddc97', 2.8, 0, 0.8);
+	o.target = P(cx, cy, 1.3);
+	return o;
+}
+function drawPrinter3d(id, kind, cx, cy, face) {   /* a 3D printer: an open frame, the bed with a print on it, the head on its gantry */
+	var o;
+	o = new Obj(id, cx, cy, 1.15);
+	o.box(cx - 0.45, cy - 0.45, 0, 0.9, 0.9, 0.14, M_DARK, { ao: true, shadow: true });
+	o.box(cx - 0.36, cy - 0.36, 0.14, 0.72, 0.72, 0.03, M_METAL, { rim: false });
+	[cx - 0.45, cx + 0.39].forEach(function (x) { o.box(x, cy - 0.36, 0.14, 0.06, 0.06, 0.96, M_BODY, { rim: false }); });
+	o.box(cx - 0.45, cy - 0.36, 1.06, 0.9, 0.06, 0.06, M_BODY);
+	o.box(cx - 0.45, cy - 0.33, 0.62, 0.9, 0.04, 0.04, M_METAL, { rim: false });
+	o.box(cx - 0.11, cy - 0.06, 0.17, 0.22, 0.22, 0.22, M_PRINT);
+	o.box(cx - 0.08, cy - 0.29, 0.5, 0.16, 0.18, 0.2, M_BLACK);
+	o.led('L', 0.5, 0.7, ACC, 1.4, 0, 0.8);
+	o.svg.push(pline([P(cx, cy - 0.2, 0.5), P(cx, cy - 0.2, 0.42)], 'fill:none;stroke:#c9a400;stroke-width:1.4'));
+	o.target = P(cx, cy, 1.15);
+	return o;
+}
+function drawDisplay(id, kind, cx, cy, face) {   /* a smart display (Echo Show, Nest Hub): a screen on a fabric speaker base */
+	var o;
+	o = new Obj(id, cx, cy, 0.8);
+	o.box(cx - 0.42, cy - 0.2, 0, 0.84, 0.38, 0.22, M_DARK, { shadow: true });
+	[0.3, 0.6].forEach(function (v) { o.line('L', 0.05, v, 0.95, v, '#1f2629', 1.1); });
+	o.box(cx - 0.42, cy - 0.16, 0.22, 0.84, 0.07, 0.54, M_BLACK, { shadow: true });
+	o.screen('L', 'ar-scr3', true);
+	o.target = P(cx, cy, 0.8);
+	return o;
+}
+function drawBlinds(id, kind, cx, cy, face) {   /* smart blinds: a window in a piece of wall, the blind half down, its motor rail on top */
+	var o;
+	o = new Obj(id, cx, cy, 1.45);
+	o.box(cx - 0.5, cy - 0.2, 0, 1.0, 0.14, 1.4, M_WALL, { shadow: true });
+	o.face('L', 0.15, 0.2, 0.85, 0.86, 'fill:#355a70;stroke:#8f9a9e;stroke-width:.8');
+	o.line('L', 0.5, 0.2, 0.5, 0.48, '#8f9a9e', 0.8);
+	o.face('L', 0.15, 0.48, 0.85, 0.86, 'fill:#d3dadc');
+	[0.56, 0.64, 0.72, 0.8].forEach(function (v) { o.line('L', 0.15, v, 0.85, v, '#9aa5a9', 0.9); });
+	o.line('L', 0.15, 0.48, 0.85, 0.48, '#7f8a8e', 1.5);
+	o.box(cx - 0.38, cy - 0.06, 1.22, 0.76, 0.07, 0.08, M_WHITE);
+	o.led('L', 0.92, 0.5, '#3ddc97', 0, 0, 0.7);
+	o.target = P(cx, cy, 1.45);
+	return o;
+}
+function drawSprinkler(id, kind, cx, cy, face) {   /* a sprinkler: a patch of lawn, the pop-up head spraying both ways, its controller */
+	var o, t, w = 'fill:none;stroke:' + DN + ';stroke-opacity:.8;stroke-width:1.5;stroke-dasharray:2 3;stroke-linecap:round';
+	o = new Obj(id, cx, cy, 0.62);
+	o.disc(cx, cy, 0, 0.58, 0.03, M_GRASS, 'ar-cd', { shadow: true });
+	o.box(cx - 0.44, cy - 0.44, 0.03, 0.22, 0.12, 0.38, M_WHITE, { shadow: true });   /* its controller */
+	o.led('L', 0.5, 0.75, '#3ddc97', 2.4, 0, 0.8);
+	o.disc(cx, cy, 0.03, 0.09, 0.05, M_DARK, 'ar-cd', { track: false });
+	o.box(cx - 0.03, cy - 0.03, 0.08, 0.06, 0.06, 0.22, M_METAL, { rim: false });
+	t = P(cx, cy, 0.32);
+	o.svg.push(curve(t, P(cx - 0.05, cy + 0.15, 0.85), P(cx - 0.1, cy + 0.42, 0.5), P(cx - 0.1, cy + 0.55, 0.06), w),
+		curve(t, P(cx + 0.15, cy - 0.05, 0.85), P(cx + 0.42, cy - 0.1, 0.5), P(cx + 0.55, cy - 0.1, 0.06), w));
+	o.pts.push(P(cx, cy, 0.62));
+	o.target = P(cx, cy, 0.62);
+	return o;
+}
+function drawPet(id, kind, cx, cy, face) {   /* a pet feeder: a white hopper with food behind its window, a bowl in front */
+	var o;
+	o = new Obj(id, cx, cy, 0.85);
+	o.box(cx - 0.3, cy - 0.42, 0, 0.6, 0.45, 0.8, M_WHITE, { ao: true, shadow: true });
+	o.face('L', 0.2, 0.46, 0.8, 0.86, 'fill:#b5793d;fill-opacity:.75;stroke:#8f9a9e;stroke-width:.6');
+	o.led('L', 0.5, 0.3, '#3ddc97', 0, 0, 0.8);
+	o.disc(cx, cy + 0.32, 0, 0.22, 0.09, M_WHITE, 'ar-cw', { shadow: true });
+	o.svg.push(ell(P(cx, cy + 0.32, 0.09), 0.15, 'fill:#8a5a2b'));
+	o.target = P(cx, cy - 0.1, 0.85);
+	return o;
+}
+function drawFitness(id, kind, cx, cy, face) {   /* fitness equipment: a treadmill, its belt, two uprights and the console with a screen */
+	var o;
+	o = new Obj(id, cx, cy, 1.05);
+	o.box(cx - 0.75, cy - 0.3, 0.02, 1.3, 0.6, 0.14, M_DARK, { ao: true, shadow: true });
+	o.face('T', 0.03, 0.14, 0.97, 0.86, 'fill:#141b1e');
+	[cx + 0.42].forEach(function (x) { o.box(x, cy - 0.3, 0.16, 0.06, 0.06, 0.78, M_METAL, { rim: false }); o.box(x, cy + 0.24, 0.16, 0.06, 0.06, 0.78, M_METAL, { rim: false }); });
+	o.box(cx + 0.38, cy - 0.32, 0.94, 0.16, 0.64, 0.1, M_BLACK, { shadow: true });
+	o.face('T', 0.15, 0.2, 0.85, 0.8, 'fill:url(#ar-scr2)');
+	o.led('L', 0.5, 0.5, '#3ddc97', 0, 0, 0.7, [cx - 0.75, cy - 0.3, 0.02, 1.3, 0.6, 0.14]);
+	o.target = P(cx, cy, 1.05);
 	return o;
 }
 function drawIot(id, kind, cx, cy, face) {
@@ -1421,11 +1882,13 @@ function drawGeneric(id, kind, cx, cy, face) {
 	return o;
 }
 var DRAW = {
-	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight,
+	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight, strip: drawStrip, boiler: drawBoiler,
 	air: drawAir, speaker: drawSpeaker, printer: drawPrinter, watch: drawWatch, camera: drawCamera, streamer: drawStreamer, soundbar: drawSoundbar,
 	doorbell: drawDoorbellLock, lock: drawDoorbellLock, sensor: drawSensorThermostat, thermostat: drawSensorThermostat, plug: drawPlug, hub: drawHub,
-	vacuum: drawVacuum, appliance: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
-	pi: drawPi, stick: drawStick, smartspeaker: drawSmartSpeaker
+	vacuum: drawVacuum, appliance: drawAppliance, washer: drawAppliance, dryer: drawAppliance, dishwasher: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
+	pi: drawPi, stick: drawStick, smartspeaker: drawSmartSpeaker, purifier: drawPurifier, wallswitch: drawWallSwitch, contact: drawContact,
+	charger: drawCharger, car: drawCar, solar: drawSolar, mower: drawMower, vr: drawVr, projector: drawProjector, garage: drawGarage, printer3d: drawPrinter3d,
+	display: drawDisplay, blinds: drawBlinds, sprinkler: drawSprinkler, pet: drawPet, fitness: drawFitness
 };
 /* Devices on the map: one drawing per kind, at (cx, cy) on the floor, facing left (the default) or right.
    Kinds without a drawing of their own get the generic box. */
@@ -1719,14 +2182,19 @@ function buildMap(net, L) {
 	floor.push(pline([P(1.675, y0, 0.42), P(1.675, y0, 0.06), P(1.675, 1.15, 0.06)], 'fill:none;stroke:#11181b;stroke-width:' + px(4.5) + ';stroke-linecap:round;stroke-linejoin:round'));
 	floor.push(pline([P(1.675, y0, 0.42), P(1.675, y0, 0.06), P(1.675, 1.15, 0.06)], 'fill:none;stroke:#3f7fa6;stroke-width:' + px(1.8) + ';stroke-linecap:round;stroke-linejoin:round'));
 
-	var sh = [];
+	/* Shadows: every drawing's in one shape, its edge softened by six faint outlines rather than a blur filter. A blur is
+	   worked out again for every frame the map moves, and at 400% that is more than the browser can draw in time. */
+	var sd = '', sh = [];
 	objs.forEach(function (o) {
-		var parts = o.shadow.map(function (s) {
+		o.shadow.forEach(function (s) {
 			var X = s[0], Y = s[1], dx = s[2], dy = s[3], sx = s[4], sy = s[5];
-			return poly([P(X, Y + dy), P(X + dx, Y + dy), P(X + dx + sx, Y + dy + sy), P(X + dx + sx, Y + sy), P(X + sx, Y + sy), P(X, Y)], 'fill:#000000');
-		}).join('');
-		if (parts) sh.push('<g data-sh="' + o.id + '">' + parts + '</g>');
+			sd += 'M' + ptsS([P(X, Y + dy), P(X + dx, Y + dy), P(X + dx + sx, Y + dy + sy), P(X + dx + sx, Y + sy), P(X + sx, Y + sy), P(X, Y)]).replace(/ /g, ' L') + 'Z';
+		});
 	});
+	if (sd) {
+		[12, 10, 8, 6, 4, 2].forEach(function (w) { sh.push('<path d="' + sd + '" style="fill:none;stroke:#000000;stroke-opacity:.13;stroke-width:' + w + ';stroke-linejoin:round"/>'); });
+		sh.push('<path d="' + sd + '" style="fill:#000000;fill-opacity:.62"/>');
+	}
 
 	/* labels: real buttons over the scene, placed where they hit nothing */
 	var labels = placeLabels(net, L, objs, arcs);
@@ -1746,9 +2214,9 @@ function buildMap(net, L) {
 		'<radialGradient id="ar-bulb" cx=".36" cy=".32" r=".8"><stop offset="0" style="stop-color:#fff6d0"/><stop offset=".5" style="stop-color:#ffcc00"/><stop offset="1" style="stop-color:#b38f00"/></radialGradient>' +
 		'<linearGradient id="ar-cw" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_WHITE.l + '"/><stop offset=".5" style="stop-color:' + M_WHITE.r + '"/></linearGradient>' +
 		'<linearGradient id="ar-cd" x1="0" y1="0" x2="1" y2="0"><stop offset=".5" style="stop-color:' + M_DARK.l + '"/><stop offset=".5" style="stop-color:' + M_DARK.r + '"/></linearGradient>' +
-		'<filter id="ar-blur" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>';
+		'</defs>';
 	var svg = '<svg width="' + G.SW + '" height="' + G.SH + '" viewBox="0 0 ' + G.SW + ' ' + G.SH + '" role="img" aria-label="Isometric map of your network: traffic moving between the internet, the router, its AiMesh nodes and each device">' +
-		defs + floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3" filter="url(#ar-blur)">' + sh.join('') + '</g>' +
+		defs + floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3">' + sh.join('') + '</g>' +
 		objs.map(function (o) { return '<g data-obj="' + o.id + '" class="ob">' + o.svg.join('') + '</g>'; }).join('') +
 		arcs.map(function (a) { return a.svg; }).join('') + hubs.join('') + marks.join('') + leaders.join('') + '</svg>';
 	var html = labels.map(function (lb) {
@@ -1769,7 +2237,7 @@ function textW(s, bold) {
 	} catch (e) { return s.length * 6.6; }
 }
 function placeLabels(net, L, objs, arcs) {
-	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = G.big ? 250 : 100, rects = [], out = [];   /* the big view's labels would rather cover a drawing than another label */
+	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = 1000, rects = [], out = [];   /* a label on another label: only when there is nowhere else at all */
 	var zones = [[0, 0, 244, 78], [SW - 266, 0, SW, 62], [0, SH - 40, 440, SH]];
 	var byId = {};
 	objs.forEach(function (o) { byId[o.id] = o; });
@@ -1792,14 +2260,33 @@ function placeLabels(net, L, objs, arcs) {
 		});
 		cands.push({ x: bb[2] + 11, y: (bb[1] + bb[3]) / 2 - HIT / 2, px: bb[2] + 15, py: (bb[1] + bb[3]) / 2, ay: (bb[1] + bb[3]) / 2, axr: bb[2] + 1, just: 'flex-start' });
 		cands.push({ x: bb[0] - 11 - w, y: (bb[1] + bb[3]) / 2 - HIT / 2, px: bb[0] - 15, py: (bb[1] + bb[3]) / 2, ay: (bb[1] + bb[3]) / 2, axr: bb[0] - 1, just: 'flex-end' });
-		var best = null, bestCost = 1e9;
+		/* When all of those cover something, further out to either side, a little higher or lower: a longer line costs a
+		   little for every pixel, covering another device's drawing a lot more. */
+		var mid = (bb[1] + bb[3]) / 2, near = cands.length;
+		[0, 40, 80, 130, 190, 260, 340, 440].forEach(function (sx) {   /* as far as the free space beside the floor */
+			[0, -26, 26, -52, 52, -78, 78].forEach(function (dy) {
+				if (!sx && !dy) return;
+				var d = 20 + sx + Math.abs(dy);
+				cands.push({ x: bb[2] + 11 + sx, y: mid - HIT / 2 + dy, px: bb[2] + 15 + sx, py: mid + dy, ay: mid, axr: bb[2] + 1, just: 'flex-start', d: d });
+				cands.push({ x: bb[0] - 11 - w - sx, y: mid - HIT / 2 + dy, px: bb[0] - 15 - sx, py: mid + dy, ay: mid, axr: bb[0] - 1, just: 'flex-end', d: d });
+			});
+		});
+		(G.big ? [0, -34, 34, -68, 68, -102, 102, -170, 170] : [0, -34, 34, -68, 68, -102, 102]).forEach(function (dx) {
+			[24, 48, 80, 120, 170].forEach(function (dy) {
+				var d = 20 + Math.abs(dx) + dy;
+				cands.push({ x: ax - w / 2 + dx, y: bb[3] + 7 + dy, px: ax + dx, py: bb[3] + 12 + dy, ay: bb[3] + 2, just: 'center', d: d });
+				cands.push({ x: ax - w / 2 + dx, y: bb[1] - 7 - HIT - dy, px: ax + dx, py: bb[1] - 12 - dy, ay: bb[1] - 2, just: 'center', d: d });
+			});
+		});
+		var best = null, bestCost = 1e9, OBJ = G.big ? 150 : 90;   /* covering another device: worse than a long line, still better than hiding a label */
 		cands.forEach(function (c, ci) {
-			var r = [c.x, c.y + 5, c.x + w, c.y + HIT - 5], cost = ci * 0.01;
+			if (ci >= near && bestCost < 30) return;   /* a near spot that covers nothing much: no need to look further */
+			var r = [c.x, c.y + 5, c.x + w, c.y + HIT - 5], cost = ci * 0.01 + (c.d || 0) * 0.12;
 			if (r[0] < 4 || r[1] < 4 || r[2] > SW - 4 || r[3] > SH - 4) cost += 1000;
 			rects.forEach(function (o) { if (ov(r, o)) cost += LBL; });
-			objs.forEach(function (o) { if (o !== it.o && ov(r, o.bbox())) cost += 40; });
+			objs.forEach(function (o) { if (o !== it.o && ov(r, o.bbox())) cost += OBJ; });
 			zones.forEach(function (z) { if (ov(r, z)) cost += 60; });
-			arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) cost += 0.6; });
+			if (cost < bestCost) arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) cost += 0.6; });
 			if (cost < bestCost) { bestCost = cost; best = c; }
 		});
 		var x = Math.round(best.x), y = Math.round(best.y);
@@ -1859,7 +2346,7 @@ function render() {
 	var net = A.net;
 	var root = $('ar');
 	if (!root) return;
-	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
+	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : '', A.pz.s > 1 ? 'zoomed' : '', A.moving ? 'moving' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
 	if (!net) { setNotice('Starting the sampler on the router…', MUTED); return; }
 	try { renderSummary(net); } catch (e) { logErr(e); }
 	if (A.tab === 'map') { try { renderMap(net); } catch (e) { logErr(e); } }
@@ -1881,7 +2368,8 @@ function setLive() {
 }
 function renderSummary(net) {
 	var s = $('arSum');
-	s.innerHTML = '<span class="k">Internet</span><span><span class="dn">↓</span> <b>' + esc(full(net.wan.dn)) + '</b></span><span><span class="up">↑</span> <b>' + esc(full(net.wan.up)) + '</b></span><span class="k">' + net.clients + ' clients</span>';
+	s.innerHTML = '<span class="v" aria-label="Internet download ' + esc(full(net.wan.dn)) + '"><span class="dn" aria-hidden="true">↓</span> <b>' + esc(full(net.wan.dn)) + '</b></span>' +
+		'<span class="v" aria-label="Internet upload ' + esc(full(net.wan.up)) + '"><span class="up" aria-hidden="true">↑</span> <b>' + esc(full(net.wan.up)) + '</b></span><span class="k n">' + net.clients + ' clients</span>';
 }
 function noticeFor(net) {
 	if (A.paused) return ['Paused. The router stops sampling about 20 s after you pause.', MUTED];
@@ -1916,6 +2404,7 @@ function renderMap(net) {
 	if (sig !== A.mapSig) {
 		var b = buildMap(net, L);
 		$('arMapScene').innerHTML = b.svg;
+		pzApply();   /* a new scene keeps the zoom */
 		$('arMapLabels').innerHTML = b.labels;
 		A.mapSig = sig; A.slotAt = A.gotAny ? Date.now() : 0;
 		var refs = { lanes: [], links: {}, alts: {}, objs: {}, leads: {}, rings: {}, zones: {}, marks: {}, labels: {} };
@@ -1924,6 +2413,7 @@ function renderMap(net) {
 		[['data-link', 'links'], ['data-alt', 'alts'], ['data-obj', 'objs'], ['data-lead', 'leads'], ['data-ring', 'rings'], ['data-zone', 'zones'], ['data-mk', 'marks']].forEach(function (p) {
 			Array.prototype.forEach.call(root.querySelectorAll('[' + p[0] + ']'), function (el) { refs[p[1]][el.getAttribute(p[0])] = el; });
 		});
+		Object.keys(refs.objs).forEach(function (id) { refs.objs[id].addEventListener('click', function () { pick(id); focusMore(); }); });   /* a drawing does what its label does */
 		Array.prototype.forEach.call(root.querySelectorAll('.ar-lb'), function (el) {
 			refs.labels[el.getAttribute('data-id')] = el;
 			el.addEventListener('click', function () { pick(el.getAttribute('data-id')); focusMore(); });
@@ -1986,11 +2476,12 @@ function renderMap(net) {
 		el.setAttribute('aria-pressed', isOn ? 'true' : 'false');
 	});
 	if (R.marks['more:on']) R.marks['more:on'].setAttribute('class', trayOn ? '' : 'hide');
-	var nt = noticeFor(net) || (trayOn ? ['The tray\'s devices are listed ' + (G.big && !A.narrow ? 'on the right' : 'below the map') + '. Pick one to trace it.', MUTED] : ['Tap a device label to trace its path. Tap it again to show everything.', MUTED]);
+	var nt = noticeFor(net) || (trayOn ? ['The tray\'s devices are listed ' + (G.big && !A.narrow ? 'on the right' : 'below the map') + '. Pick one to trace it.', MUTED] : ['Tap a device or its label to trace its path. Tap it again to show everything.', MUTED]);
 	setNotice(nt[0], nt[1]);
 }
 
 /* ---------------------------------------------------------------- the flow (Sankey) */
+var PZMAX = 4;   /* the expanded map zooms in up to four times */
 var FBW = { src: 10, rt: 12, link: 10, mesh: 10, dev: 8 }, FGAP = 3, FGGAP = 11, FSGAP = 34, FKCAP = 11.5;
 /* The big view's flow: columns spread across the stage, a row for every device (up to 60), wider rows
    with more columns, and no height limit: the stage scrolls instead of the ribbons shrinking. */
@@ -2016,16 +2507,15 @@ function flowGroups(net) {
 	var shown = {}, budget = G.flow.rows;
 	gs.forEach(function (g) { g.devs.sort(function (a, b) { return busy(b) - busy(a) || byName(a, b); }); shown[g.id] = []; });
 	var rows = function () { return gs.reduce(function (a, g) { var n = shown[g.id].length; return a + Math.max(1, n + (n < g.devs.length ? 1 : 0)); }, 0); };
-	var prev = A.flowPick || {};
-	var hold = Date.now() - A.flowAt < 10000;
-	var cands = [];
-	gs.forEach(function (g) { g.devs.forEach(function (dv) { cands.push({ g: g, dv: dv, keep: hold && prev[dv.id] }); }); });
-	cands.sort(function (a, b) { return (b.keep ? 1 : 0) - (a.keep ? 1 : 0) || busy(b.dv) - busy(a.dv); });
+	/* a device with a row keeps it unless a hidden one is three times busier, so rows don't come and go with every sample */
+	var prev = A.flowPick || {}, cands = [], pull = function (c) { return flowHeld('pick|' + c.dv.id, busy(c.dv)) * (prev[c.dv.id] ? 3 : 1); };   /* by recent peaks: a moment's dip doesn't cost a row */
+	gs.forEach(function (g) { g.devs.forEach(function (dv) { cands.push({ g: g, dv: dv }); }); });
+	cands.sort(function (a, b) { return pull(b) - pull(a) || byName(a.dv, b.dv); });
 	cands.forEach(function (c) {
 		shown[c.g.id].push(c.dv);
 		if (rows() > budget) shown[c.g.id].pop();
 	});
-	if (!hold) { A.flowAt = Date.now(); A.flowPick = {}; gs.forEach(function (g) { shown[g.id].forEach(function (dv) { A.flowPick[dv.id] = 1; }); }); }
+	A.flowPick = {}; gs.forEach(function (g) { shown[g.id].forEach(function (dv) { A.flowPick[dv.id] = 1; }); });
 	gs.forEach(function (g) {
 		var sh = shown[g.id].slice().sort(byName), hidden = g.devs.filter(function (dv) { return sh.indexOf(dv) < 0; });
 		g.rows = sh.map(function (dv) { return { id: dv.id, dev: dv }; });
@@ -2068,8 +2558,8 @@ function buildFlow(gs) {
 		o.push(lbl('g:' + g.id, '<rect x="' + (FX0.link - 4) + '" y="-12.5" width="' + pw + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/>' +
 			'<text x="' + (FX0.link + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:' + (g.node ? '#cdc5fc' : '#f0efec') + '">' + esc(nm) + '<tspan data-t="gv:' + g.id + '" dx="6" style="font-weight:400;fill:#c3c2b7;font-variant-numeric:tabular-nums"></tspan></text>'));
 		if (g.node) {
-			var nn = g.label.length > 12 ? g.label.slice(0, 11) + '…' : g.label;
-			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + esc(nn) + '</text>'));
+			var nn = g.label.length > 12 ? g.label.slice(0, 11) + '…' : g.label, tip = nn !== g.label ? '<title>' + esc(g.label) + '</title>' : '';
+			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + tip + esc(nn) + '</text>'));
 		}
 	});
 	var hs = 'font-size:10px;font-weight:700;letter-spacing:.12em;fill:#93a9b1';
@@ -2100,18 +2590,28 @@ function flowAgg(g) { return !!(g.node && g.node.state !== 'ok'); }
 /* Where everything goes in the Flow view, from the numbers alone (no DOM): the scale k (px per Mb/s),
    each row's slot, each group's band, the router block and the two sources. The scale is chosen on the
    smoothed rates so it doesn't jump; the ribbons use the shown ones. */
+/* The most a row (or a group) needed lately, in steps that double (1, 2, 4…), so rows don't move with every sample:
+   reaching a higher step counts at once; a row only shrinks back after half a minute of using well under its step. */
+function flowHeld(id, v) {
+	var M = A.flowMem || (A.flowMem = {}), m = M[id], now = Date.now(), q = v > 0 ? Math.pow(2, Math.ceil(Math.log(v) / Math.LN2 - 1e-9)) : 0;
+	if (!m || q > m.v) M[id] = m = { v: q, t: now };
+	else if (v >= m.v * 0.4) m.t = now;
+	else if (now - m.t > 30000) M[id] = m = { v: q, t: now };
+	return m.v;
+}
 function flowLayout(gs, net, mode) {
 	var f = mode === 'up' ? 'up' : 'dn', bf = mode === 'up' ? 'sup' : 'sdn';
 	var lay = function (k, key) {
 		var y = G.flow.top, slot = {}, grp = {};
 		gs.forEach(function (g, gi) {
 			if (gi) y += FGGAP;
-			var y0 = y, Hh = 0, n = g.rows.length, gv = flowGroupVal(g, key);
-			var aggH = flowAgg(g) && gv > 0 ? Math.max(gv * k, 1.5) : 0;
+			var y0 = y, Hh = 0, n = g.rows.length, gv = flowGroupVal(g, key), gm = flowHeld(key + '|g:' + g.id, gv);
+			var aggH = flowAgg(g) && gv > 0 ? Math.max(gv * k, 1.5) : 0, aggM = flowAgg(g) && gm > 0 ? Math.max(gm * k, 1.5) : 0;
 			g.rows.forEach(function (r, ri) {
 				if (ri) y += FGAP;
 				var v = flowAgg(g) ? 0 : flowRowVal(r, key), h = v > 0 ? Math.max(v * k, 1.5) : 0;
-				var sl = Math.max(h, G.flow.rowMin, aggH ? (aggH - FGAP * (n - 1)) / n : 0);
+				var vm = flowAgg(g) ? 0 : flowHeld(key + '|' + r.id, v), hm = vm > 0 ? Math.max(vm * k, 1.5) : 0;   /* room for its recent peak */
+				var sl = Math.max(hm, G.flow.rowMin, aggM ? (aggM - FGAP * (n - 1)) / n : 0);
 				slot[r.id] = { top: y, s: sl, h: h, bar: y + (sl - h) / 2 };
 				y += sl; Hh += h;
 			});
@@ -2122,11 +2622,18 @@ function flowLayout(gs, net, mode) {
 		});
 		return { slot: slot, grp: grp, bottom: y };
 	};
-	var total = gs.reduce(function (a, g) { return a + flowGroupVal(g, bf); }, 0);
-	var k = Math.min(FKCAP, G.flow.target / Math.max(total, 1e-6)), LIM = G.flow.limit;
-	for (var i = 0; LIM && i < 120 && lay(k, bf).bottom > LIM - 6; i++) k *= 0.97;
+	var total = gs.reduce(function (a, g) { return a + flowGroupVal(g, bf); }, 0), LIM = G.flow.limit, KK = G.key + f;
+	/* What the ribbons must fit in: the page's stage; in the big view the window's height, so a speed test's thick river
+	   never makes it scroll. It scrolls only when there are more rows than fit even at their least height. */
+	var FIT = LIM || Math.max(G.SH - 14, lay(0, f).bottom + 8);
+	/* the scale the traffic asks for, made smaller as far as needed to fit; the last scale is kept while it still fits and
+	   isn't far below that, so ribbons don't all resize at every sample */
+	var k = Math.min(FKCAP, G.flow.target / Math.max(total, 1e-6)), k0 = A.flowK && A.flowK[KK], kT = k;
+	for (var i = 0; i < 160 && lay(k, bf).bottom > FIT - 6; i++) k *= 0.97;
+	if (k0 && k0 <= kT * 1.6 && k0 >= k * 0.6 && lay(k0, bf).bottom <= FIT - 6) k = k0;
 	var Lf = lay(k, f);
-	for (var j = 0; LIM && j < 80 && Lf.bottom > LIM; j++) { k *= 0.97; Lf = lay(k, f); }
+	for (var j = 0; j < 120 && Lf.bottom > FIT; j++) { k *= 0.97; Lf = lay(k, f); }
+	(A.flowK || (A.flowK = {}))[KK] = k;
 	var grp = Lf.grp, first = grp[gs[0].id], last = grp[gs[gs.length - 1].id];
 	var Hr = gs.reduce(function (a, g) { return a + grp[g.id].H; }, 0);
 	var rc = (first.top + last.top + last.H) / 2;
@@ -2136,7 +2643,7 @@ function flowLayout(gs, net, mode) {
 	var stop = rc - (Hr + FSGAP) / 2;
 	return { k: k, slot: Lf.slot, grp: grp, bottom: Lf.bottom, Hr: Hr, rtop: rc - Hr / 2,
 		src: { wan: { top: stop, h: hi }, loc: { top: stop + hi + FSGAP, h: Hr - hi } },
-		height: LIM ? G.SH : Math.max(G.SH, Math.ceil(Lf.bottom + 12)) };   /* the big view: the stage grows and scrolls */
+		height: LIM ? G.SH : Math.max(G.SH - 2, Math.ceil(Lf.bottom + 12)) };   /* the big view: inside its border; it grows and scrolls only for rows that don't fit */
 }
 /* What a Flow row says: name, second line, icon, state, the big view's two columns. */
 function flowRowInfo(g, r) {
@@ -2315,7 +2822,7 @@ function readoutFor(net) {
 	var dn = net.total.dn, up = net.total.up;
 	var sdn = full(net.wan.dn) + ' internet + ' + full(net.local.dn) + ' local', sup = full(net.wan.up) + ' internet + ' + full(net.local.up) + ' local';
 	var k1 = 'Clients', v1 = net.clients + ' online', k2 = 'Local traffic', v2 = full(net.local.dn), path = 'Through the router';
-	var note = A.tab === 'map' ? 'Tap a device label on the map to trace its path.' : 'Tap a device row to trace it through the ribbons.', tone = INK2;
+	var note = A.tab === 'map' ? 'Tap a device or its label on the map to trace its path.' : 'Tap a device row to trace it through the ribbons.', tone = INK2;
 	var pct = function (a, b) { return a === null || !(b > 0) ? 0 : Math.max(0, Math.min(100, Math.round(100 * a / b))); };
 	var rname = net.router.model || 'Router';
 	if (id === 'wan') {
@@ -2361,10 +2868,18 @@ function readoutFor(net) {
 		dnNet: pct(net.wan.dn, net.total.dn), upNet: pct(net.wan.up, net.total.up) };
 }
 function renderReadout(net) {
-	var r = readoutFor(net), el = $('arReadout');
+	var r = readoutFor(net), el = $('arReadout'), tgt = renameTarget(net), nm = $('arRoName');
+	if (A.ren && (!tgt || tgt.id !== A.ren.id)) renameClose();   /* another device (or none) was picked: the edit is dropped */
 	var key = r.d.icon + r.d.name;
-	if (el._icon !== key) { $('arRoIcon').innerHTML = iconSvg(r.d.icon, 20, '#f0efec'); el._icon = key; }
-	$('arRoBadge').textContent = r.d.badge; $('arRoName').textContent = r.d.name; $('arRoLink').textContent = r.d.link;
+	if (!A.ren && el._icon !== key) { $('arRoIcon').innerHTML = iconSvg(r.d.icon, 20, '#f0efec'); el._icon = key; }
+	$('arRoBadge').textContent = r.d.badge; nm.textContent = r.d.name;
+	/* a client's name is a button to its own text field (a node's or the whole network's isn't) */
+	if (!A.ren) {
+		nm.className = tgt ? 'ar-ro-name ed' : 'ar-ro-name'; nm.tabIndex = tgt ? 0 : -1;
+		if (tgt) { nm.setAttribute('role', 'button'); nm.setAttribute('aria-label', 'Rename ' + r.d.name); } else { nm.removeAttribute('role'); nm.removeAttribute('aria-label'); }
+		var msg = A.renMsg && A.renMsg.id === (tgt && tgt.id) && Date.now() < A.renMsg.until ? A.renMsg : null;
+		$('arRoLink').textContent = msg ? msg.text : r.d.link; $('arRoLink').style.color = msg ? msg.tone : '';
+	}
 	$('arRoDnN').textContent = r.dnN; $('arRoDnU').textContent = r.dnU; $('arRoUpN').textContent = r.upN; $('arRoUpU').textContent = r.upU;
 	$('arRoDnW').style.width = r.all ? '100%' : r.dnW; $('arRoUpW').style.width = r.all ? '100%' : r.upW;
 	var split = function (c, p) { return r.all ? 'linear-gradient(90deg,' + c + ' ' + p + '%,' + c + '59 ' + p + '%)' : c; };
@@ -2373,6 +2888,75 @@ function renderReadout(net) {
 	$('arRoK1').textContent = r.k1; $('arRoV1').textContent = r.v1; $('arRoK2').textContent = r.k2; $('arRoV2').textContent = r.v2; $('arRoPath').textContent = r.path;
 	var nt = $('arRoNote'); nt.textContent = r.note; nt.title = r.note; nt.style.color = r.tone;
 	renderDetails(net, r);
+}
+/* ---- Renaming a device from the readout: its name turns into a text field with a check and a cross. Saving writes the
+   router's own client list, as its client editor does, so the router shows the new name too; then the page checks the
+   router took it. The icon beside the name and the line under it say what the typed name will show as. */
+function renameTarget(net) { var dv = A.sel && net && net.byId[A.sel]; return dv && dv.link && dv.mac ? dv : null; }   /* a client with its own MAC */
+function nameProblem(v) { return v.length > 32 ? 'At most 32 characters' : (/[<>\x00-\x1f\x7f]/.test(v) ? 'A name can\u2019t have < or > in it' : ''); }
+function renameStart() {
+	var dv = renameTarget(A.net), c, inp = $('arRoIn');
+	if (!dv || A.ren) return;
+	c = A.names && A.names.custom && A.names.custom[dv.mac];
+	A.ren = { id: dv.id, mac: dv.mac, kind: dv.kind, saving: false }; A.renMsg = null;
+	inp.value = c && c.name ? c.name : dv.name; inp.disabled = false;
+	$('arRoName').className = 'ar-ro-name hide'; $('arRoEd').className = 'ar-ro-ed';
+	renameHint(); inp.focus(); inp.select();
+}
+function renameHint(text, tone) {
+	var v = $('arRoIn').value.trim(), bad = nameProblem(v), k = v && !bad ? nameKind(v) : null, ln = $('arRoLink');
+	$('arRoIcon').innerHTML = iconSvg(k ? k.kind : A.ren.kind, 20, '#f0efec'); $('arReadout')._icon = '';
+	ln.style.color = tone || (bad ? BAD : '');
+	ln.textContent = text || bad || (!v ? 'Empty: the router\u2019s own name comes back' : k ? 'Shows as ' + (KIND_LABEL[k.kind] || k.kind)
+		: 'Stays ' + (KIND_LABEL[A.ren.kind] || A.ren.kind) + ' \u00b7 no kind word in it');
+}
+function renameClose(msg, tone) {   /* back to the name; a message, if any, shows under it for a few seconds */
+	var id = A.ren && A.ren.id;
+	A.ren = null;
+	$('arRoEd').className = 'ar-ro-ed hide'; $('arRoName').className = 'ar-ro-name';
+	$('arReadout')._icon = '';
+	A.renMsg = msg ? { id: id, text: msg, tone: tone || '', until: Date.now() + 5000 } : null;
+}
+function renameSave() {
+	var r = A.ren, v = $('arRoIn').value.trim(), N = A.names || {}, cur, k, raw;
+	if (!r || r.saving) return;
+	if (nameProblem(v)) { renameHint(); $('arRoIn').focus(); return; }
+	cur = N.custom && N.custom[r.mac];
+	if (v === (cur && cur.name || '') && (v || !cur)) { renameClose(); render(); $('arRoName').focus(); return; }   /* nothing changed */
+	k = v ? nameKind(v) : null;
+	/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
+	raw = renameList(N.raw, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (cur ? cur.type : 0));
+	r.saving = true; r.name = v; $('arRoIn').disabled = true;
+	renameHint('Saving\u2026');
+	var took = function () { var c = A.names && A.names.custom && A.names.custom[r.mac]; return v ? !!(c && c.name === v) : !(c && c.name); };
+	var tries = [1200, 2500, 5000, 9000], check = function () {
+		if (A.ren !== r) return;
+		getJSON('names.htm').then(function (n) { A.names = parseNames(n); A.namesAt = Date.now(); }, function () {}).then(function () {
+			if (A.ren !== r) return;
+			if (took()) { renameClose(v ? 'Saved \u00b7 in the router\u2019s client list too' : 'Name removed \u00b7 the router\u2019s own is back', '#3ddc97'); render(); $('arRoName').focus(); return; }
+			if (tries.length) { setTimeout(check, tries.shift()); return; }
+			r.saving = false; $('arRoIn').disabled = false; $('arRoIn').focus();
+			renameHint('The router didn\u2019t save it \u00b7 try again', BAD);
+		});
+	};
+	try {
+		fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: pokeBody('saveNvram;start_arterianames') + '&custom_clientlist=' + encodeURIComponent(raw) })
+			.then(function () { setTimeout(check, tries.shift()); }, function () { setTimeout(check, tries.shift()); });
+	} catch (e) { setTimeout(check, tries.shift()); }
+}
+function renameWire() {
+	var nm = $('arRoName'), inp = $('arRoIn');
+	$('arRoOk').innerHTML = iconSvg('tick', 15, '#3ddc97'); $('arRoNo').innerHTML = iconSvg('cross', 15, '#e3eaec');
+	nm.addEventListener('click', function () { if (nm.classList.contains('ed')) renameStart(); });
+	nm.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && nm.classList.contains('ed')) { e.preventDefault(); renameStart(); } });
+	inp.addEventListener('input', function () { if (A.ren && !A.ren.saving) renameHint(); });
+	inp.addEventListener('keydown', function (e) {
+		if (e.key === 'Enter') { e.preventDefault(); renameSave(); }
+		else if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); renameClose(); render(); nm.focus(); }   /* not the expanded view's Escape */
+	});
+	$('arRoOk').addEventListener('click', renameSave);
+	$('arRoNo').addEventListener('click', function () { renameClose(); render(); nm.focus(); });
 }
 /* The readout's Details face (section 6): who the selected device is and how it's connected. Every value is
    set as text, never parsed as HTML: names and host names come from the network. */
@@ -2383,7 +2967,7 @@ function renderDetails(net, r) {
 	btn.className = dv && !both ? 'ar-det' + (A.det ? ' on' : '') : 'ar-det hide';
 	btn.setAttribute('aria-pressed', A.det ? 'true' : 'false');
 	if (!show) return;
-	if (!both) $('arRoLink').textContent = r.d.link + ' · ↓ ' + short(dv.st === 'ok' ? dv.dn : null) + ' ↑ ' + short(dv.st === 'ok' ? dv.up : null);
+	if (!both && !A.ren && !(A.renMsg && Date.now() < A.renMsg.until)) $('arRoLink').textContent = r.d.link + ' · ↓ ' + short(dv.st === 'ok' ? dv.dn : null) + ' ↑ ' + short(dv.st === 'ok' ? dv.up : null);
 	var cells = detailsFor(net, dv);
 	while (box.children.length < cells.length) { var c = document.createElement('div'); c.className = 'ar-stat'; c.innerHTML = '<span class="k"></span><span class="v"></span>'; box.appendChild(c); }
 	cells.forEach(function (x, i) { var c = box.children[i]; c.firstChild.textContent = x[0]; c.lastChild.textContent = x[1]; c.title = x[2] || (x[0] + ': ' + x[1]); });
@@ -2552,6 +3136,96 @@ function fit() {
 	var st = root.querySelector('.ar-stage');
 	st.style.width = g.big ? g.SW + 'px' : ''; st.style.height = g.big ? g.SH + 'px' : '';
 	['arMap', 'arFlow'].forEach(function (id) { $(id).style.width = g.big ? g.SW - 2 + 'px' : ''; $(id).style.height = g.big ? g.SH - 2 + 'px' : ''; });
+	if (!g.big) A.pz = { s: 1, x: 0, y: 0 }; else pzClamp();   /* a resized window keeps the zoom, within the map's new edges */
+	if ($('arZoomFit')) pzApply();
+}
+/* Zoom and pan in the expanded map, as on a whiteboard: the mouse wheel and a trackpad pinch zoom around the pointer;
+   dragging with the mouse (or one finger) and scrolling with two fingers on a trackpad pan; two fingers on a touch screen
+   pinch. Never past the map's edges; zooming out stops at the whole map. The page's own view never zooms. */
+function pzApply() {
+	/* The map zooms through its SVG's viewBox, so the browser draws only what's on screen, at screen resolution: scaling it
+	   as a picture (a CSS transform) asks the graphics card for one many times the screen's size, which flickers. The
+	   labels, small, take the matching transform. */
+	var z = A.pz, t = z.s > 1 ? 'translate(' + z.x.toFixed(1) + 'px,' + z.y.toFixed(1) + 'px) scale(' + z.s.toFixed(4) + ')' : '';
+	var svg = $('arMapScene').firstElementChild;
+	if (svg && svg.tagName.toLowerCase() === 'svg' && G.SW) svg.setAttribute('viewBox', [-z.x / z.s, -z.y / z.s, G.SW / z.s, G.SH / z.s].map(function (v) { return +v.toFixed(2); }).join(' '));
+	$('arMapLabels').style.transform = t;
+	$('ar').classList.toggle('zoomed', z.s > 1);
+	$('arZoomFit').textContent = Math.round(z.s * 100) + '%';
+	$('arZoomOut').disabled = z.s <= 1; $('arZoomIn').disabled = z.s >= PZMAX;
+}
+function pzClamp() {
+	var z = A.pz, W = G.SW - 2, H = G.SH - 2;
+	z.x = Math.min(0, Math.max(W - W * z.s, z.x)); z.y = Math.min(0, Math.max(H - H * z.s, z.y));
+}
+function pzSet(s, px, py) {   /* zoom to s, keeping the stage point (px, py) where it is: the middle when none is given */
+	var z = A.pz;
+	s = Math.max(1, Math.min(PZMAX, s));
+	if (px == null) { px = (G.SW - 2) / 2; py = (G.SH - 2) / 2; }
+	z.x = px - (px - z.x) * s / z.s; z.y = py - (py - z.y) * s / z.s; z.s = s;
+	if (s === 1) z.x = z.y = 0;
+	pzClamp(); pzApply();
+}
+function pzReset() { A.pz = { s: 1, x: 0, y: 0 }; pzApply(); }
+function pzWire() {
+	var el = $('arMap'), ptr = {}, drag = null, pinch = null, wAt = -1e9, wPad = false, gs0 = 1, still = 0;
+	var at = function (e) { var r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+	/* While the map moves, its animations wait: each frame then only redraws the map where it now is, which keeps up even at
+	   400% with a device traced (its ring and its packets would otherwise be redrawn too). They go on 200 ms after it stops. */
+	var moving = function () { A.moving = true; $('ar').classList.add('moving'); clearTimeout(still); still = setTimeout(function () { A.moving = false; $('ar').classList.remove('moving'); }, 200); };
+	el.addEventListener('wheel', function (e) {
+		if (!A.big) return;   /* the page's view: the page scrolls as usual */
+		e.preventDefault();
+		var k = e.deltaMode === 1 ? 16 : (e.deltaMode === 2 ? 400 : 1), dx = e.deltaX * k, dy = e.deltaY * k, p = at(e);
+		/* a mouse wheel turns in whole notches (100 or more, straight up and down); a trackpad scrolls in small or fractional
+		   steps, often sideways too. One gesture's events (each within 200 ms of the last) are judged together. */
+		var pad = e.deltaMode === 0 && (e.deltaX !== 0 || Math.abs(e.deltaY) < 40 || e.deltaY % 1 !== 0);
+		moving();
+		wPad = e.timeStamp - wAt > 200 ? pad : wPad || pad; wAt = e.timeStamp;
+		if (e.ctrlKey) pzSet(A.pz.s * Math.exp(-dy * 0.01), p[0], p[1]);                  /* a trackpad pinch (Chrome, Firefox, Edge) */
+		else if (wPad) { A.pz.x -= dx; A.pz.y -= dy; pzClamp(); pzApply(); }               /* two fingers on a trackpad: pan */
+		else pzSet(A.pz.s * Math.exp(-dy * 0.002), p[0], p[1]);                            /* the mouse wheel: zoom */
+	}, { passive: false });
+	/* Safari sends a trackpad pinch as gesture events, with the pinch's scale */
+	el.addEventListener('gesturestart', function (e) { if (A.big) { e.preventDefault(); gs0 = A.pz.s; } });
+	el.addEventListener('gesturechange', function (e) { if (A.big) { e.preventDefault(); moving(); var p = at(e); pzSet(gs0 * e.scale, p[0], p[1]); } });
+	el.addEventListener('gestureend', function (e) { if (A.big) e.preventDefault(); });
+	el.addEventListener('pointerdown', function (e) {
+		A.pzEat = 0;   /* a new press: only the click that ends a drag is eaten, never the next one (the zoom buttons' included) */
+		if (!A.big || (e.pointerType === 'mouse' && e.button !== 0) || e.target.closest('.ar-zoom')) return;
+		ptr[e.pointerId] = at(e);
+		var ids = Object.keys(ptr);
+		if (ids.length === 1) drag = { p: at(e), x: A.pz.x, y: A.pz.y, moved: false };
+		if (ids.length === 2) { var a = ptr[ids[0]], b = ptr[ids[1]]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, s: A.pz.s }; drag = null; }
+	});
+	window.addEventListener('pointermove', function (e) {
+		if (!ptr[e.pointerId]) return;
+		ptr[e.pointerId] = at(e);
+		var ids = Object.keys(ptr);
+		if (pinch && ids.length === 2) {
+			var a = ptr[ids[0]], b = ptr[ids[1]];
+			moving();
+			pzSet(pinch.s * Math.hypot(a[0] - b[0], a[1] - b[1]) / pinch.d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+		} else if (drag) {
+			var p = at(e), dx = p[0] - drag.p[0], dy = p[1] - drag.p[1];
+			if (!drag.moved && Math.hypot(dx, dy) > 4) { drag.moved = true; el.classList.add('grabbing'); }
+			if (drag.moved) { moving(); A.pz.x = drag.x + dx; A.pz.y = drag.y + dy; pzClamp(); pzApply(); }
+		}
+	});
+	var up = function (e) {
+		if (!ptr[e.pointerId]) return;
+		delete ptr[e.pointerId];
+		if (drag && drag.moved) A.pzEat = Date.now();   /* the click that ends a drag doesn't trace a device */
+		if (pinch) A.pzEat = Date.now();
+		drag = null; if (Object.keys(ptr).length < 2) pinch = null;
+		el.classList.remove('grabbing');
+	};
+	window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+	el.addEventListener('click', function (e) { if (A.pzEat && Date.now() - A.pzEat < 400) { A.pzEat = 0; e.stopPropagation(); e.preventDefault(); } }, true);
+	$('arZoomIn').addEventListener('click', function () { moving(); pzSet(A.pz.s * 1.4); });
+	$('arZoomOut').addEventListener('click', function () { moving(); pzSet(A.pz.s / 1.4); });
+	$('arZoomFit').addEventListener('click', function () { moving(); pzReset(); });
+	pzApply();
 }
 function setBig(on) {
 	var root = $('ar'), b = $('arBig');
@@ -2576,7 +3250,8 @@ function setBig(on) {
 	b.setAttribute('aria-label', on ? 'Close the expanded view' : 'Expand');
 	b.title = on ? 'Back to the page (Esc)' : 'Expand: a bigger view with more detail';
 	$('arFull').className = on && fsCan() ? 'ar-ibtn' : 'ar-ibtn hide';
-	fit(); render();
+	A.pz = { s: 1, x: 0, y: 0 };   /* each time it opens, the whole map */
+	fit(); render(); pzApply();
 	b.focus();
 }
 /* While expanded, Tab stays inside and Escape closes it (the "+N more" list and the report close first). */
@@ -2613,13 +3288,23 @@ function boot() {
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
+	pzWire(); renameWire();
+	/* a name, a maker or a path cut short with "…" shows in full on hover: only the text itself (a few inline parts at most),
+	   never a container, and never the map's labels (tap one for its details) */
+	$('ar').addEventListener('mouseover', function (e) {
+		if (!e.target.closest || e.target.closest('#arMapLabels, svg')) return;
+		for (var el = e.target, i = 0; el && el.nodeType === 1 && el.id !== 'ar' && i < 2 && el.querySelectorAll('*').length <= 3; el = el.parentNode, i++) {
+			if (el.clientWidth && el.scrollWidth > el.clientWidth + 1) { if (!el.title || el._tip) { el.title = el.textContent.trim(); el._tip = true; } return; }
+			if (el._tip) { el.removeAttribute('title'); el._tip = false; }
+		}
+	});
 	$('arDn').addEventListener('click', function () { setMode('dn'); });
 	$('arUp').addEventListener('click', function () { setMode('up'); });
 	A.rowHtml = $('arTop0').innerHTML;   /* the one row markup, for the busiest list and the "+N more" list */
 	for (var t = 1; t < TOP_BIG; t++) { var c = $('arTop0').cloneNode(true); c.id = 'arTop' + t; c.className = 'hide'; $('arTopEmpty').parentNode.insertBefore(c, $('arTopEmpty')); }
 	for (var i = 0; i < TOP_BIG; i++) (function (btn) { btn.addEventListener('click', function () { if (btn._id) pick(btn._id); }); })($('arTop' + i));
-	$('arBig').innerHTML = iconSvg('expand', 20, '#f0efec');
-	$('arFull').innerHTML = iconSvg('full', 20, '#f0efec');
+	$('arBig').innerHTML = iconSvg('expand', 18, '#f0efec');
+	$('arFull').innerHTML = iconSvg('full', 18, '#f0efec');
 	$('arBig').addEventListener('click', function () { setBig(!A.big); });
 	$('arFull').addEventListener('click', toggleFull);
 	document.addEventListener('keydown', bigKeys);
@@ -2652,7 +3337,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
@@ -2686,9 +3371,6 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 <table width="760px" border="0" cellpadding="5" cellspacing="0" class="FormTitle" id="FormTitle">
 <tr>
 <td bgcolor="#4D595D" colspan="3" valign="top">
-<div>&nbsp;</div>
-<div class="formfontdesc">Live traffic between the internet, your router, its AiMesh nodes and every client. The router samples only while this page is open.</div>
-
 <div id="ar">
 	<div class="ar-bar">
 		<nav class="ar-tabs" aria-label="Arteria views">
@@ -2717,6 +3399,7 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 			</div>
 			<div id="arMapLabels"></div>
 			<div class="ar-over ar-notice" id="arNoticeMap" style="left:16px;bottom:12px"><span class="sw"></span><span class="tx">Starting the sampler on the router…</span></div>
+			<div class="ar-zoom" role="group" aria-label="Zoom"><button type="button" id="arZoomOut" aria-label="Zoom out">−</button><button type="button" id="arZoomFit" aria-label="Show the whole map" title="Show the whole map">100%</button><button type="button" id="arZoomIn" aria-label="Zoom in">+</button></div>
 		</div>
 		<!-- ============ FLOW ============ -->
 		<div class="ar-view" id="arFlow">
@@ -2735,7 +3418,7 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 	<div class="ar-cards">
 		<div class="ar-card ar-readout" id="arReadout">
 			<div class="ar-ro-head"><div class="eyebrow">Live readout</div><div class="ar-ro-tools"><button type="button" class="ar-det hide" id="arRoDet" aria-pressed="false" aria-controls="arRoDetails" title="Show the device's address, maker, system and connection">Details</button><div class="ar-badge" id="arRoBadge"></div></div></div>
-			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0"><div class="ar-ro-name" id="arRoName">Whole network</div><div class="ar-ro-link" id="arRoLink"></div></div></div>
+			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0;flex:1"><div class="ar-ro-name" id="arRoName">Whole network</div><div class="ar-ro-ed hide" id="arRoEd"><input type="text" class="ar-ro-in" id="arRoIn" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Device name" aria-describedby="arRoLink"/><button type="button" id="arRoOk" aria-label="Save the name"></button><button type="button" id="arRoNo" aria-label="Keep the old name"></button></div><div class="ar-ro-link" id="arRoLink"></div></div></div>
 			<div id="arRoTraffic">
 			<div class="ar-metrics">
 				<div class="ar-metric"><div class="top"><span class="lbl">↓ Download</span><span class="num c-dn" id="arRoDnN">—</span><span class="unit" id="arRoDnU"></span></div>

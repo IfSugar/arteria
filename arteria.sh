@@ -493,6 +493,8 @@ service_event() {   # action service
 			sampler_running || (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>&1 &) ;;
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat" ;;
+		"${NAME}names")   # a device was renamed on the page (it saved the router's client list first): show it now, not in 30 s
+			tmpd; mkdir -p "$(web_dir)" && export_names ;;
 	esac
 }
 
@@ -650,10 +652,11 @@ EOF
 }
 
 # ---- AiMesh node access (an SSH key only the router holds) -------------------------
-make_key() {
+make_key() {   # newer dropbearkey also writes the public key next to the new one (.new.pub): not needed, pub_key reads it
 	mkdir -p "$ADDON_DIR"
-	rm -f "$KEY.new"
-	dropbearkey -t ed25519 -f "$KEY.new" > /dev/null 2>&1 || dropbearkey -t rsa -s 2048 -f "$KEY.new" > /dev/null 2>&1 || return 1
+	rm -f "$KEY.new" "$KEY.new.pub"
+	dropbearkey -t ed25519 -f "$KEY.new" > /dev/null 2>&1 || dropbearkey -t rsa -s 2048 -f "$KEY.new" > /dev/null 2>&1 || { rm -f "$KEY.new" "$KEY.new.pub"; return 1; }
+	rm -f "$KEY.new.pub"
 	chmod 600 "$KEY.new" && mv -f "$KEY.new" "$KEY"
 }
 pub_key() { dropbearkey -y -f "$KEY" 2>/dev/null | awk '/^ssh-/ { print $1, $2, "arteria"; exit }'; }
@@ -1074,6 +1077,8 @@ install() {
 	[ -f "$CONF" ] || write_conf
 	hook_add services-start "$SCRIPT startup &"
 	hook_add service-event "$SCRIPT service_event \"\$@\" &"
+	# left by an older version's key setup, or by a development version's device recognition
+	rm -f "$KEY.new.pub" "$ADDON_DIR/discovered" "$ADDON_DIR/fingerbank" "$ADDON_DIR/fingerbank_key"
 	startup
 
 	# AiMesh nodes: per-device counters need the router's key on each node
