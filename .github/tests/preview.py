@@ -223,7 +223,7 @@ class H(BaseHTTPRequestHandler):
         if path == '/ext/arteria/live.htm':
             if SCN == 'overload' and not SAVED['resumed']:   # the router paused sampling to leave itself alone (arteria.sh's load guard)
                 return self.send(json.dumps({'v': 1, 'paused': 'load', 'epoch': int(time.time()), 'load': '14.20', 'cpus': 4, 'mem': 180}), 'text/html')
-            if SCN == 'dead':       # nothing ever comes back: the sampler never starts
+            if SCN == 'dead' or SAVED.get('live_off'):   # nothing comes back: the sampler never started, or stopped (/_set/live_off/1)
                 return self.send('not found', code=404)
             H.seq += 1
             return self.send(json.dumps(sample(H.seq)), 'text/html')

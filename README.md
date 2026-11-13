@@ -2,7 +2,7 @@
 
 A live, animated map of how traffic flows through your home network: from the internet, through your router and its AiMesh nodes, to every device. Written for the RT-AX86U on 3004.388.x with an AiMesh node; other Broadcom models should work too, and `arteria.sh check` tells you before anything is installed.
 
-Arteria only works while you're looking: it starts sampling when you open its page and stops about 20 seconds after you close it or switch to another tab. No cron jobs, no background service, nothing written to flash while it runs.
+Arteria only works while you're looking: it starts sampling when you open its page and stops when you close it, or about 2 minutes after you switch to another tab. No cron jobs, no background service, nothing written to flash while it runs.
 
 <p align="center"><img src="docs/demo.gif" width="728" alt="Arteria demo: packets flow across an isometric map of the internet, the router, an AiMesh node and their devices. The cursor taps a TV behind the node, which highlights its path and shows its rates, signal and route in the readout, then its details (address, maker, Wi-Fi standard). It opens the +N more tray's list and traces one of the grouped devices. Then the Flow tab shows the traffic as a river, first downloads and then uploads, and the units switch from Mb/s to MB/s and back."><br><sub>Made-up sample data. Re-recorded with <code>.github/demo-gif.py</code> when the page changes.</sub></p>
 
@@ -171,7 +171,7 @@ Edit it, then run `arteria.sh startup`. The new values apply the next time the p
 
 ```sh
 INTERVAL=2       # seconds between samples while the page is open (1-10)
-IDLE_STOP=20     # stop sampling this many seconds after the last page closed (20-300)
+IDLE_STOP=120    # stop sampling this many seconds after the last heartbeat of an open page (120-300)
 NODES=on         # on: read each AiMesh node's devices over SSH; off: backhaul totals only
 NODE_USER=""     # SSH user on the nodes; empty = the router's admin name
 AMTM_UPDATE=on   # on: amtm may update Arteria; off: only 'update' does

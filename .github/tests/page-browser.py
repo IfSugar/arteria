@@ -202,6 +202,27 @@ async def two_tabs(b, port):
         srv.terminate()
 
 
+async def heartbeat_pace(b, port):
+    """The router logs two lines for each request that keeps it sampling: while samples come, the page asks every 45 s, not
+    every 8; when they stop coming (the router rebooted, say), it asks again within seconds."""
+    srv = await serve('home', port)
+    try:
+        ctx = await b.new_context(viewport={'width': 1440, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(pg)
+        posts = lambda: pg.evaluate("fetch('/_posts').then(r => r.json())")
+        await pg.wait_for_timeout(9000)   # past the 8 s heartbeat that samples were still on their way for
+        n0 = await posts(); await pg.wait_for_timeout(12000); n1 = await posts()
+        check(n1 == n0, 'heartbeat: while samples come, no request for 12 s (it asks every 45 s; %d requests)' % (n1 - n0))
+        await pg.evaluate("fetch('/_set/live_off/1')")
+        t0 = time.time(); n2 = n1
+        while time.time() - t0 < 16 and n2 == n1:
+            await pg.wait_for_timeout(500); n2 = await posts()
+        check(n2 > n1, 'heartbeat: when samples stop, the page asks again within seconds (%.0f s)' % (time.time() - t0))
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def speed_test(b, port):
     """A speed test on one laptop: in the expanded Flow view the river fits the window, nothing scrolls."""
     srv = await serve('speedtest', port)
@@ -255,9 +276,9 @@ async def zoom(b, port):
         if lb:
             d0 = await z()
             await pg.mouse.move(lb[0], lb[1]); await pg.mouse.down(); await pg.mouse.move(lb[0] + 60, lb[1] + 40, steps=6)
-            # a sample landing mid-drag keeps the map moving and zoomed as it was: one more step of the drag, then a render and the reading at once
-            await pg.mouse.move(lb[0] + 64, lb[1] + 42)
-            mid, rings = await pg.evaluate("(() => { Arteria.render(); return [[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState], [...document.querySelectorAll('#arMapScene .df-ripple, #arMapScene .df-led')].map(e => getComputedStyle(e).animationName)]; })()")
+            # a sample landing mid-drag keeps the map moving and zoomed as it was: one more step of the drag, a render and the
+            # reading, all in one go (the map stops "moving" 200 ms after the last step: a busy test browser can take longer)
+            mid, rings = await pg.evaluate("(([x, y]) => { window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 1, clientX: x, clientY: y, bubbles: true })); Arteria.render(); return [[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState], [...document.querySelectorAll('#arMapScene .df-ripple, #arMapScene .df-led')].map(e => getComputedStyle(e).animationName)]; })", [lb[0] + 64, lb[1] + 42])
             await pg.mouse.up()
             await pg.wait_for_timeout(100)
             d1 = await z()
@@ -515,7 +536,7 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798))
         await b.close()
 
 
