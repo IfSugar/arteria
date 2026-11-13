@@ -22,7 +22,8 @@ NAME="arteria"
 umask 022
 TITLE="Arteria"
 
-# AR_ROOT, AR_PROC and AR_SYS let the script be tested off-router; they are empty on the router.
+# AR_ROOT, AR_PROC and AR_SYS let the script be tested off-router; they are empty on the router. AR_SSHD_WAIT (seconds)
+# too: how long nodekey gives a node's SSH server to restart after adding the key (a stand-in node doesn't restart).
 ROOT="${AR_ROOT:-}"
 PROC="${AR_PROC:-/proc}"
 SYSNET="${AR_SYS:-/sys}/class/net"
@@ -807,6 +808,18 @@ node_keep_key() {   # ip   (uses $pub and $b64 from nodekey)
 	case "$TRY_OUT" in *arteria-added-key*) say "  Added it to the node's own key list too, so it stays if the node restarts before the next sync." ;; esac
 }
 
+# Wait for a process, at most some seconds, looking every 0.2 s (usleep, which Merlin's BusyBox has; else every second):
+# a login that takes half a second doesn't keep nodes test, nodekey or doctor waiting a whole one.
+wait_pid() {   # pid seconds -> 1 if it had to be stopped
+	if have usleep; then wp_n=$(( $2 * 5 )); wp_s="usleep 200000"; else wp_n=$2; wp_s="sleep 1"; fi
+	wp_i=0
+	while kill -0 "$1" 2>/dev/null; do
+		[ $wp_i -ge $wp_n ] && { kill "$1" 2>/dev/null; return 1; }
+		$wp_s; wp_i=$((wp_i + 1))
+	done
+	return 0
+}
+
 # Try the key on a node: key only, never a password (see ssh_batch). Gives up after 8 s.
 # Returns 0 if the key works, 1 if not, 2 if it can't be tried without risking a password prompt
 # (an older dbclient, run from a terminal).
@@ -817,11 +830,7 @@ node_try() {   # ip [pin] [command]   pin: also trust and pin the identity that 
 	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
 	(HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "${3:-echo arteria-ok}") \
 		< /dev/null > "$o" 2>&1 &
-	p=$!; i=0
-	while kill -0 "$p" 2>/dev/null; do
-		[ $i -ge 8 ] && { kill "$p" 2>/dev/null; break; }
-		sleep 1; i=$((i + 1))
-	done
+	wait_pid $! 8
 	grep -q '^arteria-ok' "$o" 2>/dev/null; rc=$?
 	grep -qi 'host key mismatch' "$o" 2>/dev/null && TRY_HOSTKEY=1
 	grep -qi 'not in the trusted hosts' "$o" 2>/dev/null && TRY_NEW=1   # first contact: nothing pinned for this address yet
@@ -848,17 +857,13 @@ node_probe() {   # ip -> PROBE_MSG; 0 if a round came back
 	write_node_script 1 > "$s"
 	t0=$(now)
 	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" 'sh -s') < "$s" > "$o" 2>&1 &
-	p=$!; i=0
-	while kill -0 "$p" 2>/dev/null; do
-		[ $i -ge 30 ] && { kill "$p" 2>/dev/null; break; }
-		sleep 1; i=$((i + 1))
-	done
+	wait_pid $! 30; late=$?
 	t=$(( $(now) - t0 )); [ $t -ge 1 ] || t=1
 	if grep -q '^#E' "$o" 2>/dev/null; then
 		PROBE_MSG="reads $(grep -c '^S ' "$o") device(s), one round takes about $t s"
 		[ $t -gt 30 ] && PROBE_MSG="$PROBE_MSG: too slow, the page shows it as not answering"
 		rc=0
-	elif [ $i -ge 30 ]; then PROBE_MSG="reading its devices took over 30 s"; rc=1
+	elif [ $late = 1 ]; then PROBE_MSG="reading its devices took over 30 s"; rc=1
 	else
 		e=$(grep -v -e '^#B' -e '^S ' -e '^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
 		PROBE_MSG="reading its devices failed${e:+: $e}"; rc=1
@@ -879,8 +884,7 @@ node_trace() {   # ip file -> 0 if something crashed on the node; TRACE_AT: the 
 	tmpd; s="$TMPD/trace.$$.sh"; o="$TMPD/trace.$$"; TRACE_AT=""
 	write_node_script 1 | sed 's| 2>/dev/null||g' > "$s"
 	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" 'sh -x -s') < "$s" > "$o" 2>&1 &
-	p=$!; i=0
-	while kill -0 "$p" 2>/dev/null; do [ $i -ge 30 ] && { kill "$p" 2>/dev/null; break; }; sleep 1; i=$((i + 1)); done
+	wait_pid $! 30
 	tr -cd '\012\040-\176' < "$o" | scrub | cut -c1-200 | head -n 400 > "$2"
 	rm -f "$s" "$o"
 	grep -Eq "$CRASH_RE" "$2" || return 1
@@ -1025,7 +1029,7 @@ nodekey() {   # [node-ip | print]
 		esac
 		case "$out" in
 			*arteria-had-key*)   say "  The node already listed the key." ;;
-			*arteria-added-key*) say "  Key added."; sleep 4 ;;
+			*arteria-added-key*) say "  Key added."; sleep "${AR_SSHD_WAIT:-4}" ;;
 			*[Nn]o\ auth\ methods*) say "  The node doesn't take passwords over SSH, so the key reaches it from the router's list."; sync=$((sync + 1)); continue ;;
 			*) say "  Couldn't log in: $(printf '%s' "$out" | tail -1 | tr -cd '\040-\176' | cut -c1-120)"; fails=$((fails + 1)); continue ;;
 		esac
