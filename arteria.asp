@@ -2956,7 +2956,7 @@ function liveClientList() {
 	var tok = String(1 + Math.floor(Math.random() * 999999999)), tries = 0;
 	return new Promise(function (ok, no) {
 		var look = function () {
-			getJSON('clist.htm').then(function (c) { if (c && c.tok === tok && typeof c.custom === 'string') ok(c.custom); else throw new Error('not yet'); })
+			getJSON('clist.htm').then(function (c) { if (c && c.tok === tok && typeof c.custom === 'string') ok({ tok: tok, custom: c.custom }); else throw new Error('not yet'); })
 				.then(null, function () { if (++tries >= 20) no(new Error('no list')); else setTimeout(look, 300); });
 		};
 		fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: pokeBody('start_arteriacl' + tok) })
@@ -3011,11 +3011,12 @@ function renameSave() {
 	/* One save at a time, each from the router's list as it is once the one before has reached the router: two renames in
 	   a row never undo each other, and nothing is posted without that list. */
 	var job = (A.renQ || Promise.resolve()).then(liveClientList).then(function (live) {
-		var lc = parseNames({ custom: live }).custom[r.mac];
+		var lc = parseNames({ custom: live.custom }).custom[r.mac];
 		/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
-		var raw = renameList(live, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (lc ? lc.type : 0));
+		var raw = renameList(live.custom, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (lc ? lc.type : 0));
+		/* the same token again: once saved, the router deletes the copy of its list it wrote for this rename */
 		return fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: pokeBody('saveNvram;start_arterianames') + '&custom_clientlist=' + encodeURIComponent(raw) }).then(null, function () {});   /* sent: the check says whether it took */
+			body: pokeBody('saveNvram;start_arterianames' + live.tok) + '&custom_clientlist=' + encodeURIComponent(raw) }).then(null, function () {});   /* sent: the check says whether it took */
 	});
 	A.renQ = job.then(null, function () {});
 	job.then(function () { setTimeout(check, tries.shift()); }, function () {

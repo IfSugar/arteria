@@ -595,7 +595,7 @@ sampler() {
 	done
 	node_stop_all
 	rm -f "$TMPD/sampler.pid" "$WD/clist.htm"   # the copy of the client list a rename read: needed only while the page is open
-	[ $paused = 1 ] || log "sampling stopped (page closed)"
+	[ $paused = 1 ] || log "sampling stopped: no page open (closed, paused or in a hidden tab)"
 }
 
 cl_count() { nvram get custom_clientlist | tr '<' '\n' | grep -c '>'; }   # names in the router's client list
@@ -608,10 +608,14 @@ service_event() {   # action service
 			sampler_running || paused_recently || (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>&1 &) ;;   # paused: the page says why
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat" ;;
-		"${NAME}names")   # a device was renamed on the page (it saved the router's client list first): show it now, not in 30 s
+		"${NAME}names"*)   # a device was renamed on the page (it saved the router's client list first): show it now, not in 30 s
 			tmpd; web_init && export_names
 			b=$(cat "$TMPD/clist.n" 2>/dev/null); rm -f "$TMPD/clist.n"
-			log "renamed a device on the page: the router's client list has $(cl_count) name(s)${b:+ (before: $b)}" ;;
+			log "renamed a device on the page: the router's client list has $(cl_count) name(s)${b:+ (before: $b)}"
+			# the copy of the list this rename read, by its token: gone now, paused page or not (another rename's stays)
+			tok=${2#"${NAME}names"}
+			case "$tok" in ''|*[!0-9]*) ;; *) [ ${#tok} -le 12 ] && grep -q "^{\"tok\":\"$tok\"," "$(web_dir)/clist.htm" 2>/dev/null && rm -f "$(web_dir)/clist.htm" ;; esac
+			return 0 ;;
 		"${NAME}cl"*)   # the page is about to rename a device: the router's client list as it is now, with the page's token
 			tok=${2#"${NAME}cl"}
 			case "$tok" in ''|*[!0-9]*) return 0 ;; esac

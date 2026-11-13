@@ -326,11 +326,15 @@ chmod 777 "$W"; : > "$t/syslog"
 (umask 0; runi service_event start arteriacl12345678)
 [ "$(stat -c %a "$W")" = 755 ] && [ "$(stat -c %a "$W/clist.htm")" = 644 ] \
 	&& ok "the page's files and their folder: only root can change them, whatever umask the router starts it with" || { bad "permissions:"; ls -la "$W"; }
-(umask 0; runi service_event start arterianames)
+(umask 0; runi service_event start arterianames99)   # another rename's token: this one's copy stays
+[ -f "$W/clist.htm" ] && kept=1 || kept=0
+(umask 0; runi service_event start arterianames12345678)
+[ $kept = 1 ] && [ ! -e "$W/clist.htm" ] && ok "a saved rename deletes the copy of the client list it read (only its own, by its token)" || { bad "clist.htm after the save:"; ls -l "$W"; }
 grep -q "renaming a device on the page: read the router's client list ([0-9]* name(s))" "$t/syslog" \
 	&& grep -q "renamed a device on the page: the router's client list has [0-9]* name(s) (before: [0-9]*)" "$t/syslog" \
 	&& ! grep -q 'Living room\|02:CC' "$t/syslog" && ok "renames are logged: how many names the router's list has before and after, no names or addresses" \
 	|| { bad "rename log:"; cat "$t/syslog"; }
+runi service_event start arteriacl12345678
 for bad in 'arteriacl' 'arteriacl12x' 'arteriacl1234567890123' 'arteriacl1;reboot'; do runi service_event start "$bad"; done
 python3 - "$W/clist.htm" <<'EOF' && ! grep -q '<' "$W/clist.htm" && ok "service event arteriacl<token>: the router's client list now, with the page's token" || { bad "arteriacl:"; cat "$W/clist.htm"; fail=1; }
 import json, sys
@@ -668,7 +672,7 @@ lav 9.50
 waitfor 20 paused_load
 paused_load && ! grep -q '"seq"' "$W/live.htm" && ok "guard: overloaded three rounds in a row while sampling, it pauses" || { bad "guard, overloaded while sampling:"; head -c 300 "$W/live.htm"; }
 waitfor 4 sampler_gone
-grep -q 'paused for 2 minutes' "$t/syslog" && ! grep -q 'sampling stopped (page closed)' "$t/syslog" && ok "a pause isn't logged as the page closing" || { bad "log after a pause:"; cat "$t/syslog"; }
+grep -q 'paused for 2 minutes' "$t/syslog" && ! grep -q 'sampling stopped: no page' "$t/syslog" && ok "a pause isn't logged as the page closing" || { bad "log after a pause:"; cat "$t/syslog"; }
 runi service_event start arteriastop
 lav 1.39; rm -f "$t/proc/cpuinfo" "$t/proc/meminfo"; rm -rf "$R/tmp/arteria" "$W"
 
