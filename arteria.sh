@@ -17,6 +17,9 @@
 
 VERSION="1.0.0"
 NAME="arteria"
+# Files and folders only root can change. Scripts the router starts from service-event run with no umask, which made
+# the page's data files and their folder writable by any program on the router.
+umask 022
 TITLE="Arteria"
 
 # AR_ROOT, AR_PROC and AR_SYS let the script be tested off-router; they are empty on the router.
@@ -116,6 +119,7 @@ web_dir() {
 	[ -n "$d" ] || d="$WWW_USER"
 	echo "$d/$NAME"
 }
+web_init() { mkdir -p "$(web_dir)" && chmod 755 "$(web_dir)"; }   # also tightens a folder an older version left open (in RAM: no flash write)
 
 # httpd runs .htm/.js files through its <% %> template engine, so no '<' may reach the page raw.
 # In this JSON '<' can only occur inside strings (device names), where < is identical.
@@ -340,7 +344,7 @@ node_period() {   # file-base -> seconds (at least INTERVAL)
 }
 # ok: fresh counters; wait: connecting; nokey: the node refused the key ('nodekey' fixes it);
 # hostkey: the node's identity changed ('nodekey' re-pins it); down: unreachable; off: node access is off;
-# busy: no session yet because the router is busy (see the guard).
+# busy: no session yet because the router is busy (see the guard); crash: a command on the node crashed.
 node_state() {   # file-base -> state
 	if [ "$NODES" != on ]; then echo off; return; fi
 	if [ -z "${KEYARGS-$(key_args)}" ] || ! have dbclient; then echo nokey; return; fi
@@ -361,6 +365,7 @@ node_state() {   # file-base -> state
 		*trusted\ hosts*) echo nokey ;;   # never trusted yet: nodekey asks
 		*[Hh]ost\ key*|*[Mm]ismatch*|*[Ii]dentification*) echo hostkey ;;
 		*[Pp]ermission\ denied*|*[Aa]uth*|*[Pp]assword*|*publickey*) echo nokey ;;
+		*Segmentation\ fault*) echo crash ;;   # a command on the node crashed running Arteria's script ('nodes test' saves what it ran)
 		*) echo down ;;
 	esac
 }
@@ -548,7 +553,7 @@ hb_fresh() {
 sampler_running() { pid_ours "$(cat "$TMPD/sampler.pid" 2>/dev/null)" "$NAME.sh sampler"; }
 
 sampler() {
-	tmpd; mkdir -p "$(web_dir)"
+	tmpd; web_init
 	exec 8>"$TMPD/sampler.lock"
 	flock -n 8 || exit 0                 # another sampler is already running
 	lowprio
@@ -592,6 +597,8 @@ sampler() {
 	[ $paused = 1 ] || log "sampling stopped (page closed)"
 }
 
+cl_count() { nvram get custom_clientlist | tr '<' '\n' | grep -c '>'; }   # names in the router's client list
+
 service_event() {   # action service
 	[ "$1" = "start" ] || return 0
 	case "$2" in
@@ -601,12 +608,16 @@ service_event() {   # action service
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat" ;;
 		"${NAME}names")   # a device was renamed on the page (it saved the router's client list first): show it now, not in 30 s
-			tmpd; mkdir -p "$(web_dir)" && export_names ;;
+			tmpd; web_init && export_names
+			b=$(cat "$TMPD/clist.n" 2>/dev/null); rm -f "$TMPD/clist.n"
+			log "renamed a device on the page: the router's client list has $(cl_count) name(s)${b:+ (before: $b)}" ;;
 		"${NAME}cl"*)   # the page is about to rename a device: the router's client list as it is now, with the page's token
 			tok=${2#"${NAME}cl"}
 			case "$tok" in ''|*[!0-9]*) return 0 ;; esac
 			[ ${#tok} -le 12 ] || return 0
-			tmpd; mkdir -p "$(web_dir)" && printf '{"tok":"%s","custom":"%s"}' "$tok" "$(js "$(nvram get custom_clientlist)")" | write_atomic "$(web_dir)/clist.htm" ;;
+			tmpd; web_init && printf '{"tok":"%s","custom":"%s"}' "$tok" "$(js "$(nvram get custom_clientlist)")" | write_atomic "$(web_dir)/clist.htm"
+			n=$(cl_count); echo "$n" > "$TMPD/clist.n"
+			log "renaming a device on the page: read the router's client list ($n name(s))" ;;
 	esac
 }
 
@@ -714,7 +725,7 @@ mount_webui() {
 		log "menu entry not added (unexpected menuTree.js); page at $am_webui_page"
 	fi
 	flock -u 9
-	mkdir -p "$(web_dir)"
+	web_init
 	log "web UI mounted as $am_webui_page"
 }
 
@@ -851,6 +862,15 @@ node_probe() {   # ip -> PROBE_MSG; 0 if a round came back
 	else
 		e=$(grep -v -e '^#B' -e '^S ' -e '^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
 		PROBE_MSG="reading its devices failed${e:+: $e}"; rc=1
+	fi
+	# Something on the node crashed (its firmware's awk or shell, say): the same round again, traced, into a file for a
+	# bug report, without addresses or user names. (A crash in a command whose errors go to /dev/null leaves no message.)
+	if grep -q 'Segmentation fault' "$o" 2>/dev/null; then
+		(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" 'sh -x -s') < "$s" > "$o" 2>&1 &
+		p=$!; i=0
+		while kill -0 "$p" 2>/dev/null; do [ $i -ge 30 ] && { kill "$p" 2>/dev/null; break; }; sleep 1; i=$((i + 1)); done
+		tr -cd '\012\040-\176' < "$o" | scrub | cut -c1-200 | head -n 400 > "$TMPD/node-trace.txt"
+		PROBE_MSG="$PROBE_MSG; something on the node crashed (Segmentation fault): what it ran is in $TMPD/node-trace.txt, without addresses"
 	fi
 	rm -f "$s" "$o"
 	return $rc

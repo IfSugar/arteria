@@ -205,6 +205,7 @@ wl1.1 02:CC:00:00:00:12 5000000 60000
 wl1.1 02:CC:00:00:00:13 800000 90000
 EOF
 sed "s#$F/assoc#$F/node-assoc#" "$B/wl" > "$N/wl"
+printf '#!%s sh\n[ -f "%s/node-cut-crash" ] && kill -SEGV $$\nexec "%s" cut "$@"\n' "$bb" "$t" "$bb" > "$N/cut"   # a node whose cut can crash
 cat > "$N/nvram" <<EOF
 #!$bb sh
 # the node's own authorized SSH keys, in a file: nodekey adds the router's key here
@@ -321,7 +322,15 @@ rm -f "$W/names.htm"; runi service_event start arterianames
 grep -q 'Living room TV' "$W/names.htm" 2>/dev/null && [ ! -f "$R/tmp/arteria/sampler.pid" ] \
 	&& ok "service event arterianames: names exported at once, the sampler not started" || { bad "arterianames:"; ls "$W"; fail=1; }
 # before a rename, the page asks for the router's client list as it is now, with a token: only digits are taken
-runi service_event start arteriacl12345678
+chmod 777 "$W"; : > "$t/syslog"
+(umask 0; runi service_event start arteriacl12345678)
+[ "$(stat -c %a "$W")" = 755 ] && [ "$(stat -c %a "$W/clist.htm")" = 644 ] \
+	&& ok "the page's files and their folder: only root can change them, whatever umask the router starts it with" || { bad "permissions:"; ls -la "$W"; }
+(umask 0; runi service_event start arterianames)
+grep -q "renaming a device on the page: read the router's client list ([0-9]* name(s))" "$t/syslog" \
+	&& grep -q "renamed a device on the page: the router's client list has [0-9]* name(s) (before: [0-9]*)" "$t/syslog" \
+	&& ! grep -q 'Living room\|02:CC' "$t/syslog" && ok "renames are logged: how many names the router's list has before and after, no names or addresses" \
+	|| { bad "rename log:"; cat "$t/syslog"; }
 for bad in 'arteriacl' 'arteriacl12x' 'arteriacl1234567890123' 'arteriacl1;reboot'; do runi service_event start "$bad"; done
 python3 - "$W/clist.htm" <<'EOF' && ! grep -q '<' "$W/clist.htm" && ok "service event arteriacl<token>: the router's client list now, with the page's token" || { bad "arteriacl:"; cat "$W/clist.htm"; fail=1; }
 import json, sys
@@ -434,6 +443,17 @@ run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
 grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection" "$t/nt.out" \
 	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+touch "$t/node-cut-crash"; rm -f "$R/tmp/arteria/node-trace.txt"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-cut-crash"
+tr="$R/tmp/arteria/node-trace.txt"
+grep -q "something on the node crashed (Segmentation fault): what it ran is in .*/node-trace.txt, without addresses$" "$t/nt.out" \
+	&& grep -q '^+ cut ' "$tr" && grep -q 'Segmentation fault' "$tr" && ! grep -qi '02:CC\|192\.168' "$tr" \
+	&& ok "nodes test: when something crashes on the node, what it ran is saved, without addresses" || { bad "nodes test, a crash on the node:"; cat "$t/nt.out"; head -n 20 "$tr" 2>/dev/null; }
+printf 'echo "#B 1"\necho "Segmentation fault" >&2\nexit 139\n' > "$t/node-hostile"
+rm -rf "$R/tmp/arteria" "$W"; runi service_event start arteria
+node_crash() { grep -q '"state":"crash"' "$W/live.htm" 2>/dev/null; }
+waitfor 10 node_crash
+node_crash && ok "a node where something crashes shows as 'crash', not 'not answering'" || { bad "node crash state:"; grep -o '"nodes":.*' "$W/live.htm" | head -c 300; echo; }
+runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session; rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 run debug > "$t/debug2.out" 2>&1 || true
 grep -q 'state=(page closed)' "$t/debug2.out" && ! grep -q '192\.168\.' "$t/debug2.out" \
 	&& ok "debug: no node state while the page is closed (it would read 'down')" || { bad "debug, nodes:"; grep -A2 '^Nodes' "$t/debug2.out"; }
