@@ -357,6 +357,85 @@ async def rename(b, port):
         srv.terminate()
 
 
+async def until(pg, js, secs=10):   # poll a page expression until it's true, for at most secs
+    end = time.time() + secs
+    while time.time() < end:
+        if await pg.evaluate(js): return True
+        await pg.wait_for_timeout(200)
+    return False
+
+
+async def rename_safe(b, port):
+    """Renaming rewrites one entry of the router's client list and posts the whole list back: it always starts from the
+    router's list as it is at that moment, never from the page's copy (missing, or a minute old). Plus the small rules."""
+    srv = await serve('home', port)
+    try:
+        ctx = await b.new_context(viewport={'width': 1440, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(pg)
+        cust = lambda: pg.evaluate("fetch('/_custom').then(r => r.json())")
+        ents = lambda c: [e for e in c.split('<') if e]
+        macs = await pg.evaluate("[...document.querySelectorAll('#arMapLabels .ar-lb')].map(l => l.dataset.id).filter(i => /^[0-9A-F]{2}:/.test(i))")
+        closed = "document.getElementById('arRoEd').classList.contains('hide')"
+        async def edit(m):   # select it (a click on the selected one would deselect it), then the pencil
+            if await pg.evaluate('Arteria.state.sel') != m: await pg.dispatch_event('#arMapLabels .ar-lb[data-id="%s"]' % m, 'click'); await pg.wait_for_timeout(150)
+            await pg.click('#arRoEdit')
+        async def ren(m, name):
+            await edit(m); await pg.fill('#arRoIn', name); await pg.keyboard.press('Enter')
+        has = lambda *names: "fetch('/_custom').then(r => r.json()).then(c => %s)" % ' && '.join("c.includes(%r)" % n for n in names)
+        c0 = await cust()
+        # no copy of the list at all (names.htm missing): a rename keeps every other entry
+        await pg.evaluate("fetch('/_set/names_off/1')"); await pg.evaluate("Arteria.state.names = null")
+        await ren(macs[0], 'Garage light')
+        got = await until(pg, has('Garage light'))
+        c1 = await cust()
+        kept = [e for e in ents(c0) if macs[0] not in e.upper()]
+        check(got and all(e in ents(c1) for e in kept) and len(ents(c1)) >= len(kept) + 1,
+              'rename: with no copy of the client list, a rename keeps every other entry (%d of %d)' % (sum(e in ents(c1) for e in kept), len(kept)))
+        await pg.evaluate("fetch('/_set/names_off/0')"); await until(pg, closed, 20)
+        # the list changed behind the page's back (the router's own client editor): that change stays
+        await pg.evaluate("(c => fetch('/start_apply.htm', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action_mode=apply&action_script=saveNvram&custom_clientlist=' + encodeURIComponent(c + '<Shed sensor>02:CC:00:00:00:99>0>0>>') }))", c1)
+        await ren(macs[1], 'Hall lamp')
+        check(await until(pg, has('Hall lamp', 'Shed sensor')), 'rename: a change made elsewhere since the page last read the list stays')
+        await until(pg, closed, 20)
+        # two renames in a row, the second picked while the first is saving: neither undoes the other; no cancelling a save
+        await ren(macs[2], 'First one')
+        locked = await pg.evaluate("document.getElementById('arRoNo').disabled && document.getElementById('arRoOk').disabled")
+        await ren(macs[3], 'Second one')
+        check(await until(pg, has('First one', 'Second one', 'Hall lamp', 'Shed sensor'), 15) and locked,
+              'rename: two renames in a row both stay, and the cross is off while a name is saving (%s)' % locked)
+        await until(pg, closed, 20)
+        # a device without a nickname: the name shown, left as it is, saves nothing
+        await ren(macs[5], ''); await until(pg, "fetch('/_custom').then(r => r.json()).then(c => !c.toUpperCase().includes(%r))" % macs[5]); await until(pg, closed, 20)
+        c2 = await cust(); await edit(macs[5]); pre = await pg.evaluate("document.getElementById('arRoIn').value")
+        await pg.keyboard.press('Enter'); await pg.wait_for_timeout(1500)
+        check(macs[5] not in c2.upper() and await cust() == c2 and await pg.evaluate(closed), 'rename: the name shown, left as it is, saves nothing (%r)' % pre)
+        # a name Arteria would ignore (one routers fill in themselves) is refused, not saved
+        c3 = await cust(); await edit(macs[4]); await pg.fill('#arRoIn', 'ESP-Kitchen'); await pg.keyboard.press('Enter'); await pg.wait_for_timeout(800)
+        hint = await pg.evaluate("document.getElementById('arRoLink').textContent")
+        check('ignores' in hint and await cust() == c3 and not await pg.evaluate(closed), 'rename: a name Arteria ignores is refused (%r)' % hint)
+        await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)
+        # the expanded view: Tab goes from the field to the check and the cross; Escape there leaves the name, not the view
+        await pg.click('#arBig'); await pg.wait_for_timeout(600)
+        await edit(macs[4]); await pg.keyboard.press('Tab')
+        f1 = await pg.evaluate("document.activeElement.id"); await pg.keyboard.press('Tab')
+        f2 = await pg.evaluate("document.activeElement.id"); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)
+        check(f1 == 'arRoOk' and f2 == 'arRoNo' and await pg.evaluate(closed) and await pg.evaluate('Arteria.state.big'),
+              'rename, expanded view: Tab reaches the check and the cross, Escape there leaves the name and keeps the view (%s, %s)' % (f1, f2))
+        # zoomed in, a label tabbed to out of view brings itself into view
+        for _ in range(4): await pg.click('#arZoomIn'); await pg.wait_for_timeout(80)
+        await pg.wait_for_timeout(300)
+        inview = "(l => { const r = l.getBoundingClientRect(), m = document.getElementById('arMap').getBoundingClientRect(); return r.left >= m.left && r.right <= m.right && r.top >= m.top && r.bottom <= m.bottom; })"
+        out = await pg.evaluate("(f => [...document.querySelectorAll('#arMapLabels .ar-lb')].findIndex(l => !f(l)))(%s)" % inview)
+        if out >= 0:
+            await pg.keyboard.press('Shift')
+            await pg.evaluate("document.querySelectorAll('#arMapLabels .ar-lb')[%d].focus()" % out); await pg.wait_for_timeout(200)
+            check(await pg.evaluate("%s(document.querySelectorAll('#arMapLabels .ar-lb')[%d])" % (inview, out)), 'zoom: a label tabbed to out of view comes into view')
+        else: check(False, 'zoom: no label out of view at 400%')
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def guard(b, port_busy, port_dead):
     # the router paused sampling because it was overloaded: the page says why, and asks less often
     srv = await serve('overload', port_busy)
@@ -368,6 +447,19 @@ async def guard(b, port_busy, port_dead):
         note = await pg.evaluate("(document.querySelector('#ar .ar-notice .tx') || {}).textContent || ''")
         check(live == 'Router busy · paused' and 'busy (load 14.20 on 4 cores)' in note and 'about 2 minutes' in note,
               'guard: when the router pauses itself, the page says why (%r, %r)' % (live, note[:70]))
+        # opened over a minute ago, the router samples again: the page goes live, without giving up first or switching
+        # to the classic form for its requests
+        await pg.evaluate("Arteria.state.started = Date.now() - 61000"); await pg.evaluate("fetch('/_set/resumed/1')")
+        seen = []
+        end = time.time() + 16
+        while time.time() < end:
+            t = await pg.evaluate("document.getElementById('arLiveTxt').textContent")
+            if not seen or seen[-1] != t: seen.append(t)
+            if t.startswith('Live'): break
+            await pg.wait_for_timeout(200)
+        form = await pg.evaluate('Arteria.state.useForm')
+        check(seen[-1].startswith('Live') and 'Stopped · try again' not in seen and not form,
+              'guard: after a pause the page goes live again, without giving up or changing how it asks (%s)' % ' → '.join(seen))
         await ctx.close()
     finally:
         srv.terminate()
@@ -423,7 +515,7 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797))
         await b.close()
 
 

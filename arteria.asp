@@ -467,9 +467,10 @@ function poll() {
 	clearTimeout(A.timers.poll);
 	if (!running()) return;
 	getJSON('live.htm').then(onSample, function () { onSample(null); }).then(null, logErr).then(function () {
-		A.timers.poll = setTimeout(poll, A.halt ? 10000 : Math.max(1, A.interval) * 1000);
+		/* paused or gave up: only a look every 10 s (30 s after giving up) whether samples come again, from another tab, say */
+		A.timers.poll = setTimeout(poll, A.halt ? (A.halt.gaveup ? 30000 : 10000) : Math.max(1, A.interval) * 1000);
 	});
-	if (Date.now() - A.namesAt > 30000) loadNames();
+	if (Date.now() - A.namesAt > 30000 && !(A.halt && A.halt.gaveup)) loadNames();
 }
 function loadNames() {
 	A.namesAt = Date.now();
@@ -1023,10 +1024,13 @@ function onSample(d) {
 	/* The router paused sampling to leave itself alone: it was busy or low on memory (arteria.sh's guard). The page says
 	   why and keeps asking, less often; the router starts again after 2 minutes if it's better. */
 	if (d && d.v === 1 && d.paused) {
-		if (!A.halt || !A.halt.paused) { A.halt = { paused: d.paused, load: d.load, cpus: d.cpus, mem: d.mem }; heartbeat(); }
+		var was = A.halt && A.halt.paused;
+		A.halt = { paused: d.paused, load: d.load, cpus: d.cpus, mem: d.mem };   /* the latest reason and figures */
+		if (!was) heartbeat();
 		setLive(); render(); return;
 	}
-	if (A.halt && A.halt.paused && d && d.v === 1) { A.halt = null; heartbeat(); }
+	/* sampling again after a pause: the minute before giving up (and before trying the classic form) starts now */
+	if (A.halt && A.halt.paused && d && d.v === 1) { A.halt = null; A.started = nowMs; heartbeat(); }
 	if (d && d.v === 1 && (d.seq !== A.seq || d.up !== A.up)) {
 		var first = A.seq === null;
 		A.seq = d.seq; A.up = d.up;
@@ -2268,6 +2272,7 @@ function placeLabels(net, L, objs, arcs) {
 	L.wired.concat(L.devs).sort(function (a, b) { return busy(b.dev) - busy(a.dev); }).forEach(function (x) { items.push({ id: x.dev.id, name: x.dev.name, o: byId[x.dev.id], x3: G.big ? thirdLine(x.dev) : '' }); });
 	if (L.tray.length) items.push({ id: 'more', name: '+' + L.tray.length + ' more', o: byId.more });
 	var ov = function (a, b) { return !(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]); };
+	var obb = objs.map(function (o) { return [o, o.bbox()]; });   /* each drawing's outline, worked out once */
 	var arcPts = [];
 	arcs.forEach(function (a) { arcPts = arcPts.concat(a.pts.slice(3, -3)); });
 	items.forEach(function (it) {
@@ -2308,7 +2313,7 @@ function placeLabels(net, L, objs, arcs) {
 			var r = [c.x, c.y + 5, c.x + w, c.y + HIT - 5], cost = ci * 0.01 + (c.d || 0) * 0.12;
 			if (r[0] < 4 || r[1] < 4 || r[2] > SW - 4 || r[3] > SH - 4) cost += 1000;
 			rects.forEach(function (o) { if (ov(r, o)) cost += LBL; });
-			objs.forEach(function (o) { if (o !== it.o && ov(r, o.bbox())) cost += OBJ; });
+			obb.forEach(function (e) { if (e[0] !== it.o && ov(r, e[1])) cost += OBJ; });
 			zones.forEach(function (z) { if (ov(r, z)) cost += 60; });
 			if (cost < bestCost) arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) cost += 0.6; });
 			if (cost < bestCost) { bestCost = cost; best = c; }
@@ -2417,6 +2422,7 @@ function noticeFor(net) {
 		if (n.state === 'nokey') return [n.name + ': per-device traffic needs node access. Run arteria.sh nodekey on the router.', ACC];
 		if (n.state === 'hostkey') return [n.name + ' has a new SSH identity (reset?). Run arteria.sh nodekey to trust it again.', ACC];
 		if (n.state === 'down') return [n.name + ' isn\'t answering over SSH, so its devices show without numbers.', ACC];
+		if (n.state === 'busy') return ['The router is busy, so Arteria reads ' + n.name + ' only once it calms down. Its devices show without numbers meanwhile.', MUTED];
 		if (n.state === 'off') return ['Node access is off (NODES=off): ' + n.name + ' shows its backhaul total only.', MUTED];
 	}
 	if (net.total.sdn + net.total.sup < 0.05) return ['The network is idle. Packets thin out as throughput falls.', INK2];
@@ -2887,7 +2893,7 @@ function readoutFor(net) {
 		k1 = 'Backhaul signal'; v1 = dbm(n.bhRssi); k2 = 'Link rate'; v2 = n.bhPhy ? n.bhPhy + ' Mb/s' : '—';
 		path = rname + ' → ' + n.name;
 		note = { ok: 'Its devices are counted on the node and read over SSH.', nokey: 'Per-device data needs node access: run arteria.sh nodekey.', hostkey: 'Its SSH identity changed: run arteria.sh nodekey.',
-			down: 'Not answering over SSH: showing its backhaul total.', wait: 'Connecting to the node…', off: 'Node access is off: backhaul total only.' }[n.state] || '';
+			down: 'Not answering over SSH: showing its backhaul total.', busy: 'Not read while the router is busy: showing its backhaul total.', wait: 'Connecting to the node…', off: 'Node access is off: backhaul total only.' }[n.state] || '';
 		if (n.weak) { note = 'A weak backhaul caps everything behind the node.'; tone = ACC; }
 		if (!n.online) { note = 'The node isn\'t connected to the router.'; tone = BAD; sdn = sup = 'offline'; }
 	} else if (id && net.byId[id] && net.byId[id].link) {
@@ -2934,40 +2940,61 @@ function renderReadout(net) {
    router's own client list, as its client editor does, so the router shows the new name too; then the page checks the
    router took it. The icon beside the name and the line under it say what the typed name will show as. */
 function renameTarget(net) { var dv = A.sel && net && net.byId[A.sel]; return dv && dv.link && dv.mac ? dv : null; }   /* a client with its own MAC */
-function nameProblem(v) { return v.length > 32 ? 'At most 32 characters' : (/[<>\x00-\x1f\x7f]/.test(v) ? 'A name can\u2019t have < or > in it' : ''); }
+function nameProblem(v, mac) {
+	if (v.length > 32) return 'At most 32 characters';
+	if (/[<>\x00-\x1f\x7f]/.test(v)) return 'A name can\u2019t have < or > in it';
+	/* names Arteria takes for ones the router filled in by itself (see nickOf): saved, they'd change nothing here */
+	if (v && !nickOf({ name: v }, A.names && mac && A.names.nmp[mac])) return 'Arteria ignores names like this (routers fill them in themselves): try another';
+	return '';
+}
+/* The router's client list as it is right now. Renaming rewrites one entry of it and posts the whole list back, so it must
+   start from the router's current list, not names.htm's copy (up to a minute old, or missing): another tab, the router's own
+   client editor or the previous rename may have changed it since. The router writes the list with the token this asks with
+   (service event arteriacl…, arteria.sh), so an older copy is never taken for it. */
+function liveClientList() {
+	var tok = String(1 + Math.floor(Math.random() * 999999999)), tries = 0;
+	return new Promise(function (ok, no) {
+		var look = function () {
+			getJSON('clist.htm').then(function (c) { if (c && c.tok === tok && typeof c.custom === 'string') ok(c.custom); else throw new Error('not yet'); })
+				.then(null, function () { if (++tries >= 20) no(new Error('no list')); else setTimeout(look, 300); });
+		};
+		fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: pokeBody('start_arteriacl' + tok) })
+			.then(function () { setTimeout(look, 200); }, no);
+	});
+}
 function renameStart() {
 	var dv = renameTarget(A.net), c, inp = $('arRoIn');
 	if (!dv || A.ren) return;
 	c = A.names && A.names.custom && A.names.custom[dv.mac];
 	A.ren = { id: dv.id, mac: dv.mac, kind: dv.kind, saving: false }; A.renMsg = null;
-	inp.value = c && c.name ? c.name : dv.name; inp.disabled = false;
+	/* your nickname, or the name shown (a device's own, or "Device …53:A1"): left as it is, that saves nothing */
+	inp.value = A.ren.pre = nickOf(c, A.names && A.names.nmp[dv.mac]) || dv.name; renameLock(false);
 	$('arRoNrow').className = 'ar-ro-nrow hide'; $('arRoEd').className = 'ar-ro-ed';
 	renameHint(); inp.focus(); inp.select();
 }
 function renameHint(text, tone) {
-	var v = $('arRoIn').value.trim(), bad = nameProblem(v), k = v && !bad ? nameKind(v) : null, ln = $('arRoLink');
+	var v = $('arRoIn').value.trim(), bad = nameProblem(v, A.ren.mac), k = v && !bad ? nameKind(v) : null, ln = $('arRoLink');
 	$('arRoIcon').innerHTML = iconSvg(k ? k.kind : A.ren.kind, 20, '#f0efec'); $('arReadout')._icon = '';
 	ln.style.color = tone || (bad ? BAD : '');
 	ln.textContent = text || bad || (!v ? 'Empty: the router\u2019s own name comes back' : k ? 'Shows as ' + (KIND_LABEL[k.kind] || k.kind)
 		: 'Stays ' + (KIND_LABEL[A.ren.kind] || A.ren.kind) + ' \u00b7 no kind word in it');
 }
+function renameLock(on) { ['arRoIn', 'arRoOk', 'arRoNo'].forEach(function (i) { $(i).disabled = on; }); }   /* while saving */
 function renameClose(msg, tone) {   /* back to the name; a message, if any, shows under it for a few seconds */
 	var id = A.ren && A.ren.id;
-	A.ren = null;
+	A.ren = null; renameLock(false);
 	$('arRoEd').className = 'ar-ro-ed hide'; $('arRoNrow').className = 'ar-ro-nrow';
 	$('arReadout')._icon = '';
 	A.renMsg = msg ? { id: id, text: msg, tone: tone || '', until: Date.now() + 5000 } : null;
 }
 function renameSave() {
-	var r = A.ren, v = $('arRoIn').value.trim(), N = A.names || {}, cur, k, raw;
+	var r = A.ren, v = $('arRoIn').value.trim(), N = A.names || {}, cur, k;
 	if (!r || r.saving) return;
-	if (nameProblem(v)) { renameHint(); $('arRoIn').focus(); return; }
+	if (nameProblem(v, r.mac)) { renameHint(); $('arRoIn').focus(); return; }
 	cur = N.custom && N.custom[r.mac];
-	if (v === (cur && cur.name || '') && (v || !cur)) { renameClose(); render(); $('arRoEdit').focus(); return; }   /* nothing changed */
+	if (v === r.pre || (v === (cur && cur.name || '') && (v || !cur))) { renameClose(); render(); $('arRoEdit').focus(); return; }   /* nothing changed */
 	k = v ? nameKind(v) : null;
-	/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
-	raw = renameList(N.raw, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (cur ? cur.type : 0));
-	r.saving = true; r.name = v; $('arRoIn').disabled = true;
+	r.saving = true; r.name = v; renameLock(true);
 	renameHint('Saving\u2026');
 	var took = function () { var c = A.names && A.names.custom && A.names.custom[r.mac]; return v ? !!(c && c.name === v) : !(c && c.name); };
 	var tries = [1200, 2500, 5000, 9000], check = function () {
@@ -2976,15 +3003,25 @@ function renameSave() {
 			if (A.ren !== r) return;
 			if (took()) { renameClose(v ? 'Saved \u00b7 in the router\u2019s client list too' : 'Name removed \u00b7 the router\u2019s own is back', '#3ddc97'); render(); $('arRoEdit').focus(); return; }
 			if (tries.length) { setTimeout(check, tries.shift()); return; }
-			r.saving = false; $('arRoIn').disabled = false; $('arRoIn').focus();
+			r.saving = false; renameLock(false); $('arRoIn').focus();
 			renameHint('The router didn\u2019t save it \u00b7 try again', BAD);
 		});
 	};
-	try {
-		fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: pokeBody('saveNvram;start_arterianames') + '&custom_clientlist=' + encodeURIComponent(raw) })
-			.then(function () { setTimeout(check, tries.shift()); }, function () { setTimeout(check, tries.shift()); });
-	} catch (e) { setTimeout(check, tries.shift()); }
+	/* One save at a time, each from the router's list as it is once the one before has reached the router: two renames in
+	   a row never undo each other, and nothing is posted without that list. */
+	var job = (A.renQ || Promise.resolve()).then(liveClientList).then(function (live) {
+		var lc = parseNames({ custom: live }).custom[r.mac];
+		/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
+		var raw = renameList(live, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (lc ? lc.type : 0));
+		return fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: pokeBody('saveNvram;start_arterianames') + '&custom_clientlist=' + encodeURIComponent(raw) }).then(null, function () {});   /* sent: the check says whether it took */
+	});
+	A.renQ = job.then(null, function () {});
+	job.then(function () { setTimeout(check, tries.shift()); }, function () {
+		if (A.ren !== r) return;
+		r.saving = false; renameLock(false); $('arRoIn').focus();
+		renameHint('Couldn\u2019t read the router\u2019s client list, so nothing was saved \u00b7 try again', BAD);
+	});
 }
 function renameWire() {
 	var inp = $('arRoIn'), eb = $('arRoEdit');
@@ -2992,9 +3029,12 @@ function renameWire() {
 	/* the name or the pencil: a click on either (or Enter/Space on the pencil) reaches the row */
 	$('arRoNrow').addEventListener('click', function () { if (this.classList.contains('ed')) renameStart(); });
 	inp.addEventListener('input', function () { if (A.ren && !A.ren.saving) renameHint(); });
-	inp.addEventListener('keydown', function (e) {
-		if (e.key === 'Enter') { e.preventDefault(); renameSave(); }
-		else if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); renameClose(); render(); eb.focus(); }   /* not the expanded view's Escape */
+	inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); renameSave(); } });
+	/* Escape in the field or on the check or the cross: leaves the name as it was (not the expanded view's Escape) */
+	$('arRoEd').addEventListener('keydown', function (e) {
+		if (e.key !== 'Escape' && e.key !== 'Esc') return;
+		e.preventDefault(); e.stopPropagation();
+		if (A.ren && !A.ren.saving) { renameClose(); render(); eb.focus(); }
 	});
 	$('arRoOk').addEventListener('click', renameSave);
 	$('arRoNo').addEventListener('click', function () { renameClose(); render(); eb.focus(); });
@@ -3208,9 +3248,21 @@ function pzSet(s, px, py) {   /* zoom to s, keeping the stage point (px, py) whe
 	pzClamp(); pzApply();
 }
 function pzReset() { A.pz = { s: 1, x: 0, y: 0 }; pzApply(); }
+/* Tabbing to a label that's out of view while zoomed in: the map moves to show it, as it would scroll a page */
+function pzShow(l) {
+	var z = A.pz, W = G.SW - 2, H = G.SH - 2, cx = l.offsetLeft + l.offsetWidth / 2, cy = l.offsetTop + l.offsetHeight / 2;
+	var x = z.x + cx * z.s, y = z.y + cy * z.s;
+	if (z.s <= 1 || (x > 30 && x < W - 30 && y > 30 && y < H - 30)) return;
+	z.x = W / 2 - cx * z.s; z.y = H / 2 - cy * z.s; pzClamp(); pzApply();
+}
 function pzWire() {
 	var el = $('arMap'), ptr = {}, drag = null, pinch = null, wAt = -1e9, wPad = false, gs0 = 1, still = 0;
 	var at = function (e) { var r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+	$('arMapLabels').addEventListener('focusin', function (e) {   /* keyboard focus only: a click is on what's in view */
+		var l = e.target.closest && e.target.closest('.ar-lb'), kb = true;
+		try { kb = e.target.matches(':focus-visible'); } catch (x) { /* an older browser: always */ }
+		if (l && A.big && kb) pzShow(l);
+	});
 	/* While the map moves, its animations wait: each frame then only redraws the map where it now is, which keeps up even at
 	   400% with a device traced (its ring and its packets would otherwise be redrawn too). They go on 200 ms after it stops. */
 	var moving = function () { A.moving = true; $('ar').classList.add('moving'); clearTimeout(still); still = setTimeout(function () { A.moving = false; $('ar').classList.remove('moving'); }, 200); };
@@ -3307,7 +3359,7 @@ function bigKeys(e) {
 		return;
 	}
 	if (e.key !== 'Tab') return;
-	var f = Array.prototype.filter.call($('ar').querySelectorAll('button, a[href], textarea'), function (el) { return el.offsetParent !== null && !el.disabled; });
+	var f = Array.prototype.filter.call($('ar').querySelectorAll('button, a[href], textarea, input'), function (el) { return el.offsetParent !== null && !el.disabled; });
 	if (!f.length) return;
 	var i = f.indexOf(document.activeElement);
 	if (e.shiftKey ? i <= 0 : (i < 0 || i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }

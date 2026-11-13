@@ -239,8 +239,16 @@ if [ -f "$t/node-identity" ]; then
 fi
 [ \$own = 1 ] || [ \$user = 1 ] || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
 echo "\$1" >> "$t/dbclient.cmds"
-[ "\$1" = 'sh -s' ] && [ -f "$t/node-hostile" ] && exec "$bb" sh "$t/node-hostile"   # a node that sends anything but counters
-case "\$1" in 'sh -s') exec env PATH="$N:$B" "$bb" sh -s ;; *) exec env PATH="$N:$B" "$bb" sh -c "\$1" ;; esac
+[ "\$1" = 'sh -s' ] || exec env PATH="$N:$B" "$bb" sh -c "\$1"
+# The page's session: like the real dbclient it stays this process (Arteria stops it by its pid, and checks that the pid is a
+# dbclient), and stopping it ends the node's side. AR_NODE_SESSION marks the node's side, so a test can see that it's gone.
+exec 3<&0
+if [ -f "$t/node-hostile" ]; then env AR_NODE_SESSION="$t" "$bb" sh "$t/node-hostile" <&3 3<&- &   # a node that sends anything but counters
+else env AR_NODE_SESSION="$t" PATH="$N:$B" "$bb" sh -s <&3 3<&- &
+fi
+c=\$!; exec 3<&-
+trap 'kill \$c 2>/dev/null; exit 0' TERM INT HUP
+wait \$c
 EOF
 printf '#!%s sh\nf=""; while [ $# -gt 0 ]; do [ "$1" = -f ] && f=$2; shift; done\n[ -n "$f" ] && printf "key\\n" > "$f" && echo pub > "$f.pub"\necho "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST admin@router"\n' "$bb" > "$B/dropbearkey"
 for f in "$B"/* "$N"/*; do [ -L "$f" ] || chmod +x "$f"; done   # the stand-ins; never the symlinked system tools
@@ -312,6 +320,14 @@ sampler_gone() { [ ! -f "$R/tmp/arteria/sampler.pid" ]; }
 rm -f "$W/names.htm"; runi service_event start arterianames
 grep -q 'Living room TV' "$W/names.htm" 2>/dev/null && [ ! -f "$R/tmp/arteria/sampler.pid" ] \
 	&& ok "service event arterianames: names exported at once, the sampler not started" || { bad "arterianames:"; ls "$W"; fail=1; }
+# before a rename, the page asks for the router's client list as it is now, with a token: only digits are taken
+runi service_event start arteriacl12345678
+for bad in 'arteriacl' 'arteriacl12x' 'arteriacl1234567890123' 'arteriacl1;reboot'; do runi service_event start "$bad"; done
+python3 - "$W/clist.htm" <<'EOF' && ! grep -q '<' "$W/clist.htm" && ok "service event arteriacl<token>: the router's client list now, with the page's token" || { bad "arteriacl:"; cat "$W/clist.htm"; fail=1; }
+import json, sys
+c = json.load(open(sys.argv[1]))
+assert c['tok'] == '12345678' and 'Living room TV>02:CC:00:00:00:05' in c['custom'] and 'Kids "tablet"\\' in c['custom'], c
+EOF
 runi service_event start arteria
 waitfor 10 seq_at_least 2
 python3 - "$W/live.htm" <<'EOF' && ok "without the key: node is 'nokey', its clients aren't read" || fail=1
@@ -362,9 +378,10 @@ grep -q '<' "$W/live.htm" "$W/names.htm" && bad "a raw '<' reached the page's da
 grep -q -- "-p 2222 .*admin@192.168.50.10 sh -s" "$t/dbclient.args" && ok "the session uses the router's SSH port and admin name" || { bad "SSH arguments:"; cat "$t/dbclient.args"; }
 grep -- " -i " "$t/dbclient.args" | grep -qv -- "-o BatchMode=yes" && { bad "a key login without BatchMode (dbclient could ask for a password):"; cat "$t/dbclient.args"; } || ok "key logins never offer a password (BatchMode)"
 runi service_event start arteriastop
-no_session() { ! pgrep -f "$N" > /dev/null 2>&1; }
+# no session left: neither the stand-in dbclient nor the node side it runs
+no_session() { ! pgrep -f "$B/dbclient" > /dev/null 2>&1 && ! grep -qsa "AR_NODE_SESSION=$t" /proc/[0-9]*/environ; }
 waitfor 6 no_session
-pgrep -f "$N" > /dev/null 2>&1 && bad "the node session outlived the page" || ok "node session ends with the sampler"
+no_session && ok "node session ends with the sampler" || { bad "the node session outlived the page:"; pgrep -af "$B/dbclient"; }
 rm -rf "$R/tmp/arteria" "$W"
 
 # A hostile node: rows with bad fields, markup, junk on stderr, and a flood. Only valid rows reach the page,
@@ -395,6 +412,13 @@ assert [r[2] for r in c] == ['02:CC:00:00:00:42', '02:CC:00:00:00:43'], c   # a 
 assert c[0][3:6] == [None, None, None] and c[1][3:6] == ['1000', '2000', -50], c   # a bad number: that field is null
 EOF
 else bad "hostile node ($big big files):"; ls -l "$R"/tmp/arteria/; python3 -c "import json,sys; print(json.load(open(sys.argv[1]))[\"nodes\"])" "$W/live.htm"; cat "$R"/tmp/arteria/node.*.last; fi
+runi service_event start arteriastop
+waitfor 6 sampler_gone; waitfor 6 no_session
+printf 'printf "#B 1\\n#E\\n#B 99999999999999999999\\n#E\\n"\nexec sleep 30\n' > "$t/node-hostile"
+rm -rf "$R/tmp/arteria" "$W"; runi service_event start arteria
+node_ok() { grep -q '"state":"ok"' "$W/live.htm" 2>/dev/null; }
+waitfor 10 node_ok
+node_ok && ok "a node whose uptimes make no sense still counts as answering (its pace is capped)" || { bad "a node with absurd uptimes:"; grep -o '"nodes":.*' "$W/live.htm" | head -c 300; echo; }
 runi service_event start arteriastop
 waitfor 6 sampler_gone; waitfor 6 no_session
 rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
@@ -514,6 +538,14 @@ if "$py" -c 'import pty' 2>/dev/null; then
 		&& [ ! -f "$t/dbclient.pw" ] && cmp -s "$t/router-authkeys" "$t/rk.before" && [ ! -s "$t/node-authkeys" ]; then
 		ok "nodekey on a router with passwordless logins to its nodes: uses root's key and pin, adds and asks nothing"
 	else bad "nodekey with root's own key:"; cat "$t/nk-user.out"; fi
+	# root's known_hosts pins the node, but no key opens it: a password would follow, so nodekey forgets the copied pin and
+	# asks first, with the fingerprint, as for a node it has never seen. No: no password, nothing pinned.
+	rm -rf "$R/jffs/addons/arteria/.ssh" "$t/dbclient.pw" "$t/node-accepts-user"; : > "$t/node-authkeys"
+	nk n > "$t/nk-rootpin.out"; touch "$t/node-accepts-user"
+	if grep -q "hasn't connected to 192.168.50.10 before" "$t/nk-rootpin.out" && grep -q "SHA256:USERPIN" "$t/nk-rootpin.out" \
+		&& [ ! -f "$t/dbclient.pw" ] && ! grep -q USERPIN "$R/jffs/addons/arteria/.ssh/known_hosts" 2>/dev/null; then
+		ok "nodekey: a node pinned only in root's known_hosts gets no password until its fingerprint is confirmed"
+	else bad "nodekey, root's pin and no working key:"; cat "$t/nk-rootpin.out"; fi
 else echo "skip  nodekey at a terminal (python3 has no pty module here)"; fi
 # The page's sessions with root's own key: no Arteria key at all, the node pinned only in root's known_hosts
 if [ -f "$t/node-accepts-user" ]; then
@@ -523,6 +555,8 @@ if [ -f "$t/node-accepts-user" ]; then
 	if grep -q '"state":"ok"' "$W/live.htm" && grep -q USERPIN "$R/jffs/addons/arteria/.ssh/known_hosts" && grep -q "trusted node 192.168.50.10's SSH identity as root's own known_hosts does" "$t/syslog"; then
 		ok "a router with passwordless logins to its nodes: the page reads them with root's key, nothing to set up"
 	else bad "sampler with root's own key:"; head -c 400 "$W/live.htm"; cat "$R"/tmp/arteria/node.*.err; fi
+	run status > "$t/st-user.out" 2>&1 || true
+	grep -q '^Node access: on, key present' "$t/st-user.out" && ok "status: root's own key counts as the key" || { bad "status with root's key:"; grep '^Node access' "$t/st-user.out"; }
 	run nodes test > "$t/nt-user.out" 2>&1 || true
 	grep -q 'key login OK (/tmp/home/root/.ssh/id_dropbear), reads' "$t/nt-user.out" && ok "nodes test names the key that works" || { bad "nodes test with root's key:"; cat "$t/nt-user.out"; }
 	run debug > "$t/debug-user.out" 2>&1 || true
@@ -532,7 +566,8 @@ if [ -f "$t/node-accepts-user" ]; then
 	no_sampler() { ! pgrep -f "$inst sampler" > /dev/null 2>&1; }; waitfor 10 no_sampler   # gone, not only its pid file
 	rm -rf "$R/tmp/home" "$t/node-accepts-user" "$R/tmp/arteria" "$W"
 fi
-# The sampler never pins a node itself: one seen for the first time is "nokey" (run nodekey) and stays unpinned
+# The sampler pins no node by itself (only one root's known_hosts already pins): one seen for the first time is "nokey"
+# (run nodekey) and stays unpinned
 rm -rf "$R/jffs/addons/arteria/.ssh" "$R/tmp/arteria"; echo FIRSTKEY > "$t/node-identity"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
 runi service_event start arteria
 node_tried() { grep -q "trusted hosts" "$R"/tmp/arteria/node.*.err 2>/dev/null && seq_at_least 2; }
@@ -586,27 +621,34 @@ if paused_load && [ -f "$R/tmp/arteria/paused" ] && grep -q 'paused for 2 minute
 else bad "guard, overloaded at the start:"; head -c 300 "$W/live.htm"; cat "$t/syslog"; fi
 waitfor 4 sampler_gone; runi service_event start arteria; sleep 1
 sampler_gone && ok "guard: for 2 minutes after a pause the page's requests don't start it again" || bad "guard: the sampler started again during the pause"
-run status > "$t/status.out" 2>&1 || true
-grep -q '^Last pause: .*the router is busy (load 9.50 on 2 cores) (resumes within 2 minutes)' "$t/status.out" && grep -q '^Router:  *load 9.50 on 2 cores' "$t/status.out" \
-	&& ok "status: the router's load, its memory and the last pause" || { bad "status, after a pause:"; cat "$t/status.out"; }
+lav 0.50; run status > "$t/status.out" 2>&1 || true
+grep -q '^Last pause: .*the router is busy (load 9.50 on 2 cores) (resumes within 2 minutes)' "$t/status.out" && grep -q '^Router:  *load 0.50 on 2 cores' "$t/status.out" \
+	&& ok "status: the router's load now, its memory, and the last pause with the load it saw then" || { bad "status, after a pause:"; cat "$t/status.out"; }
 lav 0.50; printf 'MemTotal: 500000 kB\nMemFree: 9000 kB\nMemAvailable: 20000 kB\n' > "$t/proc/meminfo"; rm -f "$R/tmp/arteria/paused"
 runi service_event start arteria
 waitfor 8 paused_mem
 paused_mem && grep -q 'low on memory (19 MB available)' "$t/syslog" && ok "guard: a router low on memory (under 24 MB available) isn't sampled" || { bad "guard, memory:"; head -c 300 "$W/live.htm"; cat "$t/syslog"; }
 waitfor 4 sampler_gone
-# busy: sampled a third as often, never paused; then overloaded for three rounds while sampling: it pauses
-printf 'MemTotal: 500000 kB\nMemAvailable: 300000 kB\n' > "$t/proc/meminfo"; lav 4.50; rm -f "$R/tmp/arteria/paused"
+# busy: sampled a third as often, never paused; then overloaded for three rounds while sampling: it pauses.
+# The page was open before with the node read: while busy, the node isn't shown from that old output, and gets no session.
+printf 'MemTotal: 500000 kB\nMemAvailable: 300000 kB\n' > "$t/proc/meminfo"; lav 0.50; rm -f "$R/tmp/arteria/paused"
+runi service_event start arteria; waitfor 12 node_read
+runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
+s0=$(grep -c "sh -s" "$t/dbclient.cmds"); rm -f "$W/live.htm"; lav 4.50; : > "$t/syslog"
 runi service_event start arteria
-waitfor 10 seq_at_least 1
-python3 - "$W/live.htm" <<'EOF' && ok "guard: a busy router (load 2 per core) is sampled a third as often, and the sample says so" || fail=1
+waitfor 10 seq_at_least 2
+python3 - "$W/live.htm" <<'EOF' && [ "$(grep -c "sh -s" "$t/dbclient.cmds")" = "$s0" ] && ok "guard: a busy router (load 2 per core) is sampled a third as often, opens no node session, and the sample says so" || { bad "guard, busy: $(grep -c "sh -s" "$t/dbclient.cmds") sessions, $s0 before"; fail=1; }
 import json, sys
 s = json.load(open(sys.argv[1]))
 assert s['interval'] == 3 and s['router']['busy'] == 1 and s['router']['cpus'] == 2 and s['router']['mem'] == 292, (s['interval'], s['router'])
+n = s['nodes'][0]
+assert n['state'] == 'busy' and n['c'] == [], n   # not 'down' with the clients of the last time
 EOF
 lav 9.50
 waitfor 20 paused_load
 paused_load && ! grep -q '"seq"' "$W/live.htm" && ok "guard: overloaded three rounds in a row while sampling, it pauses" || { bad "guard, overloaded while sampling:"; head -c 300 "$W/live.htm"; }
 waitfor 4 sampler_gone
+grep -q 'paused for 2 minutes' "$t/syslog" && ! grep -q 'sampling stopped (page closed)' "$t/syslog" && ok "a pause isn't logged as the page closing" || { bad "log after a pause:"; cat "$t/syslog"; }
 runi service_event start arteriastop
 lav 1.39; rm -f "$t/proc/cpuinfo" "$t/proc/meminfo"; rm -rf "$R/tmp/arteria" "$W"
 
