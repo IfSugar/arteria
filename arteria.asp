@@ -1027,6 +1027,7 @@ function px(v) { return n1(v * G.U / 24); }   /* a size in pixels that grows wit
 function ptsS(ps) { return ps.map(function (p) { return n1(p[0]) + ',' + n1(p[1]); }).join(' '); }
 function poly(ps, st) { return '<polygon points="' + ptsS(ps) + '" style="' + st + '"/>'; }
 function pline(ps, st, dy) { return '<path d="M' + ps.map(function (p) { return n1(p[0]) + ' ' + n1(p[1] + (dy || 0)); }).join(' L') + '" style="' + st + '"/>'; }
+function ellPts(o, c, r) { var rx = 1.2247 * r * G.U + 2, ry = 0.7071 * r * G.U + 2; o.pts.push([c[0] - rx, c[1] - ry], [c[0] + rx, c[1] + ry]); }   /* an ell()'s extent, in a drawing's outline */
 function ell(c, r, st, cls) { return '<ellipse cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" rx="' + n1(1.2247 * r * G.U) + '" ry="' + n1(0.7071 * r * G.U) + '"' + (cls ? ' class="' + cls + '"' : '') + ' style="' + st + '"/>'; }
 /* Four tones from one base colour: top, left (lit), right (shade), deep; plus edge and rim. Light comes from the upper left. */
 function MAT(base, light) {
@@ -1358,7 +1359,7 @@ function drawLight(id, kind, cx, cy, face) {   /* a lit bulb on a small lamp foo
 	g = P(cx, cy, 0.62);
 	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="15" style="fill:url(#ar-glow)"/>');
 	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="7.5" style="fill:url(#ar-bulb);stroke:#ffe9a3;stroke-width:.9"/>');
-	o.pts.push([g[0] - 9, g[1] - 9], [g[0] + 9, g[1] + 9]);
+	o.pts.push([g[0] - 15, g[1] - 15], [g[0] + 15, g[1] + 15]);   /* its glow */
 	o.target = P(cx, cy, 1.0);
 	return o;
 }
@@ -1726,7 +1727,9 @@ function drawVr(id, kind, cx, cy, face) {   /* a VR headset: a white visor, its 
 	[[cx + 0.52, cy + 0.02], [cx + 0.56, cy + 0.38]].forEach(function (g) {   /* two controllers, each with its tracking ring */
 		o.box(g[0], g[1], 0, 0.12, 0.12, 0.26, M_WHITE, { shadow: true });
 		o.svg.push(ell(P(g[0] + 0.06, g[1] + 0.06, 0.32), 0.14, 'fill:none;stroke:#d3dadc;stroke-width:' + px(1.6)));
+		ellPts(o, P(g[0] + 0.06, g[1] + 0.06, 0.32), 0.14);
 	});
+	ellPts(o, P(cx, cy - 0.42, 0.24), 0.4);
 	o.target = P(cx, cy, 0.5);
 	return o;
 }
@@ -1738,6 +1741,7 @@ function drawProjector(id, kind, cx, cy, face) {   /* a projector: a white box, 
 	o.face('L', 0.08, 0.35, 0.4, 0.65, 'fill:#aab4b8');
 	l = o.fp('L', 0.7, 0.5); r = px(5.5);
 	o.svg.push(poly([l, P(cx - 0.12, cy + 1.05, 0.5), P(cx + 0.46, cy + 1.05, -0.02)], 'fill:' + DNT + ';opacity:.13'));
+	o.pts.push(P(cx - 0.12, cy + 1.05, 0.5), P(cx + 0.46, cy + 1.05, -0.02));   /* its beam */
 	o.svg.push('<circle cx="' + n1(l[0]) + '" cy="' + n1(l[1]) + '" r="' + r + '" style="fill:#141b1e;stroke:#56646a;stroke-width:1.2"/>',
 		'<circle cx="' + n1(l[0]) + '" cy="' + n1(l[1]) + '" r="' + px(2.6) + '" style="fill:' + DN + ';opacity:.85"/>');
 	o.led('T', 0.85, 0.2, '#3ddc97', 0, 0, 0.8);
@@ -3179,8 +3183,9 @@ function pzWire() {
 	el.addEventListener('gesturechange', function (e) { if (A.big) { e.preventDefault(); moving(); var p = at(e); pzSet(gs0 * e.scale, p[0], p[1]); } });
 	el.addEventListener('gestureend', function (e) { if (A.big) e.preventDefault(); });
 	el.addEventListener('pointerdown', function (e) {
+		A.pzEat = 0;   /* a new press: only the click that ends a drag is eaten, never the next one (the zoom buttons' included) */
 		if (!A.big || (e.pointerType === 'mouse' && e.button !== 0) || e.target.closest('.ar-zoom')) return;
-		ptr[e.pointerId] = at(e); A.pzEat = 0;
+		ptr[e.pointerId] = at(e);
 		var ids = Object.keys(ptr);
 		if (ids.length === 1) drag = { p: at(e), x: A.pz.x, y: A.pz.y, moved: false };
 		if (ids.length === 2) { var a = ptr[ids[0]], b = ptr[ids[1]]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, s: A.pz.s }; drag = null; }

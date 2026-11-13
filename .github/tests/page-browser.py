@@ -269,7 +269,7 @@ async def zoom(b, port):
         e = await z()
         check(e['x'] <= 0.01 and e['y'] <= 0.01, 'zoom: panning stops at the map\'s edges')
         # the buttons: in, out, and back to the whole map; zooming out stops there
-        s0 = (await z())['s']; await pg.click('#arZoomIn'); s1 = (await z())['s']
+        s0 = (await z())['s']; await pg.click('#arZoomIn'); s1 = (await z())['s']   # straight after a drag: only the drag's own click is eaten
         await pg.click('#arZoomFit'); f = await z()
         await pg.mouse.move(px, py); await pg.mouse.wheel(0, 600); g = await z()
         check(s1 > s0 and f['s'] == 1 and f['x'] == 0 and g['s'] == 1 and await pg.evaluate(tf) == 'none', 'zoom: the buttons zoom in and back to the whole map; zooming out stops there')
@@ -332,13 +332,35 @@ async def rename(b, port):
         srv.terminate()
 
 
+async def outlines(b, port):
+    # labels are placed around each drawing's outline (its bbox): every drawing must stay inside it, glows and beams included
+    srv = await serve('home', port)
+    try:
+        ctx = await b.new_context(viewport={'width': 1600, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(pg)
+        out = await pg.evaluate('''() => {
+            const T = Arteria._t, out = [], svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('width', 2000); svg.setAttribute('height', 2000); document.body.appendChild(svg);
+            Object.keys(T.KIND_LABEL).forEach(k => {
+                const o = T.objDevice('t', k, 8, 8, 'L'), bb = o.bbox();
+                svg.innerHTML = '<g>' + o.svg.join('') + '</g>'; const g = svg.firstElementChild.getBBox();
+                const d = [bb[0] - g.x, bb[1] - g.y, g.x + g.width - bb[2], g.y + g.height - bb[3]].map(Math.round);
+                if (Math.max(...d) > 3) out.push(k + ' ' + JSON.stringify(d));
+            });
+            svg.remove(); return out; }''')
+        check(not out, 'every drawing stays inside the outline its label is placed around' + ('' if not out else ': ' + '; '.join(out)))
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def main():
     if not CHROME:
         sys.exit('page-browser.py needs Chrome or Chromium (or its path as the argument)')
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794))
         await b.close()
 
 
