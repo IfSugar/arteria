@@ -50,14 +50,14 @@ export PATH
 
 # ---- defaults (overridden by $CONF) ----------------------------------------
 INTERVAL=2              # seconds between samples while the page is open (1-10)
-IDLE_STOP=20            # stop sampling this many seconds after the last page closed (20-300)
+IDLE_STOP=120           # stop sampling this many seconds after the last heartbeat of an open page (120-300)
 NODES=on                # on: read each AiMesh node's per-device counters over SSH; off: backhaul totals only
 NODE_USER=""            # SSH user on the nodes; empty = the router's admin name
 AMTM_UPDATE=on          # on: amtm may update Arteria (amtmupdate); off: only 'update' does
 [ -f "$CONF" ] && . "$CONF"
 case "$INTERVAL" in [1-9]|10) ;; *) INTERVAL=2 ;; esac
-case "$IDLE_STOP" in ''|*[!0-9]*) IDLE_STOP=20 ;; esac
-[ "$IDLE_STOP" -lt 20 ] && IDLE_STOP=20    # the page's heartbeat comes every 8 s: leave room for a late one
+case "$IDLE_STOP" in ''|*[!0-9]*) IDLE_STOP=120 ;; esac
+[ "$IDLE_STOP" -lt 120 ] && IDLE_STOP=120   # the page's heartbeat comes every 45 s: room for a late or lost one
 [ "$IDLE_STOP" -gt 300 ] && IDLE_STOP=300
 case "$NODES" in on|off) ;; *) NODES=on ;; esac
 case "$AMTM_UPDATE" in on|off) ;; *) AMTM_UPDATE=on ;; esac
@@ -544,9 +544,9 @@ pause_sampling() {   # why: load | memory | slow
 paused_recently() { p=$(date -r "$PAUSED" +%s 2>/dev/null) || return 1; [ $(( $(now) - p )) -lt 120 ]; }
 
 # ---- the sampler: runs only while the page is open ----------------------------------------
-# The page asks for "start_arteria" every few seconds (service-event). Each request refreshes a
-# heartbeat file; the sampler stops IDLE_STOP seconds after the last one, and at once if the page
-# says it closed (start_arteriastop). Nothing runs on a schedule.
+# The page asks for "start_arteria" every 45 s (service-event; the router logs two lines for each, so not more
+# often). Each request refreshes a heartbeat file; the sampler stops IDLE_STOP seconds after the last one, and
+# at once if the page says it closed or paused (start_arteriastop). Nothing runs on a schedule.
 hb_fresh() {
 	hb=$(date -r "$TMPD/heartbeat" +%s 2>/dev/null) || return 1
 	[ $(( $(now) - hb )) -le "$IDLE_STOP" ]
@@ -772,7 +772,7 @@ write_conf() {
 	cat > "$CONF" <<EOF
 # Arteria settings - run "$SCRIPT startup" after editing
 INTERVAL=$INTERVAL               # seconds between samples while the page is open (1-10)
-IDLE_STOP=$IDLE_STOP             # stop sampling this many seconds after the last page closed (20-300)
+IDLE_STOP=$IDLE_STOP            # stop sampling this many seconds after the last heartbeat of an open page (120-300)
 NODES=$NODES               # on: read each AiMesh node's per-device counters over SSH; off: backhaul totals only
 NODE_USER="$NODE_USER"            # SSH user on the nodes; empty = the router's admin name
 AMTM_UPDATE=$AMTM_UPDATE         # on: amtm may update Arteria (amtmupdate); off: only 'update' does
@@ -1299,7 +1299,7 @@ install() {
 		say "Done."
 	fi
 	[ -n "$page" ] && say "Direct link: http://$(nvram get lan_ipaddr)/$page"
-	say "Arteria samples only while that page is open, and stops about $IDLE_STOP seconds after you leave it."
+	say "Arteria samples only while that page is open: it stops when you close it, or about $IDLE_STOP seconds after you switch away."
 }
 
 # update and update dev: download the script from base URL $1 into a fresh folder of ours ($dl) and check
@@ -1392,7 +1392,7 @@ status() {
 		ms=$(sed -n 's/.*"ms":\([0-9]*\).*/\1/p' "$live" 2>/dev/null | head -1)
 		say "Sampling:    yes, the page is open (every $INTERVAL s${ms:+, last sample took $ms ms})"
 	else
-		say "Sampling:    no (starts when the page opens, stops ${IDLE_STOP} s after it closes)"
+		say "Sampling:    no (starts when the page opens; stops when it closes, or ${IDLE_STOP} s after you switch away)"
 	fi
 	CPUS=$(cpu_count); health
 	say "Router:      load $LOAD on $CPUS cores, $MEMMB MB memory available$( [ "$HEALTH" -ge 2 ] && printf ': overloaded, Arteria would pause' )$( [ "$HEALTH" = 1 ] && printf ': busy, Arteria samples less often' )"

@@ -405,9 +405,10 @@ function iconSvg(name, size, color) {
 }
 
 /* ---------------------------------------------------------------- talking to the router
-   The page asks the router to sample by "starting" a service named arteria every few seconds
-   (Merlin passes it to the addon's service-event hook). The router stops sampling about 20 s
-   after the last request, so a closed or hidden page costs the router nothing. */
+   The page asks the router to sample by "starting" a service named arteria (Merlin passes it to the addon's
+   service-event hook): every 8 s until samples come, then every 45 s, since the router writes two lines to its
+   system log for each request. Closing or pausing the page tells the router to stop at once; for a hidden page
+   it stops 2 minutes after the last request, so a closed or hidden page costs the router nothing. */
 function page() { return window.location.pathname.substring(1) || 'index.asp'; }
 /* The same fields, with the same values, as the standard addon form below (formScriptActions):
    start_apply.htm is the router's settings handler, so it gets nothing else, and never an empty
@@ -443,9 +444,11 @@ function running() { return !A.paused && !document.hidden; }
 function heartbeat() {
 	clearTimeout(A.timers.hb);
 	if (!running() || (A.halt && A.halt.gaveup)) return;   /* gave up: no more requests until the Live button says try again */
-	poke('start_arteria');
+	poke('start_arteria'); A.hbAt = Date.now();
 	store('open.' + TAB_ID, String(Date.now()));   /* "this tab is sampling", for the other Arteria tabs of this browser */
-	A.timers.hb = setTimeout(heartbeat, A.halt ? 30000 : 8000);   /* the router paused itself: ask less often until it resumes */
+	/* every 45 s while samples come; every 8 s until they do (a lost request costs little then); every 30 s while the
+	   router has paused itself, until it resumes */
+	A.timers.hb = setTimeout(heartbeat, A.halt ? 30000 : (A.fresh && !stale() ? 45000 : 8000));
 }
 /* Two Arteria tabs open: when one closes, it mustn't stop the sampling the other one is watching. Each tab notes
    its last heartbeat in this browser's storage; a tab that goes away only says "stop" if no other one is live. */
@@ -457,8 +460,8 @@ function otherTabLive() {
 			var k = localStorage.key(i);
 			if (!k || k.indexOf('arteria.open.') !== 0 || k === 'arteria.open.' + TAB_ID) continue;
 			var age = Date.now() - (+localStorage.getItem(k) || 0);
-			if (age < 12000) live = true;
-			else if (age > 120000) localStorage.removeItem(k);   /* a tab that closed without saying so */
+			if (age < 60000) live = true;   /* its last heartbeat, at most 45 s ago */
+			else if (age > 300000) localStorage.removeItem(k);   /* a tab that closed without saying so */
 		}
 	} catch (e) { return false; }
 	return live;
@@ -469,6 +472,8 @@ function poll() {
 	getJSON('live.htm').then(onSample, function () { onSample(null); }).then(null, logErr).then(function () {
 		/* paused or gave up: only a look every 10 s (30 s after giving up) whether samples come again, from another tab, say */
 		A.timers.poll = setTimeout(poll, A.halt ? (A.halt.gaveup ? 30000 : 10000) : Math.max(1, A.interval) * 1000);
+		/* samples stopped while the page is watched (the router rebooted, say): ask again now, not at the next 45 s heartbeat */
+		if (A.fresh && stale() && !A.halt && running() && Date.now() - (A.hbAt || 0) > 8000) heartbeat();
 	});
 	if (Date.now() - A.namesAt > 30000 && !(A.halt && A.halt.gaveup)) loadNames();
 }
@@ -2411,7 +2416,7 @@ function haltNotice() {
 	return ['The router ' + why + ', so Arteria paused to leave it alone. It tries again in about 2 minutes.', ACC];
 }
 function noticeFor(net) {
-	if (A.paused) return ['Paused. The router stops sampling about 20 s after you pause.', MUTED];
+	if (A.paused) return ['Paused. The router stops sampling (unless another Arteria tab is open).', MUTED];
 	var h = haltNotice(); if (h) return h;
 	if (!A.fresh) return [Date.now() - A.started > 20000 ? 'No samples from the router. Is Arteria installed? Run arteria.sh status on the router.' : 'Starting the sampler on the router…', Date.now() - A.started > 20000 ? ACC : MUTED];
 	if (stale()) return ['The router stopped sending samples. Retrying…', ACC];
