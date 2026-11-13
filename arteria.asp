@@ -103,6 +103,15 @@
 #ar .ar-ico { width: 36px; height: 36px; border-radius: 9px; background: #1c2427; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; flex: none; }
 #ar .ar-ro-name { font-size: 16px; line-height: 19px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ar .ar-ro-link { font-size: 12px; line-height: 15px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* renaming in place: a device's name is a button to its own text field, with a check and a cross beside it */
+#ar .ar-ro-name.ed { cursor: text; border-radius: 4px; outline-offset: 2px; }
+#ar .ar-ro-name.ed:hover, #ar .ar-ro-name.ed:focus-visible { text-decoration: underline dotted #8f9a9e; text-underline-offset: 4px; }
+/* one row: the field, then the check and the cross, rounded squares exactly as tall as the field */
+#ar .ar-ro-ed { display: flex; align-items: stretch; gap: 6px; height: 26px; margin: -4px 0 -1px; }
+#ar .ar-ro-in { flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0 7px; border: 1px solid #6b7b80; border-radius: 6px; background: #1f272a; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 24px; box-sizing: border-box; }
+#ar .ar-ro-in:focus { outline: none; border-color: #59c3ff; box-shadow: 0 0 0 2px rgba(89,195,255,.25); }
+#ar .ar-ro-ed button { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border-radius: 6px; border: 1px solid #6b7b80; background: #1f272a; display: flex; align-items: center; justify-content: center; cursor: pointer; box-sizing: border-box; }
+#ar .ar-ro-ed button:hover { background: #3a4549; }
 #ar .ar-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 #ar .ar-metric { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 #ar .ar-metric .top { display: flex; align-items: baseline; gap: 5px; height: 28px; }
@@ -237,7 +246,7 @@ var A = {
 	tab: 'map', mode: 'dn', unit: 'Mb', sel: null, paused: false,
 	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false,
 	prev: {}, sm: {}, bk: {}, names: null, namesAt: 0,
-	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowMem: {}, flowK: {}, pz: { s: 1, x: 0, y: 0 }, pzEat: 0,
+	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowMem: {}, flowK: {}, pz: { s: 1, x: 0, y: 0 }, pzEat: 0, ren: null, renMsg: null,
 	hist: [], timers: {}, mapRefs: null, flowRefs: null, big: false, narrow: false, slotBy: {}
 };
 
@@ -308,6 +317,7 @@ function rr(x, y, w, h, r) {
 }
 function ci(cx, cy, r) { return 'M' + (cx - r) + ' ' + cy + 'a' + r + ' ' + r + ' 0 1 0 ' + (2 * r) + ' 0a' + r + ' ' + r + ' 0 1 0 ' + (-2 * r) + ' 0z'; }
 var ICON = {
+	tick: 'M5 12.5l4.5 4.5L19 7.5', cross: 'M6.5 6.5l11 11M17.5 6.5l-11 11',
 	globe: ci(12, 12, 9) + 'M3 12h18M12 3c3.2 3.4 3.2 14.6 0 18M12 3c-3.2 3.4-3.2 14.6 0 18',
 	router: rr(3, 13, 18, 6, 2) + 'M7 13V7M12 13V5M17 13V7M7 16h.01M10 16h.01',
 	mesh: rr(7, 3, 10, 18, 3) + 'M10 8a3 3 0 0 1 4 0M12 15h.01',
@@ -384,7 +394,7 @@ function page() { return window.location.pathname.substring(1) || 'index.asp'; }
 function pokeBody(action) {
 	var f = document.formScriptActions, pid = f && f.productid ? f.productid.value : '';
 	return (pid ? 'productid=' + encodeURIComponent(pid) + '&' : '') + 'current_page=' + encodeURIComponent(page()) +
-		'&next_page=' + encodeURIComponent(page()) + '&action_mode=apply&action_script=' + action + '&action_wait=';
+		'&next_page=' + encodeURIComponent(page()) + '&action_mode=apply&action_script=' + encodeURIComponent(action) + '&action_wait=';
 }
 function poke(action) {
 	if (A.useForm && action === 'start_arteria') {   // fallback: the same form other addon pages submit
@@ -458,6 +468,7 @@ function suspend() {
 var JUNK_NAME = /^(dhcpcd|android-dhcp|udhcp|unknown|client|localhost|espressif|esp[_-]|wlan|\*|-)|:|^[0-9a-f]{10,}$/i;
 function parseNames(n) {
 	var out = { custom: {}, nmp: {}, lease: {}, cl: n && n.cl || {}, arp: {}, n6: {}, fixed: {} };
+	out.raw = String(n && n.custom || '');   /* as the router has it: renaming rewrites one entry of it */
 	String(n && n.custom || '').split('<').forEach(function (e) {
 		var f = e.split('>');
 		if (f.length >= 2 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) out.custom[f[1].toUpperCase()] = { name: f[0], type: +f[3] || 0 };
@@ -521,6 +532,30 @@ var TYPE_KIND = {
 };
 /* Icon numbers networkmap hands out from one loose keyword ("mac" -> 6, "win"/"pc"/"nb" -> 1, "desktop" -> 34,
    a DHCP vendor class -> 9/22/30/31): a clear name beats these, even when they were saved with a nickname. */
+/* Renaming a device on the page saves the router's icon for what the name says, so the router's client list shows the same
+   kind; a kind the router has no icon for saves none (0), so a stale guess doesn't outrank the name. */
+var ASUS_TYPE = { desktop: 34, mac: 14, laptop: 35, phone: 10, tablet: 20, tv: 23, streamer: 11, soundbar: 47, speaker: 43, console: 7, nas: 4,
+	printer: 18, camera: 5, doorbell: 85, lock: 63, air: 49, light: 60, vacuum: 61, plug: 70, sensor: 62, watch: 64, appliance: 50 };
+/* The router's client list (custom_clientlist) with one device's entry changed, as the router's own editor writes it:
+   "<name>MAC>0>icon>>", other fields kept as they were (newer firmware writes a few more empty ones: a new entry takes the
+   shape of the others). No name removes the entry: the router's own name and icon come back. Every other entry stays as it
+   is; a duplicate of the device's entry goes; and the list starts with "<" even if the router lost the first one. */
+function renameList(raw, mac, name, type) {
+	var MAC = String(mac).toUpperCase(), out = [], found = false, len = 0;
+	String(raw || '').split('<').forEach(function (e) {
+		if (!e) return;
+		var f = e.split('>');
+		if (!len && f.length >= 4 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) len = f.length;
+		if ((f[1] || '').toUpperCase() !== MAC) { out.push(e); return; }
+		if (found || !name) return;
+		found = true;
+		f[0] = name; f[1] = MAC; while (f.length < 4) f.push('');
+		f[2] = f[2] || '0'; f[3] = String(type || 0);
+		out.push(f.join('>'));
+	});
+	if (name && !found) { var f = [name, MAC, '0', String(type || 0)]; while (f.length < Math.max(len, 6)) f.push(''); out.push(f.join('>')); }
+	return out.length ? '<' + out.join('<') : '';
+}
 var TYPE_LOOSE = { 1: 1, 6: 1, 9: 1, 22: 1, 30: 1, 31: 1, 32: 1, 34: 1 };
 /* Names that say what a device is. First match wins, so the specific ones come first. */
 var KIND_STRONG = [
@@ -582,6 +617,15 @@ function nameWords(s) {
 	return String(s).replace(/([a-z])([A-Z]*?)(NAS|NVR|PC)(?![a-z])/g, '$1$2 $3').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
 		.replace(/([a-z]{3,})(\d+)\b/gi, '$1 $2').replace(/[_.]+/g, ' ');
 }
+/* What a name says a device is: the first rule that matches the name as written, then (only when none did) with words run
+   together split apart, so "Somfy TaHoma" stays a hub. Null when no rule matches. */
+function nameKind(s) {
+	var w, i;
+	if (!s) return null;
+	for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(s)) return { kind: KIND_STRONG[i][0], i: i, split: false };
+	if ((w = nameWords(s)) !== s) for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(w)) return { kind: KIND_STRONG[i][0], i: i, split: true };
+	return null;
+}
 /* A Wi-Fi module's maker and the host name its firmware sends, when the two together say what the device is:
    Daikin's Wi-Fi adapters (BRP069…) carry a Murata module and call themselves "Client". */
 var MODULE_KIND = [
@@ -626,13 +670,7 @@ function classify(mac, name, link, al) {
 	var KEYS = ['nickname', 'label', 'hostname', 'router name'], names = [al ? c.name : nickOf(c, m), name, l && l.host, m && m.name], i, j, r;
 	/* What a name says: as written first, then with words run together split apart (only when nothing matched as written,
 	   so "Somfy TaHoma" stays a hub) */
-	var byName = function (s, j) {
-		var w, i;
-		if (!s) return null;
-		for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(s)) return res(KIND_STRONG[i][0], 'name', KEYS[j] + ' #' + i);
-		if ((w = nameWords(s)) !== s) for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(w)) return res(KIND_STRONG[i][0], 'name', KEYS[j] + ' #' + i + ' split');
-		return null;
-	};
+	var byName = function (s, j) { var k = nameKind(s); return k ? res(k.kind, 'name', KEYS[j] + ' #' + k.i + (k.split ? ' split' : '')) : null; };
 	/* 1. the icon you picked in the router's client list. Saving a nickname there also saves whatever icon the editor showed,
 	   often only the router's guess at the time, so the name comes first when the saved icon is:
 	   - the router's own guess (the same icon it detects), or a loose one (any computer, any phone);
@@ -2284,6 +2322,7 @@ function renderMap(net) {
 	if (sig !== A.mapSig) {
 		var b = buildMap(net, L);
 		$('arMapScene').innerHTML = b.svg;
+		pzApply();   /* a new scene keeps the zoom */
 		$('arMapLabels').innerHTML = b.labels;
 		A.mapSig = sig; A.slotAt = A.gotAny ? Date.now() : 0;
 		var refs = { lanes: [], links: {}, alts: {}, objs: {}, leads: {}, rings: {}, zones: {}, marks: {}, labels: {} };
@@ -2747,10 +2786,18 @@ function readoutFor(net) {
 		dnNet: pct(net.wan.dn, net.total.dn), upNet: pct(net.wan.up, net.total.up) };
 }
 function renderReadout(net) {
-	var r = readoutFor(net), el = $('arReadout');
+	var r = readoutFor(net), el = $('arReadout'), tgt = renameTarget(net), nm = $('arRoName');
+	if (A.ren && (!tgt || tgt.id !== A.ren.id)) renameClose();   /* another device (or none) was picked: the edit is dropped */
 	var key = r.d.icon + r.d.name;
-	if (el._icon !== key) { $('arRoIcon').innerHTML = iconSvg(r.d.icon, 20, '#f0efec'); el._icon = key; }
-	$('arRoBadge').textContent = r.d.badge; $('arRoName').textContent = r.d.name; $('arRoLink').textContent = r.d.link;
+	if (!A.ren && el._icon !== key) { $('arRoIcon').innerHTML = iconSvg(r.d.icon, 20, '#f0efec'); el._icon = key; }
+	$('arRoBadge').textContent = r.d.badge; nm.textContent = r.d.name;
+	/* a client's name is a button to its own text field (a node's or the whole network's isn't) */
+	if (!A.ren) {
+		nm.className = tgt ? 'ar-ro-name ed' : 'ar-ro-name'; nm.tabIndex = tgt ? 0 : -1;
+		if (tgt) { nm.setAttribute('role', 'button'); nm.setAttribute('aria-label', 'Rename ' + r.d.name); } else { nm.removeAttribute('role'); nm.removeAttribute('aria-label'); }
+		var msg = A.renMsg && A.renMsg.id === (tgt && tgt.id) && Date.now() < A.renMsg.until ? A.renMsg : null;
+		$('arRoLink').textContent = msg ? msg.text : r.d.link; $('arRoLink').style.color = msg ? msg.tone : '';
+	}
 	$('arRoDnN').textContent = r.dnN; $('arRoDnU').textContent = r.dnU; $('arRoUpN').textContent = r.upN; $('arRoUpU').textContent = r.upU;
 	$('arRoDnW').style.width = r.all ? '100%' : r.dnW; $('arRoUpW').style.width = r.all ? '100%' : r.upW;
 	var split = function (c, p) { return r.all ? 'linear-gradient(90deg,' + c + ' ' + p + '%,' + c + '59 ' + p + '%)' : c; };
@@ -2759,6 +2806,75 @@ function renderReadout(net) {
 	$('arRoK1').textContent = r.k1; $('arRoV1').textContent = r.v1; $('arRoK2').textContent = r.k2; $('arRoV2').textContent = r.v2; $('arRoPath').textContent = r.path;
 	var nt = $('arRoNote'); nt.textContent = r.note; nt.title = r.note; nt.style.color = r.tone;
 	renderDetails(net, r);
+}
+/* ---- Renaming a device from the readout: its name turns into a text field with a check and a cross. Saving writes the
+   router's own client list, as its client editor does, so the router shows the new name too; then the page checks the
+   router took it. The icon beside the name and the line under it say what the typed name will show as. */
+function renameTarget(net) { var dv = A.sel && net && net.byId[A.sel]; return dv && dv.link && dv.mac ? dv : null; }   /* a client with its own MAC */
+function nameProblem(v) { return v.length > 32 ? 'At most 32 characters' : (/[<>\x00-\x1f\x7f]/.test(v) ? 'A name can\u2019t have < or > in it' : ''); }
+function renameStart() {
+	var dv = renameTarget(A.net), c, inp = $('arRoIn');
+	if (!dv || A.ren) return;
+	c = A.names && A.names.custom && A.names.custom[dv.mac];
+	A.ren = { id: dv.id, mac: dv.mac, kind: dv.kind, saving: false }; A.renMsg = null;
+	inp.value = c && c.name ? c.name : dv.name; inp.disabled = false;
+	$('arRoName').className = 'ar-ro-name hide'; $('arRoEd').className = 'ar-ro-ed';
+	renameHint(); inp.focus(); inp.select();
+}
+function renameHint(text, tone) {
+	var v = $('arRoIn').value.trim(), bad = nameProblem(v), k = v && !bad ? nameKind(v) : null, ln = $('arRoLink');
+	$('arRoIcon').innerHTML = iconSvg(k ? k.kind : A.ren.kind, 20, '#f0efec'); $('arReadout')._icon = '';
+	ln.style.color = tone || (bad ? BAD : '');
+	ln.textContent = text || bad || (!v ? 'Empty: the router\u2019s own name comes back' : k ? 'Shows as ' + (KIND_LABEL[k.kind] || k.kind)
+		: 'Stays ' + (KIND_LABEL[A.ren.kind] || A.ren.kind) + ' \u00b7 no kind word in it');
+}
+function renameClose(msg, tone) {   /* back to the name; a message, if any, shows under it for a few seconds */
+	var id = A.ren && A.ren.id;
+	A.ren = null;
+	$('arRoEd').className = 'ar-ro-ed hide'; $('arRoName').className = 'ar-ro-name';
+	$('arReadout')._icon = '';
+	A.renMsg = msg ? { id: id, text: msg, tone: tone || '', until: Date.now() + 5000 } : null;
+}
+function renameSave() {
+	var r = A.ren, v = $('arRoIn').value.trim(), N = A.names || {}, cur, k, raw;
+	if (!r || r.saving) return;
+	if (nameProblem(v)) { renameHint(); $('arRoIn').focus(); return; }
+	cur = N.custom && N.custom[r.mac];
+	if (v === (cur && cur.name || '') && (v || !cur)) { renameClose(); render(); $('arRoName').focus(); return; }   /* nothing changed */
+	k = v ? nameKind(v) : null;
+	/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
+	raw = renameList(N.raw, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (cur ? cur.type : 0));
+	r.saving = true; r.name = v; $('arRoIn').disabled = true;
+	renameHint('Saving\u2026');
+	var took = function () { var c = A.names && A.names.custom && A.names.custom[r.mac]; return v ? !!(c && c.name === v) : !(c && c.name); };
+	var tries = [1200, 2500, 5000, 9000], check = function () {
+		if (A.ren !== r) return;
+		getJSON('names.htm').then(function (n) { A.names = parseNames(n); A.namesAt = Date.now(); }, function () {}).then(function () {
+			if (A.ren !== r) return;
+			if (took()) { renameClose(v ? 'Saved \u00b7 in the router\u2019s client list too' : 'Name removed \u00b7 the router\u2019s own is back', '#3ddc97'); render(); $('arRoName').focus(); return; }
+			if (tries.length) { setTimeout(check, tries.shift()); return; }
+			r.saving = false; $('arRoIn').disabled = false; $('arRoIn').focus();
+			renameHint('The router didn\u2019t save it \u00b7 try again', BAD);
+		});
+	};
+	try {
+		fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+			body: pokeBody('saveNvram;start_arterianames') + '&custom_clientlist=' + encodeURIComponent(raw) })
+			.then(function () { setTimeout(check, tries.shift()); }, function () { setTimeout(check, tries.shift()); });
+	} catch (e) { setTimeout(check, tries.shift()); }
+}
+function renameWire() {
+	var nm = $('arRoName'), inp = $('arRoIn');
+	$('arRoOk').innerHTML = iconSvg('tick', 15, '#3ddc97'); $('arRoNo').innerHTML = iconSvg('cross', 15, '#e3eaec');
+	nm.addEventListener('click', function () { if (nm.classList.contains('ed')) renameStart(); });
+	nm.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && nm.classList.contains('ed')) { e.preventDefault(); renameStart(); } });
+	inp.addEventListener('input', function () { if (A.ren && !A.ren.saving) renameHint(); });
+	inp.addEventListener('keydown', function (e) {
+		if (e.key === 'Enter') { e.preventDefault(); renameSave(); }
+		else if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); renameClose(); render(); nm.focus(); }   /* not the expanded view's Escape */
+	});
+	$('arRoOk').addEventListener('click', renameSave);
+	$('arRoNo').addEventListener('click', function () { renameClose(); render(); nm.focus(); });
 }
 /* The readout's Details face (section 6): who the selected device is and how it's connected. Every value is
    set as text, never parsed as HTML: names and host names come from the network. */
@@ -2769,7 +2885,7 @@ function renderDetails(net, r) {
 	btn.className = dv && !both ? 'ar-det' + (A.det ? ' on' : '') : 'ar-det hide';
 	btn.setAttribute('aria-pressed', A.det ? 'true' : 'false');
 	if (!show) return;
-	if (!both) $('arRoLink').textContent = r.d.link + ' · ↓ ' + short(dv.st === 'ok' ? dv.dn : null) + ' ↑ ' + short(dv.st === 'ok' ? dv.up : null);
+	if (!both && !A.ren && !(A.renMsg && Date.now() < A.renMsg.until)) $('arRoLink').textContent = r.d.link + ' · ↓ ' + short(dv.st === 'ok' ? dv.dn : null) + ' ↑ ' + short(dv.st === 'ok' ? dv.up : null);
 	var cells = detailsFor(net, dv);
 	while (box.children.length < cells.length) { var c = document.createElement('div'); c.className = 'ar-stat'; c.innerHTML = '<span class="k"></span><span class="v"></span>'; box.appendChild(c); }
 	cells.forEach(function (x, i) { var c = box.children[i]; c.firstChild.textContent = x[0]; c.lastChild.textContent = x[1]; c.title = x[2] || (x[0] + ': ' + x[1]); });
@@ -2945,8 +3061,13 @@ function fit() {
    dragging with the mouse (or one finger) and scrolling with two fingers on a trackpad pan; two fingers on a touch screen
    pinch. Never past the map's edges; zooming out stops at the whole map. The page's own view never zooms. */
 function pzApply() {
+	/* The map zooms through its SVG's viewBox, so the browser draws only what's on screen, at screen resolution: scaling it
+	   as a picture (a CSS transform) asks the graphics card for one many times the screen's size, which flickers. The
+	   labels, small, take the matching transform. */
 	var z = A.pz, t = z.s > 1 ? 'translate(' + z.x.toFixed(1) + 'px,' + z.y.toFixed(1) + 'px) scale(' + z.s.toFixed(4) + ')' : '';
-	$('arMapScene').style.transform = t; $('arMapLabels').style.transform = t;
+	var svg = $('arMapScene').firstElementChild;
+	if (svg && svg.tagName.toLowerCase() === 'svg' && G.SW) svg.setAttribute('viewBox', [-z.x / z.s, -z.y / z.s, G.SW / z.s, G.SH / z.s].map(function (v) { return +v.toFixed(2); }).join(' '));
+	$('arMapLabels').style.transform = t;
 	$('arZoomFit').textContent = Math.round(z.s * 100) + '%';
 	$('arZoomOut').disabled = z.s <= 1; $('arZoomIn').disabled = z.s >= PZMAX;
 }
@@ -3078,7 +3199,7 @@ function boot() {
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
-	pzWire();
+	pzWire(); renameWire();
 	/* a name, a maker or a path cut short with "…" shows in full on hover: only the text itself (a few inline parts at most),
 	   never a container, and never the map's labels (tap one for its details) */
 	$('ar').addEventListener('mouseover', function (e) {
@@ -3127,7 +3248,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
@@ -3210,7 +3331,7 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 	<div class="ar-cards">
 		<div class="ar-card ar-readout" id="arReadout">
 			<div class="ar-ro-head"><div class="eyebrow">Live readout</div><div class="ar-ro-tools"><button type="button" class="ar-det hide" id="arRoDet" aria-pressed="false" aria-controls="arRoDetails" title="Show the device's address, maker, system and connection">Details</button><div class="ar-badge" id="arRoBadge"></div></div></div>
-			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0"><div class="ar-ro-name" id="arRoName">Whole network</div><div class="ar-ro-link" id="arRoLink"></div></div></div>
+			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0;flex:1"><div class="ar-ro-name" id="arRoName">Whole network</div><div class="ar-ro-ed hide" id="arRoEd"><input type="text" class="ar-ro-in" id="arRoIn" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Device name" aria-describedby="arRoLink"/><button type="button" id="arRoOk" aria-label="Save the name"></button><button type="button" id="arRoNo" aria-label="Keep the old name"></button></div><div class="ar-ro-link" id="arRoLink"></div></div></div>
 			<div id="arRoTraffic">
 			<div class="ar-metrics">
 				<div class="ar-metric"><div class="top"><span class="lbl">↓ Download</span><span class="num c-dn" id="arRoDnN">—</span><span class="unit" id="arRoDnU"></span></div>

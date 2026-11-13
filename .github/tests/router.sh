@@ -291,6 +291,10 @@ runi() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$in
 waitfor() { local end=$(( $(date +%s%N) / 1000000 + $1 * 1000 )); shift; until "$@"; do [ $(( $(date +%s%N) / 1000000 )) -ge $end ] && return 0; sleep 0.1; done; }
 seq_at_least() { [ "$(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null | cut -d: -f2)" -ge "$1" ] 2>/dev/null; }
 sampler_gone() { [ ! -f "$R/tmp/arteria/sampler.pid" ]; }
+# a rename on the page: it saves the router's client list, then asks for the names at once, not in 30 s
+rm -f "$W/names.htm"; runi service_event start arterianames
+grep -q 'Living room TV' "$W/names.htm" 2>/dev/null && [ ! -f "$R/tmp/arteria/sampler.pid" ] \
+	&& ok "service event arterianames: names exported at once, the sampler not started" || { bad "arterianames:"; ls "$W"; fail=1; }
 runi service_event start arteria
 waitfor 10 seq_at_least 2
 python3 - "$W/live.htm" <<'EOF' && ok "without the key: node is 'nokey', its clients aren't read" || fail=1

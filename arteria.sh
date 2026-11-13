@@ -493,6 +493,8 @@ service_event() {   # action service
 			sampler_running || (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>&1 &) ;;
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat" ;;
+		"${NAME}names")   # a device was renamed on the page (it saved the router's client list first): show it now, not in 30 s
+			tmpd; mkdir -p "$(web_dir)" && export_names ;;
 	esac
 }
 

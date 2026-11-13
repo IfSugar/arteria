@@ -235,6 +235,10 @@ async def zoom(b, port):
         a = await z()
         after = await pg.evaluate("(([x, y]) => { const r = document.getElementById('arMap').getBoundingClientRect(), z = Arteria.state.pz; return [(x - r.left - z.x) / z.s, (y - r.top - z.y) / z.s]; })", [px, py])
         check(a['s'] > 1.5 and abs(after[0] - before[0]) < 1 and abs(after[1] - before[1]) < 1, 'zoom: the mouse wheel zooms in around the pointer (%.2fx)' % a['s'])
+        # the scene zooms through its viewBox, never scaled as a picture (that asks the graphics card for a huge layer and
+        # flickers); the labels' layer carries the matching transform
+        vb = await pg.evaluate("(() => { const s = document.querySelector('#arMapScene svg'); return [getComputedStyle(document.getElementById('arMapScene')).transform, +s.getAttribute('viewBox').split(' ')[2], +s.getAttribute('width'), getComputedStyle(document.getElementById('arMapLabels')).transform]; })()")
+        check(vb[0] == 'none' and abs(vb[1] - vb[2] / a['s']) < 0.5 and vb[3] != 'none', 'zoom: the map zooms its drawing, not a picture of it')
         # a trackpad's two-finger scroll (small, fractional steps) pans; a pinch (ctrl + wheel) zooms
         await pg.evaluate("(([x, y]) => { const el = document.getElementById('arMap'); for (let i = 0; i < 6; i++) el.dispatchEvent(new WheelEvent('wheel', { deltaX: 6.5, deltaY: 4.25, clientX: x, clientY: y, bubbles: true, cancelable: true })); })", [px, py])
         b2 = await z()
@@ -272,13 +276,63 @@ async def zoom(b, port):
         srv.terminate()
 
 
+async def rename(b, port):
+    """Renaming a device from the readout: its name becomes a text field with a check and a cross; the icon beside it and the
+    line under it say what the name will show as; saving writes the router's client list (so the router shows it too), and
+    the page shows it once the router has it. The cross and Escape leave everything as it was."""
+    srv = await serve('home', port)
+    try:
+        ctx = await b.new_context(viewport={'width': 1440, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(pg)
+        mac = await pg.evaluate("(() => [...document.querySelectorAll('#arMapLabels .ar-lb')].map(l => l.getAttribute('data-id')).find(i => /^[0-9A-F]{2}:/.test(i)))()")
+        await pg.dispatch_event('#arMapLabels .ar-lb[data-id="%s"]' % mac, 'click'); await pg.wait_for_timeout(200)
+        st = lambda: pg.evaluate("(() => ({ name: document.getElementById('arRoName').textContent, ed: document.getElementById('arRoName').classList.contains('ed'), editing: !document.getElementById('arRoEd').classList.contains('hide'), btns: !document.getElementById('arRoEd').classList.contains('hide'), line: document.getElementById('arRoLink').textContent, icon: document.getElementById('arRoIcon').innerHTML }))()")
+        s0 = await st()
+        check(s0['ed'] and not s0['editing'], 'rename: a device\'s name in the readout can be clicked to rename it')
+        # the cross: nothing changes
+        await pg.click('#arRoName'); s1 = await st()
+        check(s1['editing'] and s1['btns'] and await pg.evaluate("document.getElementById('arRoIn').value") == s0['name'], 'rename: clicking the name turns it into a text field with a check and a cross')
+        row = await pg.evaluate("(() => ['arRoIn', 'arRoOk', 'arRoNo'].map(i => { const r = document.getElementById(i).getBoundingClientRect(); return [r.top, r.height, r.width]; }))()")
+        check(all(abs(r[0] - row[0][0]) < 0.5 and abs(r[1] - row[0][1]) < 0.5 for r in row) and abs(row[1][2] - row[1][1]) < 0.5, 'rename: the check and the cross sit in the field\'s row, squares exactly as tall as it (%s)' % row)
+        await pg.fill('#arRoIn', 'Lounge purifier'); s2 = await st()
+        want = await pg.evaluate("(() => { const d = document.createElement('div'); d.innerHTML = Arteria._t.iconSvg('purifier', 20, '#f0efec'); return d.innerHTML; })()")
+        check(s2['icon'] == want and 'Air purifier' in s2['line'], 'rename: while typing, the icon and the line under the name say what it will show as (%s)' % s2['line'])
+        await pg.click('#arRoNo'); s3 = await st()
+        check(not s3['editing'] and s3['name'] == s0['name'], 'rename: the cross keeps the old name')
+        # a name with < or > isn't sent
+        await pg.click('#arRoName'); await pg.fill('#arRoIn', 'Hall <lamp>'); await pg.click('#arRoOk'); await pg.wait_for_timeout(300)
+        s4 = await st()
+        saved = await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
+        check(s4['editing'] and '<' in s4['line'] and 'Hall <lamp>' not in saved, 'rename: a name with < or > is refused, nothing is sent')
+        # saving: the router's client list gets it, the page shows it, the device is drawn as what the name says
+        await pg.fill('#arRoIn', 'Lounge purifier'); await pg.keyboard.press('Enter')
+        await pg.wait_for_function("document.getElementById('arRoName').textContent === 'Lounge purifier' && document.getElementById('arRoEd').classList.contains('hide')", timeout=15000)
+        saved = await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
+        await pg.wait_for_timeout(2300)
+        kind = await pg.evaluate("Arteria.state.net.byId['%s'].kind" % mac)
+        check('<Lounge purifier>%s>0>0>>' % mac in saved and saved.count(mac) == 1 and kind == 'purifier', 'rename: Enter saves it in the router\'s client list, and the device is drawn as an air purifier (%s)' % kind)
+        # Escape while renaming in the expanded view only leaves the name
+        await pg.click('#arBig'); await pg.wait_for_timeout(300)
+        await pg.click('#arRoName'); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)
+        s5 = await st()
+        check(not s5['editing'] and await pg.evaluate('Arteria.state.big'), 'rename: Escape leaves the name, not the expanded view')
+        # no name: the router's own name and icon come back
+        await pg.click('#arRoName'); await pg.fill('#arRoIn', ''); await pg.click('#arRoOk')
+        await pg.wait_for_function("document.getElementById('arRoEd').classList.contains('hide')", timeout=15000)
+        saved = await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
+        check(mac not in saved and 'removed' in (await st())['line'], 'rename: an empty name removes the nickname')
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def main():
     if not CHROME:
         sys.exit('page-browser.py needs Chrome or Chromium (or its path as the argument)')
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793))
         await b.close()
 
 

@@ -7,7 +7,8 @@ Scenarios: home (default), nokey, offline, weak, busy, speedtest, quiet, nonode,
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
-import json, math, os, random, sys, time, re
+import json
+import urllib.parse, math, os, random, sys, time, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -180,6 +181,8 @@ def names():
         cl[NODE]['2G']['"><img src=x onerror="window.__xss=5">'] = {'ip': '192.168.50.250', 'rssi': '-40'}
     custom = ''.join('<%s>%s>0>%d>>' % (n, m, X.get(m, {}).get('ctype', 0)) for (m, n, w, b, d, u, r) in DEVICES if X.get(m, {}).get('nick', True))
     custom += ''.join('<%s>%s>0>%d>>' % (x['nickonly'], m, x.get('ctype', 0)) for m, x in X.items() if 'nickonly' in x)
+    if SAVED['custom'] is not None:   # the page renamed something: the router's client list as it saved it
+        custom = SAVED['custom']
     leases = '|'.join('%d %s 192.168.50.%d %s 01:%s' % (int(time.time()) + 79000 - i * 3000, m.lower(), 20 + i, x['host'], m.lower()) for i, (m, x) in enumerate(X.items()) if x.get('host'))
     nmp = {m: {'mac': m, 'name': x.get('host', ''), 'vendor': x.get('vendor', ''), 'vendorclass': x.get('vc', ''), 'type': x.get('ntype', 0), 'os_type': x.get('os', 0)}
            for m, x in X.items() if any(k in x for k in ('ntype', 'vendor', 'vc', 'os', 'nickonly'))}
@@ -190,6 +193,9 @@ def names():
     arp = ''.join('%s 192.168.50.%d|' % (m.lower(), 100 + i) for i, m in enumerate(macs) if not X.get(m, {}).get('host'))
     n6 = ''.join('%s 2001:db8::%x|%s fe80::%x|' % (m.lower(), 0x100 + i, m.lower(), 0x200 + i) for i, m in enumerate(macs[:6]))
     return {'custom': custom, 'leases': leases, 'nmp': nmp, 'cl': cl, 'fixed': fixed, 'arp': arp, 'n6': n6}
+
+
+SAVED = {'custom': None, 'posts': []}   # what the page saved, as the router would keep it
 
 
 class H(BaseHTTPRequestHandler):
@@ -226,7 +232,12 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get('Content-Length') or 0)
-        self.rfile.read(n)
+        form = urllib.parse.parse_qs(self.rfile.read(n).decode('utf-8'), keep_blank_values=True)
+        acts = form.get('action_script', [''])[0].split(';')
+        # the router's settings handler: a known setting posted with action_mode=apply is saved; saveNvram commits it
+        if 'custom_clientlist' in form and form.get('action_mode', [''])[0] == 'apply' and 'saveNvram' in acts:
+            SAVED['custom'] = form['custom_clientlist'][0]
+        SAVED['posts'].append(acts)
         return self.send('<html></html>')
 
 

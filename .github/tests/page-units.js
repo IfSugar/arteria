@@ -429,4 +429,19 @@ ok(ni.name === 'Vacuum' && ni.src === 'nick', 'a nickname you gave still wins', 
 A.names = AR.parseNames({ custom: '<dhcpcd-6 8 2 Linux-5 4 1>' + NM + '>0>61>>', nmp: { [NM]: { name: '', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
 ok(T.classify(NM, '', 'wifi').kind === 'vacuum', '... and the icon saved with it still counts');
 
+// ---- 14. renaming a device rewrites only its entry in the router's client list, the way the router's own editor writes it
+const RL = T.renameList, M1 = '02:CC:00:00:00:05', M2 = '02:CC:00:00:00:13', M3 = '02:CC:00:00:00:21';
+const rlbad = [];
+const eq = (got, want, what) => { if (got !== want) rlbad.push(what + ': ' + JSON.stringify(got)); };
+eq(RL('<Living room TV>' + M1 + '>0>23>><Kids>' + M2 + '>0>21>>', M1, 'Lounge TV', 23), '<Lounge TV>' + M1 + '>0>23>><Kids>' + M2 + '>0>21>>', 'rename, other entry untouched');
+eq(RL('<Kids>' + M2 + '>0>21>>', M1, 'Hall lamp', 60), '<Kids>' + M2 + '>0>21>><Hall lamp>' + M1 + '>0>60>>', 'a new entry, as the editor writes it');
+eq(RL('Kids>' + M2 + '>0>0>>>><Den>' + M3 + '>0>2>>>>', M1, 'Den plug', 70), '<Kids>' + M2 + '>0>0>>>><Den>' + M3 + '>0>2>>>><Den plug>' + M1 + '>0>70>>>>', 'newer firmware: the first entry\'s lost "<" back, the new one shaped like the others');
+eq(RL('<Old>' + M1.toLowerCase() + '>0>7>>x>y<Kids>' + M2 + '>0>21>>', M1, 'Bedroom AC', 49), '<Bedroom AC>' + M1 + '>0>49>>x>y<Kids>' + M2 + '>0>21>>', 'a lower-case MAC found; its other fields kept');
+eq(RL('<A>' + M1 + '>0>7>><B>' + M1 + '>0>9>>', M1, 'Only one', 0), '<Only one>' + M1 + '>0>0>>', 'a duplicate goes');
+eq(RL('<A>' + M1 + '>0>7>><Kids>' + M2 + '>0>21>>', M1, '', 0), '<Kids>' + M2 + '>0>21>>', 'no name: the entry goes');
+eq(RL('<A>' + M1 + '>0>7>>', M1, '', 0), '', 'the last entry removed: an empty list');
+eq(RL('', M1, 'Ünïcode lamp ✓', 60), '<Ünïcode lamp ✓>' + M1 + '>0>60>>', 'an empty list, any letters');
+Object.keys(T.ASUS_TYPE).forEach(k => { if (T.TYPE_KIND[T.ASUS_TYPE[k]] !== k) rlbad.push('icon ' + T.ASUS_TYPE[k] + ' for ' + k + ' reads back as ' + T.TYPE_KIND[T.ASUS_TYPE[k]]); });
+ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s client list, as the router writes it', rlbad.join('; '));
+
 process.exit(fails ? 1 : 0);
