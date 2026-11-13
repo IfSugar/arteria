@@ -227,7 +227,7 @@ var A = {
 	tab: 'map', mode: 'dn', unit: 'Mb', sel: null, paused: false,
 	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false,
 	prev: {}, sm: {}, bk: {}, names: null, namesAt: 0,
-	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowAt: 0,
+	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowMem: {}, flowK: {},
 	hist: [], timers: {}, mapRefs: null, flowRefs: null, big: false, narrow: false, slotBy: {}
 };
 
@@ -456,7 +456,7 @@ function parseNames(n) {
 	Object.keys(nmp).forEach(function (k) { if (nmp[k]) out.nmp[k.toUpperCase()] = nmp[k]; });
 	String(n && n.leases || '').split('|').forEach(function (l) {
 		var f = l.split(' ');
-		if (f.length >= 4 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) out.lease[f[1].toUpperCase()] = { exp: f[0], ip: f[2], host: f[3], cid: f[4] || '' };
+		if (f.length >= 4 && /^[0-9A-Fa-f:]{17}$/.test(f[1])) out.lease[f[1].toUpperCase()] = { exp: f[0], ip: f[2], host: f[3] === '*' ? '' : f[3], cid: f[4] || '' };   /* "*": no host name */
 	});
 	/* addresses the router has seen without a lease (static ones), IPv6 neighbours (globals first), reservations */
 	String(n && n.arp || '').split('|').forEach(function (e) { var f = e.split(' '); if (f.length === 2 && /^[0-9A-Fa-f:]{17}$/.test(f[0])) out.arp[f[0].toUpperCase()] = f[1]; });
@@ -526,7 +526,7 @@ var KIND_STRONG = [
 	['soundbar', /sound ?bar|sonos[ _-]?(arc|beam|ray)|playbar|playbase|av[ -]?receiver|\bavr\b|denon(?![ _-]?home)|marantz|yamaha|onkyo|home[ -]?(cinema|theat)|\bhw-[a-z]{1,2}\d{2,3}|\bpolk\b|\barcam\b/i],   /* before TV: "Vizio soundbar" */
 	['tv', /\btv\b|tv$|television|bravia|webos|tizen|\b[oq]led|hisense(?![ _-]?(ac|a\/c|air|fridge))|vizio|^(kd|xr|xbr|kdl)[-_]?\d{2}[a-z]|^(qn|un|qe|ue|gq)\d{2}[a-z]|\btcl\b(?![ _-]?(ac|a\/c|air|phone|tab))|viera|aquos|ambilight|vidaa|the[ _-]?frame|grundig|\bmetz\b|loewe/i],   /* with Sony and Samsung model numbers */
 	['display', /echo[ _-]?(show|spot|hub)|nest[ _-]?hub|google[ _-]?home[ _-]?hub|smart[ _-]?(display|clock)|\bportal\b|lenovo[ _-]?smart|(photo|picture|digital)[ _-]?frame|nixplay|aura[ _-]?frame|meural|frameo|pix-?star/i],   /* before smart speaker: an Echo Show */
-	['smartspeaker', /homepod|\becho\b|echo[ _-]?(dot|pop|studio)|alexa(?!['’]s)|google[ _-]?home|nest[ _-]?(mini|audio)/i],
+	['smartspeaker', /homepod|\becho\b|echo[ _-]?(dot|pop|studio)|alexa(?!['’]s)|google[ _-]?home|nest[ _-]?(mini|audio)|^amazon-[0-9a-f]{6,}$/i],   /* Amazon's own devices call themselves amazon-<hex>: Echos, most often */
 	['speaker', /speaker|sonos|subwoofer|\bsubw\b|\bbose\b|\bheos\b|\bjbl\b|bluesound|\bwiim\b|libratone|bang[ _-]?(&|and)?[ _-]?olufsen|\bbeo(play|sound|lab)|harman|marshall|ultimate[ _-]?ears|\bnaim\b|devialet|\bkef\b|audio[ _-]?pro|volumio|moode|squeezebox|picoreplayer|denon[ _-]?home/i],
 	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?deck|\bswitch[ _-]?(oled|lite)\b|rog[ _-]?ally|legion[ _-]?go|ayaneo|retroid|anbernic|\bwii\b|msi[ _-]?claw/i],
 	['fitness', /peloton|\btonal\b|treadmill|exercise|fitness|\browing|\brower\b|concept[ _-]?2|ergometer|hydrow|wahoo|\bkickr|\btacx|\bzwift|elliptical|spin[ _-]?bike|indoor[ _-]?(bike|cycle)|\bechelon|nordictrack|\bifit\b|technogym|bowflex|speediance/i],
@@ -606,22 +606,34 @@ var KIND_WEAK = [
 	['appliance', /electrolux|\baeg\b|bsh hausger|miele|whirlpool|bauknecht|haier|candy|beko|arcelik|liebherr|vorwerk/i],
 	['iot', /espressif|tuya|shelly|itead|texas instruments|murata|azurewave|mxchip|\budhcp/i]
 ];
+/* The kinds people carry or sit at: an icon of these saved on a home device is the router's guess (see classify) */
+var PERSONAL = { desktop: 1, mac: 1, laptop: 1, phone: 1, tablet: 1, watch: 1, console: 1 };
 /* Why a device got its kind: kept for the readout's Details and the classification report. */
 function classify(mac, name, link, al) {
 	var N = A.names, c = al ? { name: al.name, type: al.type || 0 } : N && N.custom[mac], m = N && N.nmp[mac], l = N && N.lease[mac];
 	var ct = (c && c.type) || 0, nt = (m && +m.type) || 0, os = (m && +m.os_type) || 0;
 	var res = function (kind, rule, tok) { return { kind: kind, rule: rule, tok: tok || '', ct: ct, nt: nt, os: os }; };
-	/* 1. the icon you picked in the router's client list. Saving a nickname also saves the icon the editor showed: when that is
-	   just the router's own guess (the same icon it detects), or a loose one (any computer, any phone), the name comes first. */
-	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt)) return res(TYPE_KIND[ct], 'your icon');
-	/* 2. a name that says what it is: your nickname, then the names the device gave. Each as written first, then with
-	   words run together split apart (only when nothing matched as written, so "Somfy TaHoma" stays a hub) */
-	var names = [al ? c.name : nickOf(c, m), name, l && l.host, m && m.name], i, j, w;
-	for (j = 0; j < names.length; j++) {
-		if (!names[j]) continue;
-		for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(names[j])) return res(KIND_STRONG[i][0], 'name', ['nickname', 'label', 'hostname', 'router name'][j] + ' #' + i);
-		if ((w = nameWords(names[j])) !== names[j]) for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(w)) return res(KIND_STRONG[i][0], 'name', ['nickname', 'label', 'hostname', 'router name'][j] + ' #' + i + ' split');
-	}
+	var KEYS = ['nickname', 'label', 'hostname', 'router name'], names = [al ? c.name : nickOf(c, m), name, l && l.host, m && m.name], i, j, r;
+	/* What a name says: as written first, then with words run together split apart (only when nothing matched as written,
+	   so "Somfy TaHoma" stays a hub) */
+	var byName = function (s, j) {
+		var w, i;
+		if (!s) return null;
+		for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(s)) return res(KIND_STRONG[i][0], 'name', KEYS[j] + ' #' + i);
+		if ((w = nameWords(s)) !== s) for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(w)) return res(KIND_STRONG[i][0], 'name', KEYS[j] + ' #' + i + ' split');
+		return null;
+	};
+	/* 1. the icon you picked in the router's client list. Saving a nickname there also saves whatever icon the editor showed,
+	   often only the router's guess at the time, so the name comes first when the saved icon is:
+	   - the router's own guess (the same icon it detects), or a loose one (any computer, any phone);
+	   - a computer, phone, tablet, watch or console icon on a device you named after a home device ("Daikin AC"): nobody
+	     picks a game console for their air conditioner. A nickname the editor filled in with the device's own name
+	     (DESKTOP-…) isn't one you typed. Other icons you picked win over the name: a plug named for its lamp stays a plug. */
+	var key = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+	var typed = names[0] && [l && l.host, m && m.name].every(function (h) { return !h || key(h) !== key(names[0]); }), mine = typed ? byName(names[0], 0) : null;
+	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt) && !(mine && PERSONAL[TYPE_KIND[ct]] && !PERSONAL[mine.kind])) return res(TYPE_KIND[ct], 'your icon');
+	/* 2. a name that says what it is: your nickname, then the names the device gave */
+	for (j = 0; j < names.length; j++) if ((r = byName(names[j], j))) return r;
 	/* a Wi-Fi module's maker with the name its firmware gives, when the pair says what the device is */
 	var mk = [m && m.vendor, m && m.vendorclass].join(' ');
 	for (i = 0; i < MODULE_KIND.length; i++) if (MODULE_KIND[i][1].test(mk) && [l && l.host, m && m.name].some(function (h) { return h && MODULE_KIND[i][2].test(h); })) return res(MODULE_KIND[i][0], 'module', '#' + i);
@@ -2363,16 +2375,15 @@ function flowGroups(net) {
 	var shown = {}, budget = G.flow.rows;
 	gs.forEach(function (g) { g.devs.sort(function (a, b) { return busy(b) - busy(a) || byName(a, b); }); shown[g.id] = []; });
 	var rows = function () { return gs.reduce(function (a, g) { var n = shown[g.id].length; return a + Math.max(1, n + (n < g.devs.length ? 1 : 0)); }, 0); };
-	var prev = A.flowPick || {};
-	var hold = Date.now() - A.flowAt < 10000;
-	var cands = [];
-	gs.forEach(function (g) { g.devs.forEach(function (dv) { cands.push({ g: g, dv: dv, keep: hold && prev[dv.id] }); }); });
-	cands.sort(function (a, b) { return (b.keep ? 1 : 0) - (a.keep ? 1 : 0) || busy(b.dv) - busy(a.dv); });
+	/* a device with a row keeps it unless a hidden one is three times busier, so rows don't come and go with every sample */
+	var prev = A.flowPick || {}, cands = [], pull = function (c) { return flowHeld('pick|' + c.dv.id, busy(c.dv)) * (prev[c.dv.id] ? 3 : 1); };   /* by recent peaks: a moment's dip doesn't cost a row */
+	gs.forEach(function (g) { g.devs.forEach(function (dv) { cands.push({ g: g, dv: dv }); }); });
+	cands.sort(function (a, b) { return pull(b) - pull(a) || byName(a.dv, b.dv); });
 	cands.forEach(function (c) {
 		shown[c.g.id].push(c.dv);
 		if (rows() > budget) shown[c.g.id].pop();
 	});
-	if (!hold) { A.flowAt = Date.now(); A.flowPick = {}; gs.forEach(function (g) { shown[g.id].forEach(function (dv) { A.flowPick[dv.id] = 1; }); }); }
+	A.flowPick = {}; gs.forEach(function (g) { shown[g.id].forEach(function (dv) { A.flowPick[dv.id] = 1; }); });
 	gs.forEach(function (g) {
 		var sh = shown[g.id].slice().sort(byName), hidden = g.devs.filter(function (dv) { return sh.indexOf(dv) < 0; });
 		g.rows = sh.map(function (dv) { return { id: dv.id, dev: dv }; });
@@ -2447,18 +2458,28 @@ function flowAgg(g) { return !!(g.node && g.node.state !== 'ok'); }
 /* Where everything goes in the Flow view, from the numbers alone (no DOM): the scale k (px per Mb/s),
    each row's slot, each group's band, the router block and the two sources. The scale is chosen on the
    smoothed rates so it doesn't jump; the ribbons use the shown ones. */
+/* The most a row (or a group) needed lately, in steps that double (1, 2, 4…), so rows don't move with every sample:
+   reaching a higher step counts at once; a row only shrinks back after half a minute of using well under its step. */
+function flowHeld(id, v) {
+	var M = A.flowMem || (A.flowMem = {}), m = M[id], now = Date.now(), q = v > 0 ? Math.pow(2, Math.ceil(Math.log(v) / Math.LN2 - 1e-9)) : 0;
+	if (!m || q > m.v) M[id] = m = { v: q, t: now };
+	else if (v >= m.v * 0.4) m.t = now;
+	else if (now - m.t > 30000) M[id] = m = { v: q, t: now };
+	return m.v;
+}
 function flowLayout(gs, net, mode) {
 	var f = mode === 'up' ? 'up' : 'dn', bf = mode === 'up' ? 'sup' : 'sdn';
 	var lay = function (k, key) {
 		var y = G.flow.top, slot = {}, grp = {};
 		gs.forEach(function (g, gi) {
 			if (gi) y += FGGAP;
-			var y0 = y, Hh = 0, n = g.rows.length, gv = flowGroupVal(g, key);
-			var aggH = flowAgg(g) && gv > 0 ? Math.max(gv * k, 1.5) : 0;
+			var y0 = y, Hh = 0, n = g.rows.length, gv = flowGroupVal(g, key), gm = flowHeld(key + '|g:' + g.id, gv);
+			var aggH = flowAgg(g) && gv > 0 ? Math.max(gv * k, 1.5) : 0, aggM = flowAgg(g) && gm > 0 ? Math.max(gm * k, 1.5) : 0;
 			g.rows.forEach(function (r, ri) {
 				if (ri) y += FGAP;
 				var v = flowAgg(g) ? 0 : flowRowVal(r, key), h = v > 0 ? Math.max(v * k, 1.5) : 0;
-				var sl = Math.max(h, G.flow.rowMin, aggH ? (aggH - FGAP * (n - 1)) / n : 0);
+				var vm = flowAgg(g) ? 0 : flowHeld(key + '|' + r.id, v), hm = vm > 0 ? Math.max(vm * k, 1.5) : 0;   /* room for its recent peak */
+				var sl = Math.max(hm, G.flow.rowMin, aggM ? (aggM - FGAP * (n - 1)) / n : 0);
 				slot[r.id] = { top: y, s: sl, h: h, bar: y + (sl - h) / 2 };
 				y += sl; Hh += h;
 			});
@@ -2469,11 +2490,15 @@ function flowLayout(gs, net, mode) {
 		});
 		return { slot: slot, grp: grp, bottom: y };
 	};
-	var total = gs.reduce(function (a, g) { return a + flowGroupVal(g, bf); }, 0);
-	var k = Math.min(FKCAP, G.flow.target / Math.max(total, 1e-6)), LIM = G.flow.limit;
+	var total = gs.reduce(function (a, g) { return a + flowGroupVal(g, bf); }, 0), LIM = G.flow.limit, KK = G.key + f;
+	/* the scale the traffic asks for, made smaller as far as needed to fit; the last scale is kept while it still fits and
+	   isn't far below that, so ribbons don't all resize at every sample */
+	var k = Math.min(FKCAP, G.flow.target / Math.max(total, 1e-6)), k0 = A.flowK && A.flowK[KK], kT = k;
 	for (var i = 0; LIM && i < 120 && lay(k, bf).bottom > LIM - 6; i++) k *= 0.97;
+	if (k0 && k0 <= kT * 1.6 && k0 >= k * 0.6 && (!LIM || lay(k0, bf).bottom <= LIM - 6)) k = k0;
 	var Lf = lay(k, f);
 	for (var j = 0; LIM && j < 80 && Lf.bottom > LIM; j++) { k *= 0.97; Lf = lay(k, f); }
+	(A.flowK || (A.flowK = {}))[KK] = k;
 	var grp = Lf.grp, first = grp[gs[0].id], last = grp[gs[gs.length - 1].id];
 	var Hr = gs.reduce(function (a, g) { return a + grp[g.id].H; }, 0);
 	var rc = (first.top + last.top + last.H) / 2;

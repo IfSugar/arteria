@@ -93,6 +93,13 @@ const CASES = [
 	['RT-AC1200', 0, 0, 0, 'wifi', '', '', 'generic'],
 	// a saved icon that is just the router's own guess (the client editor saves it with a nickname): the name comes first
 	['Lounge Daikin AC', 7, 7, 0, 'wifi', 'Murata Manufacturing Co., Ltd.', '', 'air'],
+	// ... or a computer, phone, tablet, watch or console icon on a device named after a home device: nobody picks a console
+	// for an air conditioner. Other icons still win over the name: a plug named for its lamp stays a plug (Hall lamp, above).
+	['Lounge Daikin AC', 7, 0, 0, 'wifi', 'Murata Manufacturing Co., Ltd.', '', 'air'],
+	['Kitchen fridge', 25, 0, 0, 'wifi', '', '', 'appliance'],
+	['Kids PS5', 7, 0, 0, 'wifi', '', '', 'console'],
+	['Living room', 7, 0, 0, 'wifi', '', '', 'console'],
+	['TV speaker', 47, 0, 0, 'wifi', '', '', 'soundbar'],
 	['Living room', 7, 7, 0, 'wifi', '', '', 'console'],
 	['Kids room', 23, 7, 0, 'wifi', '', '', 'tv'],
 	// the newer kinds
@@ -359,7 +366,7 @@ const flbad = [];
 	const keepG = T.G(); T.useGeom(g);
 	try {
 		['dn', 'up'].forEach(mode => {
-			A.flowAt = 0;
+			A.flowPick = null; A.flowMem = {}; A.flowK = {};
 			const gs = T.flowGroups(fnet), L = T.flowLayout(gs, fnet, mode), tag = (g.big ? 'big ' : 'small ') + mode + ': ';
 			let prev = -1, rows = 0;
 			gs.forEach(gr => gr.rows.forEach(r => {
@@ -380,6 +387,35 @@ const flbad = [];
 	T.useGeom(keepG);
 });
 ok(!flbad.length, 'Flow layout: rows apart and tap-sized, ribbons in their rows, internet + local = router, fits or scrolls', flbad.slice(0, 5).join('; '));
+
+// ---- 12b. Flow rows stay put while traffic wobbles: once the first few samples have sized the rows, sample after sample
+// (each device +-40%, the total too) rows hardly move (only when a row reaches a new high step) and devices don't swap in
+// or out of "+N more"; a device whose traffic jumps
+// fivefold moves the rows below it a few times while its new level shows, then they settle again
+const fstill = [];
+[T.geomSmall(), T.geomBig(1184, 790, 0)].forEach(g => {
+	const keepG = T.G(); T.useGeom(g);
+	try {
+		A.flowPick = null; A.flowMem = {}; A.flowK = {};
+		let rnd = 7; const r = () => (rnd = (rnd * 16807) % 2147483647) / 2147483647;
+		const base = fdevs.map(d => d.dn), tops = [], moves = [];
+		for (let sIdx = 0; sIdx < 40; sIdx++) {
+			fdevs.forEach((d, i) => { const surge = sIdx >= 20 && i === 4 ? 5 : 1; d.dn = d.sdn = base[i] * surge * (0.6 + 0.8 * r()); });
+			fnet.wan.dn = fnet.wan.sdn = 30 * (0.6 + 0.8 * r());
+			const gs = T.flowGroups(fnet), L = T.flowLayout(gs, fnet, 'dn'), at = {};
+			gs.forEach(gr => gr.rows.forEach(rw => { at[rw.id] = Math.round(L.slot[rw.id].top * 10) / 10; }));
+			tops.push(at);
+			if (sIdx) moves.push(Object.keys(at).some(id => at[id] !== tops[sIdx - 1][id]) || Object.keys(tops[sIdx - 1]).length !== Object.keys(at).length);
+		}
+		// moves[i] compares sample i+1 with sample i: 0-2 size the rows, 3-18 wobble, 19 is the jump, 19-28 its new level shows, 29-38 settled
+		const quiet = moves.slice(3, 19).filter(Boolean).length, after = moves.slice(19, 29).filter(Boolean).length, settled = moves.slice(29).filter(Boolean).length;
+		if (quiet > 2) fstill.push((g.big ? 'big' : 'small') + ': rows moved ' + quiet + ' times in 16 samples while traffic only wobbled');   /* the old layout: 15 */
+		if (after > 4 || settled) fstill.push((g.big ? 'big' : 'small') + ': after one device\'s traffic jumped, rows moved ' + after + ' times, then ' + settled + ' more');
+	} catch (e) { fstill.push('ERROR ' + e.message); }
+	fdevs.forEach((d, i) => { d.dn = d.sdn = (i % 5) * 3.1; });
+	T.useGeom(keepG);
+});
+ok(!fstill.length, 'Flow rows stay put while traffic wobbles, and settle again when a device gets much busier', fstill.join('; '));
 
 // ---- 13. a nickname the router's client editor saved by itself (its DHCP software, the maker) isn't a name
 const NM = '00:00:5E:00:53:F2', nk = (nick, host, vendor) => { A.names = AR.parseNames({ custom: '<' + nick + '>' + NM + '>0>0>>', leases: '1999999999 ' + NM.toLowerCase() + ' 192.168.50.88 ' + host + ' *',

@@ -53,7 +53,7 @@ Arteria draws each device as one of these kinds, with a drawing on the map and a
 
 **How a kind is chosen**, first match wins:
 
-1. **The icon you chose** for the device in the router's client list (*Network Map → Clients*), when it's a specific one. Saving a nickname there also saves the icon the router was showing; when that is just the router's own guess, the name comes first.
+1. **The icon you chose** for the device in the router's client list (*Network Map → Clients*), when it's a specific one. Saving a nickname there also saves the icon the router was showing, so the name comes first when that icon is just the router's own guess, or when it's a computer, phone, tablet, watch or console icon on a device you named after a home device (*Daikin AC*, *Kitchen fridge*). Other icons you chose win over the name: a smart plug named *Hall lamp* stays a plug.
 2. **Its name**: the nickname you gave it, or its own host name (`DESKTOP-…` is a Windows PC, `Mac-Studio` a Mac desktop, `wiz_…` a bulb, `LGwebOSTV` a TV...). The rules look for words, not your device names, and words run together count too: *JohnsNas*, *KidsTV*, *nas01* and *office_printer* are found like *John's NAS*. Some devices are known by the name their Wi-Fi module gives together with its maker (Daikin's Wi-Fi adapters call themselves `Client` on a Murata chip).
 3. **What the router detected**, and whether a Windows device is wired (a desktop) or on Wi-Fi (a laptop).
 4. **Its maker** (from the MAC address) and the DHCP vendor class it sent.
