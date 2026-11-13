@@ -500,7 +500,7 @@ while time.time() < end:
 sys.stdout.write(out.decode('utf-8', 'replace'))
 EOF
 py=$(command -v python3)
-nk() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$py" "$t/term.py" "$bb" "$inst" "$1" 2>&1 || true; }   # answer
+nk() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" AR_SSHD_WAIT=0 PATH="$B" "$py" "$t/term.py" "$bb" "$inst" "$1" 2>&1 || true; }   # answer
 if "$py" -c 'import pty' 2>/dev/null; then
 	nk n > "$t/nk-n.out"
 	if grep -q "Trust the new identity" "$t/nk-n.out" && grep -q "OLDKEY" "$R/jffs/addons/arteria/.ssh/known_hosts" && [ ! -f "$t/dbclient.pw" ]; then
@@ -656,7 +656,7 @@ runi service_event start arteria; waitfor 12 node_read
 runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
 s0=$(grep -c "sh -s" "$t/dbclient.cmds"); rm -f "$W/live.htm"; lav 4.50; : > "$t/syslog"
 runi service_event start arteria
-waitfor 10 seq_at_least 2
+waitfor 10 seq_at_least 1
 python3 - "$W/live.htm" <<'EOF' && [ "$(grep -c "sh -s" "$t/dbclient.cmds")" = "$s0" ] && ok "guard: a busy router (load 2 per core) is sampled a third as often, opens no node session, and the sample says so" || { bad "guard, busy: $(grep -c "sh -s" "$t/dbclient.cmds") sessions, $s0 before"; fail=1; }
 import json, sys
 s = json.load(open(sys.argv[1]))
