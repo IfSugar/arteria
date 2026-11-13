@@ -593,7 +593,7 @@ sampler() {
 		sleep "$EFF"
 	done
 	node_stop_all
-	rm -f "$TMPD/sampler.pid"
+	rm -f "$TMPD/sampler.pid" "$WD/clist.htm"   # the copy of the client list a rename read: needed only while the page is open
 	[ $paused = 1 ] || log "sampling stopped (page closed)"
 }
 
@@ -863,17 +863,29 @@ node_probe() {   # ip -> PROBE_MSG; 0 if a round came back
 		e=$(grep -v -e '^#B' -e '^S ' -e '^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
 		PROBE_MSG="reading its devices failed${e:+: $e}"; rc=1
 	fi
-	# Something on the node crashed (its firmware's awk or shell, say): the same round again, traced, into a file for a
-	# bug report, without addresses or user names. (A crash in a command whose errors go to /dev/null leaves no message.)
-	if grep -q 'Segmentation fault' "$o" 2>/dev/null; then
-		(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" 'sh -x -s') < "$s" > "$o" 2>&1 &
-		p=$!; i=0
-		while kill -0 "$p" 2>/dev/null; do [ $i -ge 30 ] && { kill "$p" 2>/dev/null; break; }; sleep 1; i=$((i + 1)); done
-		tr -cd '\012\040-\176' < "$o" | scrub | cut -c1-200 | head -n 400 > "$TMPD/node-trace.txt"
-		PROBE_MSG="$PROBE_MSG; something on the node crashed (Segmentation fault): what it ran is in $TMPD/node-trace.txt, without addresses"
-	fi
+	crashed=0; grep -Eq "$CRASH_RE" "$o" 2>/dev/null && crashed=1
 	rm -f "$s" "$o"
+	# Something on the node crashed (its firmware's awk or wl, say): the same round again, traced, says what
+	if [ $crashed = 1 ]; then
+		node_trace "$1" "$TMPD/node-trace.txt"
+		PROBE_MSG="$PROBE_MSG; something on the node crashed${TRACE_AT:+ running: $TRACE_AT} (what it ran is in $TMPD/node-trace.txt, without addresses)"
+	fi
 	return $rc
+}
+# One round of the node's script, traced (sh -x), with every command's errors shown (the page's own run hides wl's): a
+# command that crashes on the node is named. The trace goes to a file for a bug report, without addresses or user names.
+CRASH_RE='Segmentation fault|Illegal instruction|Bus error'
+node_trace() {   # ip file -> 0 if something crashed on the node; TRACE_AT: the command it was running
+	tmpd; s="$TMPD/trace.$$.sh"; o="$TMPD/trace.$$"; TRACE_AT=""
+	write_node_script 1 | sed 's| 2>/dev/null||g' > "$s"
+	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" 'sh -x -s') < "$s" > "$o" 2>&1 &
+	p=$!; i=0
+	while kill -0 "$p" 2>/dev/null; do [ $i -ge 30 ] && { kill "$p" 2>/dev/null; break; }; sleep 1; i=$((i + 1)); done
+	tr -cd '\012\040-\176' < "$o" | scrub | cut -c1-200 | head -n 400 > "$2"
+	rm -f "$s" "$o"
+	grep -Eq "$CRASH_RE" "$2" || return 1
+	TRACE_AT=$(awk -v re="$CRASH_RE" '$0 ~ re { print c; exit } /^\+ / { c = substr($0, 3, 80) }' "$2")
+	return 0
 }
 
 nodes_cmd() {   # [test]
@@ -1387,6 +1399,103 @@ status() {
 	say "amtm updates: $AMTM_UPDATE"
 }
 
+# ---- doctor: Arteria's known problems on this router, and what fixes each -----------------------------------------
+# It only looks, unless asked to fix: 'doctor fix' repairs what's safe to repair here (the hook lines, file permissions,
+# files and node sessions left over) and leaves the rest to you or a bug report. No device names, MACs or IPs in it.
+dr_ok()   { say "  [ OK ] $*"; }
+dr_info() { say "  [INFO] $*"; }
+dr_warn() { say "  [WARN] $*"; DR_W=$((DR_W + 1)); }
+dr_fix()  { if [ "$DR_FX" = 1 ]; then say "  [DONE] $*: fixed"; DR_D=$((DR_D + 1)); else say "  [FIX ] $*"; DR_F=$((DR_F + 1)); fi; }
+dr_hook() {   # file line what
+	f="$SCRIPTS_DIR/$1"
+	cur=$(grep -cxF "$2 # $NAME" "$f" 2>/dev/null); cur=${cur:-0}
+	all=$(grep -c "# $NAME\$" "$f" 2>/dev/null); all=${all:-0}
+	if [ "$cur" = 1 ] && [ "$all" = 1 ] && [ -x "$f" ]; then dr_ok "$1: Arteria's line, once ($3)"
+	else
+		if [ "$all" = 0 ]; then w="$1 has no line of Arteria's, so $3 doesn't happen"
+		elif [ "$cur" = 0 ]; then w="$1 has an older line of Arteria's (an older version's, or one left by going back to 1.0.0)"
+		elif [ ! -x "$f" ]; then w="$1 isn't executable, so the router doesn't run it"
+		else w="$1 has $all lines of Arteria's: an older one too (going back to 1.0.0 leaves today's line next to its own)"
+		fi
+		[ "$DR_FX" = 1 ] && hook_add "$1" "$2"
+		dr_fix "$w"
+	fi
+	o=$(grep -v "# $NAME\$" "$f" 2>/dev/null | grep -c "$NAME"); o=${o:-0}
+	[ "$o" -gt 0 ] && dr_info "$1: $o more line(s) mention $NAME but aren't Arteria's own (yours?), left alone"
+	return 0
+}
+doctor() {   # [fix]
+	tmpd; DR_FX=0; [ "$1" = fix ] && DR_FX=1; DR_F=0; DR_W=0; DR_D=0
+	say "$TITLE $VERSION: looking for known problems$( [ "$DR_FX" = 1 ] && printf ', and fixing what can be fixed here')"
+	say ""
+	say "Installation"
+	if [ -f "$SCRIPT" ]; then
+		dr_hook service-event "case \"\$2\" in $NAME*) $SCRIPT service_event \"\$@\" & ;; esac" "the page can start sampling"
+		dr_hook services-start "$SCRIPT startup &" "the page is mounted again after a reboot"
+	else dr_warn "Arteria isn't installed in $ADDON_DIR: run the installer"; fi
+	n=0; for f in "$KEY.new.pub" "$ADDON_DIR/discovered" "$ADDON_DIR/fingerbank" "$ADDON_DIR/fingerbank_key"; do [ -e "$f" ] && n=$((n + 1)); done
+	if [ $n -gt 0 ]; then
+		[ "$DR_FX" = 1 ] && rm -f "$KEY.new.pub" "$ADDON_DIR/discovered" "$ADDON_DIR/fingerbank" "$ADDON_DIR/fingerbank_key"
+		dr_fix "$n file(s) an older or development version left in $ADDON_DIR"
+	else dr_ok "no files left by older versions"; fi
+	say ""
+	say "The page's files"
+	d=$(web_dir)
+	if [ -d "$d" ]; then
+		ww=$( { ls -ld "$d"; ls -l "$d" | grep -v '^total'; } | cut -c9 | grep -c w)
+		if [ "$ww" -gt 0 ]; then
+			[ "$DR_FX" = 1 ] && { chmod 755 "$d"; chmod 644 "$d"/* 2>/dev/null; }
+			dr_fix "$ww of them (or their folder) can be changed by any program on the router, not only root"
+		else dr_ok "only root can change them"; fi
+		if [ -f "$d/clist.htm" ] && ! sampler_running; then
+			[ "$DR_FX" = 1 ] && rm -f "$d/clist.htm"
+			dr_fix "a copy of the router's client list from a rename is still there (it's only needed while the page is open)"
+		fi
+	else dr_info "none yet: they appear when the page is opened"; fi
+	say ""
+	say "Sampling"
+	if sampler_running; then dr_info "running (a page is open)"
+	else
+		n=0; ps=""
+		for q in /proc/[0-9]*; do   # a page's node session (its own -K 10 -I 30 ... sh -s) with no page open
+			c=$(tr '\000' ' ' < "$q/cmdline" 2>/dev/null)
+			case "$c" in *dbclient*" -K 10 -I 30 "*" sh -s ") n=$((n + 1)); ps="$ps ${q#/proc/}" ;; esac
+		done
+		if [ $n -gt 0 ]; then [ "$DR_FX" = 1 ] && kill $ps 2>/dev/null; dr_fix "$n node session(s) still running with no page open"
+		else dr_ok "not running, nothing left running (it runs only while the page is open)"; fi
+	fi
+	paused_recently && dr_info "paused in the last 2 minutes: the router was busy ('$SCRIPT status' says why)"
+	say ""
+	say "AiMesh nodes"
+	list=$(node_list)
+	if [ "$NODES" != on ]; then dr_info "reading nodes is off (NODES=off)"
+	elif [ -z "$list" ]; then dr_info "none found"
+	elif [ -z "$(node_keys)" ]; then dr_warn "no key to read them with: run '$SCRIPT nodekey'"
+	else
+		i=0; : > "$TMPD/node-trace.txt"
+		printf '%s\n' "$list" > "$TMPD/doctor.nodes"
+		while read -r mac ip model; do
+			i=$((i + 1)); nm="node $i ($model)"
+			import_pin "$ip"; node_try "$ip"; rc=$?
+			if [ $rc -eq 2 ]; then dr_info "$nm: can't be tested from here ($TRY_ERR)"; continue; fi
+			if [ $rc -ne 0 ]; then dr_warn "$nm: key login doesn't work${TRY_ERR:+ ($(printf '%s' "$TRY_ERR" | scrub))}: run '$SCRIPT nodes test'"; continue; fi
+			if node_trace "$ip" "$TMPD/trace.n"; then
+				dr_warn "$nm: something crashed on the node running Arteria's script${TRACE_AT:+, at: $TRACE_AT}"
+				{ echo "== $nm"; cat "$TMPD/trace.n"; } >> "$TMPD/node-trace.txt"
+			else dr_ok "$nm: key login works, and Arteria's script runs there without crashing"; fi
+			rm -f "$TMPD/trace.n"
+		done < "$TMPD/doctor.nodes"
+		rm -f "$TMPD/doctor.nodes"
+		[ -s "$TMPD/node-trace.txt" ] && dr_info "what crashed and what ran before it: $TMPD/node-trace.txt (no addresses), for a bug report" || rm -f "$TMPD/node-trace.txt"
+	fi
+	say ""
+	if [ $DR_D -gt 0 ]; then say "Fixed $DR_D problem(s)."; fi
+	if [ $DR_F -gt 0 ]; then say "Run '$SCRIPT doctor fix' to fix the [FIX] lines."; fi
+	if [ $DR_W -gt 0 ]; then say "The [WARN] lines need you, or a bug report: post them, with '$SCRIPT debug', in the forum thread."; fi
+	[ $DR_F -eq 0 ] && [ $DR_W -eq 0 ] && [ $DR_D -eq 0 ] && say "Nothing wrong found."
+	[ $DR_F -eq 0 ]   # 1: something 'doctor fix' would fix
+}
+
 # Everything a bug report needs, and nothing personal: no device names, no MAC or IP addresses.
 debug() {
 	say "$(ver_line)"
@@ -1469,7 +1578,7 @@ amtm_update() {   # [check]
 
 usage() {
 	say "Usage: $0 [menu] | install | check | update [force | dev [branch]] | uninstall | status |"
-	say "       nodes [test] | nodekey [node-ip | print] | debug | sample | amtmupdate [check] | startup | version"
+	say "       nodes [test] | nodekey [node-ip | print] | doctor [fix] | debug | sample | amtmupdate [check] | startup | version"
 }
 menu_pause() { printf '\n Press Enter to go back to the menu '; read -r dummy || exit 0; }
 menu_uninstall() {   # true once removed
@@ -1498,6 +1607,7 @@ menu() {
 		say "  4  Update to the latest release"
 		say "  5  Reinstall the latest release"
 		say "  6  Debug report, for bug reports (no names or addresses)"
+		say "  d  Doctor: look for known problems, and fix them"
 		say "  7  Turn amtm updates $( [ "$AMTM_UPDATE" = on ] && printf off || printf on)"
 		say "  8  Development version from GitHub, for testing unreleased changes"
 		say "  9  Uninstall"
@@ -1521,6 +1631,12 @@ menu() {
 				# the update replaced this script: carry on in the new one
 				[ -f "$SCRIPT" ] && [ "$(md5sum < "$SCRIPT" 2>/dev/null)" != "$before" ] && exec sh "$SCRIPT" menu ;;
 			6) ( debug ); menu_pause ;;
+			d|D)
+				if ! ( doctor ); then
+					printf '\n Fix the [FIX] lines now? (y/n) '; read -r a || a=n
+					case "$a" in [yY]*) say ""; ( doctor fix ) ;; esac
+				fi
+				menu_pause ;;
 			7)
 				if [ "$AMTM_UPDATE" = on ]; then AMTM_UPDATE=off; else AMTM_UPDATE=on; fi
 				write_conf; log "amtm updates turned $AMTM_UPDATE" ;;
@@ -1548,6 +1664,7 @@ case "$1" in
 	nodekey)       nodekey "$2"; exit $? ;;
 	status)        status ;;
 	debug)         debug ;;
+	doctor)        doctor "$2"; exit $? ;;
 	version)       say "$VERSION" ;;
 	amtmupdate)    amtm_update "$2"; exit $? ;;
 	*)             usage ;;

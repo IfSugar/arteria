@@ -445,7 +445,7 @@ grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Con
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
 touch "$t/node-cut-crash"; rm -f "$R/tmp/arteria/node-trace.txt"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-cut-crash"
 tr="$R/tmp/arteria/node-trace.txt"
-grep -q "something on the node crashed (Segmentation fault): what it ran is in .*/node-trace.txt, without addresses$" "$t/nt.out" \
+grep -q "something on the node crashed running: cut .* (what it ran is in .*/node-trace.txt, without addresses)$" "$t/nt.out" \
 	&& grep -q '^+ cut ' "$tr" && grep -q 'Segmentation fault' "$tr" && ! grep -qi '02:CC\|192\.168' "$tr" \
 	&& ok "nodes test: when something crashes on the node, what it ran is saved, without addresses" || { bad "nodes test, a crash on the node:"; cat "$t/nt.out"; head -n 20 "$tr" 2>/dev/null; }
 printf 'echo "#B 1"\necho "Segmentation fault" >&2\nexit 139\n' > "$t/node-hostile"
@@ -792,6 +792,37 @@ upd update || true
 if grep -q "Updating" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
 	ok "update: from a development version back to the release, the mark is gone"
 else bad "update after update dev:"; cat "$t/upd.out"; fi
+# doctor: the known problems, found, then fixed. What going back to 1.0.0 leaves (its own hook line next to today's), a
+# file an old version left, page files anyone could change, a client list copy left after the page closed, a node
+# session left running; then a command that crashes on the node. Never a name, MAC or IP in what it says.
+doc() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" doctor "$@" > "$t/doc.out" 2>&1; }
+printf '%s/jffs/addons/arteria/arteria.sh service_event "$@" & # arteria\n' "$R" >> "$R/jffs/scripts/service-event"
+echo pub > "$R/jffs/addons/arteria/node_key.new.pub"
+mkdir -p "$W"; echo '{}' > "$W/clist.htm"; chmod 777 "$W"; chmod 666 "$W/clist.htm"
+printf 'while :; do sleep 1; done\n' > "$t/loop.sh"
+(env PATH="$B" HOME="$R/jffs/addons/arteria" "$B/dbclient" -o BatchMode=yes -K 10 -I 30 -p 2222 -i "$R/jffs/addons/arteria/node_key" admin@192.168.50.10 'sh -s' < "$t/loop.sh" > /dev/null 2>&1 &)
+left_session() { pgrep -f "$B/dbclient .* -K 10 -I 30 .*sh -s" > /dev/null 2>&1; }
+waitfor 3 left_session
+doc && rc=0 || rc=1
+if [ $rc = 1 ] && grep -q '^  \[FIX \] service-event has 2 lines of Arteria' "$t/doc.out" && grep -q '^  \[ OK \] services-start: ' "$t/doc.out" \
+	&& grep -q '^  \[FIX \] 1 file(s) an older' "$t/doc.out" && grep -q '^  \[FIX \] .* can be changed by any program' "$t/doc.out" \
+	&& grep -q '^  \[FIX \] a copy of the router' "$t/doc.out" && grep -q '^  \[FIX \] 1 node session(s) still running' "$t/doc.out" \
+	&& grep -q '^  \[ OK \] node 1 (RP-AX56): key login works' "$t/doc.out" && ! grep -q '192\.168\|02:CC\|Hall' "$t/doc.out"; then
+	ok "doctor: finds what going back to 1.0.0 leaves, old files, open permissions, a leftover client list and node session"
+else bad "doctor:"; cat "$t/doc.out"; fi
+doc fix || true; grep -q '^Fixed 5 problem(s)\.$' "$t/doc.out" && fixed=1 || { fixed=0; cat "$t/doc.out"; }
+doc && rc=0 || rc=1
+if [ $rc = 0 ] && [ $fixed = 1 ] && grep -q 'Nothing wrong found' "$t/doc.out" && [ "$(grep -c '# arteria$' "$R/jffs/scripts/service-event")" = 1 ] \
+	&& grep -qxF "case \"\$2\" in arteria*) $R/jffs/addons/arteria/arteria.sh service_event \"\$@\" & ;; esac # arteria" "$R/jffs/scripts/service-event" \
+	&& grep -q '/some/other/script event' "$R/jffs/scripts/service-event" && [ "$(stat -c %a "$W")" = 755 ] && [ ! -e "$W/clist.htm" ] \
+	&& [ ! -e "$R/jffs/addons/arteria/node_key.new.pub" ] && ! left_session; then
+	ok "doctor fix: one hook line, today's (others' lines kept), files tidied, permissions tightened, the session stopped"
+else bad "doctor fix:"; cat "$t/doc.out"; grep -n . "$R/jffs/scripts/service-event"; ls -la "$W"; fi
+touch "$t/node-cut-crash"; doc || true; rm -f "$t/node-cut-crash"
+if grep -q "^  \[WARN\] node 1 (RP-AX56): something crashed on the node running Arteria's script, at: cut " "$t/doc.out" \
+	&& grep -q '^== node 1 (RP-AX56)' "$R/tmp/arteria/node-trace.txt" && ! grep -qi '192\.168\|02:CC' "$t/doc.out" "$R/tmp/arteria/node-trace.txt"; then
+	ok "doctor: a command that crashes on a node is named, its trace saved without addresses"
+else bad "doctor, a crash on the node:"; cat "$t/doc.out"; fi
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
 grep -q 'arteria' "$t/router-authkeys" 2>/dev/null && { bad "uninstall left the key in the router's list:"; cat "$t/router-authkeys"; } || ok "uninstall takes the key out of the router's own list"
