@@ -251,6 +251,7 @@ async def zoom(b, port):
         if lb:
             d0 = await z()
             await pg.mouse.move(lb[0], lb[1]); await pg.mouse.down(); await pg.mouse.move(lb[0] + 60, lb[1] + 40, steps=6)
+            await pg.evaluate("Arteria.render()")   # a sample landing mid-drag keeps the map moving and zoomed as it was
             mid = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState]")
             rings = await pg.evaluate("[...document.querySelectorAll('#arMapScene .df-ripple, #arMapScene .df-led')].map(e => getComputedStyle(e).animationName)")
             await pg.mouse.up()
@@ -259,9 +260,11 @@ async def zoom(b, port):
             check((d1['x'], d1['y']) != (d0['x'], d0['y']) and await pg.evaluate('Arteria.state.sel') is None, 'zoom: dragging pans, and doesn\'t trace the device it started on')
             await pg.wait_for_timeout(300)
             aft = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState]")
-            check(mid == [True, 'paused'] and aft == [False, 'running'], 'zoom: the animations wait while the map is dragged, and go on when it stops (%s, %s)' % (mid, aft))
+            check(mid == [True, 'paused'] and aft == [False, 'running'], 'zoom: the animations wait while the map is dragged, even when a sample lands mid-drag, and go on when it stops (%s, %s)' % (mid, aft))
             check(rings and all(n == 'none' for n in rings), 'zoom: while it moves, the rings and LEDs don\'t animate at all, so the browser draws the map as one picture (%d)' % len(rings))
         check(await pg.evaluate("!document.querySelector('#arMapScene [filter], #arMapScene filter')"), 'zoom: the map has no blur filter, which would be redrawn for every frame it moves')
+        fade = await pg.evaluate("[Arteria.state.pz.s > 1, getComputedStyle(document.querySelector('#arMapScene .ob')).transitionDuration, getComputedStyle(document.querySelector('#arMapLabels .ar-lb')).transitionDuration]")
+        check(fade == [True, '0s', '0s'], 'zoom: zoomed in, tracing a device dims the rest at once, without a fade that would flicker (%s)' % fade)
         # no scrollbars, and nothing scrolls, not even when the keyboard reaches a label that is off screen
         for _ in range(12): await pg.keyboard.press('Tab')
         sc = await pg.evaluate("(() => { const s = document.querySelector('#ar .ar-stage'), m = document.getElementById('arMap'); return [s.scrollLeft, s.scrollTop, m.scrollLeft, m.scrollTop, s.offsetWidth - s.clientWidth - 2, m.offsetWidth - m.clientWidth]; })()")
@@ -275,6 +278,8 @@ async def zoom(b, port):
         await pg.click('#arZoomFit'); f = await z()
         await pg.mouse.move(px, py); await pg.mouse.wheel(0, 600); g = await z()
         check(s1 > s0 and f['s'] == 1 and f['x'] == 0 and g['s'] == 1 and await pg.evaluate(tf) == 'none', 'zoom: the buttons zoom in and back to the whole map; zooming out stops there')
+        back = await pg.evaluate("getComputedStyle(document.querySelector('#arMapScene .ob')).transitionDuration")
+        check(back == '0.3s', 'zoom: at 100%% the rest of the map fades as before (%s)' % back)
         # closing the expanded view and opening it again shows the whole map
         await pg.click('#arZoomIn'); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
         await pg.click('#arBig'); await pg.wait_for_timeout(300)

@@ -213,6 +213,9 @@
    moves they don't animate at all, so it is drawn as one picture. */
 #ar.moving .df-ripple, #ar.moving .df-led, #ar.moving .df-flame { animation: none !important; }
 #ar .lk, #ar .ob, #ar .rb { transition: opacity .3s ease; }
+/* Zoomed in, tracing a device dims the rest at once: a fade makes the browser draw every fading part as a layer of its own
+   for its .3 s, dozens of them and large at 400%, and that flickers. */
+#ar.zoomed .lk, #ar.zoomed .ob, #ar.zoomed .rb, #ar.zoomed .ar-lb { transition: none; }
 #ar .ob { cursor: pointer; }
 #ar .lk.dim { opacity: .14; } #ar .ob.dim { opacity: .38; } #ar .ob.off { opacity: .3; }
 #ar .rb.dim { opacity: .2; } #ar .rb.mid { opacity: .55; }
@@ -2343,7 +2346,7 @@ function render() {
 	var net = A.net;
 	var root = $('ar');
 	if (!root) return;
-	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
+	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : '', A.pz.s > 1 ? 'zoomed' : '', A.moving ? 'moving' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
 	if (!net) { setNotice('Starting the sampler on the router…', MUTED); return; }
 	try { renderSummary(net); } catch (e) { logErr(e); }
 	if (A.tab === 'map') { try { renderMap(net); } catch (e) { logErr(e); } }
@@ -3147,6 +3150,7 @@ function pzApply() {
 	var svg = $('arMapScene').firstElementChild;
 	if (svg && svg.tagName.toLowerCase() === 'svg' && G.SW) svg.setAttribute('viewBox', [-z.x / z.s, -z.y / z.s, G.SW / z.s, G.SH / z.s].map(function (v) { return +v.toFixed(2); }).join(' '));
 	$('arMapLabels').style.transform = t;
+	$('ar').classList.toggle('zoomed', z.s > 1);
 	$('arZoomFit').textContent = Math.round(z.s * 100) + '%';
 	$('arZoomOut').disabled = z.s <= 1; $('arZoomIn').disabled = z.s >= PZMAX;
 }
@@ -3168,7 +3172,7 @@ function pzWire() {
 	var at = function (e) { var r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 	/* While the map moves, its animations wait: each frame then only redraws the map where it now is, which keeps up even at
 	   400% with a device traced (its ring and its packets would otherwise be redrawn too). They go on 200 ms after it stops. */
-	var moving = function () { $('ar').classList.add('moving'); clearTimeout(still); still = setTimeout(function () { $('ar').classList.remove('moving'); }, 200); };
+	var moving = function () { A.moving = true; $('ar').classList.add('moving'); clearTimeout(still); still = setTimeout(function () { A.moving = false; $('ar').classList.remove('moving'); }, 200); };
 	el.addEventListener('wheel', function (e) {
 		if (!A.big) return;   /* the page's view: the page scrolls as usual */
 		e.preventDefault();
