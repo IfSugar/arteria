@@ -257,7 +257,7 @@ var SPEED = 40, SK_SPEED = 42;   /* px per second: map packets, flow streaks */
 
 var A = {
 	tab: 'map', mode: 'dn', unit: 'Mb', sel: null, paused: false,
-	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false,
+	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false, halt: null,
 	prev: {}, sm: {}, bk: {}, names: null, namesAt: 0,
 	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowMem: {}, flowK: {}, pz: { s: 1, x: 0, y: 0 }, pzEat: 0, ren: null, renMsg: null,
 	hist: [], timers: {}, mapRefs: null, flowRefs: null, big: false, narrow: false, slotBy: {}
@@ -284,7 +284,8 @@ function fmt(x) {
 	return { n: (v / 1000).toFixed(2), u: B ? 'GB/s' : 'Gb/s' };
 }
 function full(x) { var f = fmt(x); return f.u ? f.n + ' ' + f.u : f.n; }
-function short(x) { var f = fmt(x), u = f.u.charAt(0); return f.n === '0' ? '0' : (u === 'k' ? f.n + 'k' : (u === 'G' ? f.n + 'G' : f.n)); }
+/* The short form for labels and lists: small letters for bits (47k, 2.1m, 1.25g), capitals for bytes (47K, 2.1M, 1.25G) */
+function short(x) { var f = fmt(x), u = f.u.charAt(0).toLowerCase(); return f.n === '0' ? '0' : f.n + (/[kmg]/.test(u) ? (A.unit === 'MB' ? u.toUpperCase() : u) : ''); }
 function store(k, v) {
 	try { if (v === undefined) return localStorage.getItem('arteria.' + k); localStorage.setItem('arteria.' + k, v); }
 	catch (e) { return null; }
@@ -436,10 +437,10 @@ function getJSON(name) {
 function running() { return !A.paused && !document.hidden; }
 function heartbeat() {
 	clearTimeout(A.timers.hb);
-	if (!running()) return;
+	if (!running() || (A.halt && A.halt.gaveup)) return;   /* gave up: no more requests until the Live button says try again */
 	poke('start_arteria');
 	store('open.' + TAB_ID, String(Date.now()));   /* "this tab is sampling", for the other Arteria tabs of this browser */
-	A.timers.hb = setTimeout(heartbeat, 8000);
+	A.timers.hb = setTimeout(heartbeat, A.halt ? 30000 : 8000);   /* the router paused itself: ask less often until it resumes */
 }
 /* Two Arteria tabs open: when one closes, it mustn't stop the sampling the other one is watching. Each tab notes
    its last heartbeat in this browser's storage; a tab that goes away only says "stop" if no other one is live. */
@@ -461,7 +462,7 @@ function poll() {
 	clearTimeout(A.timers.poll);
 	if (!running()) return;
 	getJSON('live.htm').then(onSample, function () { onSample(null); }).then(null, logErr).then(function () {
-		A.timers.poll = setTimeout(poll, Math.max(1, A.interval) * 1000);
+		A.timers.poll = setTimeout(poll, A.halt ? 10000 : Math.max(1, A.interval) * 1000);
 	});
 	if (Date.now() - A.namesAt > 30000) loadNames();
 }
@@ -470,7 +471,7 @@ function loadNames() {
 	getJSON('names.htm').then(function (n) { A.names = parseNames(n); A.namesAt = Date.now(); }, function () {});
 }
 function resume() {
-	A.fresh = 0; A.started = Date.now();
+	A.fresh = 0; A.started = Date.now(); if (A.halt && A.halt.gaveup) A.halt = null;
 	heartbeat(); poll();
 	setLive();
 }
@@ -870,7 +871,7 @@ function isMac(m) { return typeof m === 'string' && MAC_RE.test(m); }
 function isIf(i) { return typeof i === 'string' && IF_RE.test(i); }
 function cleanSample(d) {
 	var rows = function (a) { return (Array.isArray(a) ? a : []).filter(function (r) { return Array.isArray(r) && isMac(r[2]) && isIf(r[0]); }); };
-	return { router: d.router || {}, ms: d.ms, interval: d.interval, epoch: +d.epoch || 0, up: d.up, wan: isIf(d.wan) ? d.wan : '',
+	return { router: d.router || {}, ms: d.ms, interval: d.interval, epoch: +d.epoch || 0, up: d.up, wan: isIf(d.wan) ? d.wan : '', wan2: isIf(d.wan2) ? d.wan2 : '',
 		own: (Array.isArray(d.own) ? d.own : []).filter(isMac), ports: (Array.isArray(d.ports) ? d.ports : []).filter(isIf),
 		links: (Array.isArray(d.links) ? d.links : []).filter(function (l) { return Array.isArray(l) && isIf(l[0]); }),
 		ifs: (Array.isArray(d.ifs) ? d.ifs : []).filter(function (r) { return Array.isArray(r) && isIf(r[0]); }),
@@ -887,9 +888,15 @@ function buildNet(d) {
 	var ifs = {};
 	(d.ifs || []).forEach(function (r) { ifs[r[0]] = r; });
 	/* internet */
-	var w = ifs[d.wan];
+	var w = ifs[d.wan], w2 = d.wan2 && ifs[d.wan2];
 	net.wan = w ? measure('wan', t, w[1], w[2]) : zeroRate();
 	net.wanIf = d.wan; net.wanSpeed = linkOf(d, d.wan).speed;
+	/* Dual WAN: the internet is both WANs together (the second one isn't local traffic); each is kept for the readout */
+	if (w2) {
+		var r2 = measure('wan2', t, w2[1], w2[2]), r1 = net.wan;
+		net.wans = [{ ifn: d.wan, r: r1, speed: net.wanSpeed }, { ifn: d.wan2, r: r2, speed: linkOf(d, d.wan2).speed }];
+		net.wan = { dn: r1.dn + r2.dn, up: r1.up + r2.up, sdn: r1.sdn + r2.sdn, sup: r1.sup + r2.sup, ok: r1.ok || r2.ok };
+	}
 	/* AiMesh nodes and the addresses they use to reach the router */
 	(d.nodes || []).forEach(function (n, i) {
 		var node = { id: 'node:' + n.mac, mac: n.mac, ip: n.ip, model: n.model || 'AiMesh node', alias: n.alias || '', state: n.state, nup: n.up,
@@ -1008,18 +1015,28 @@ function busy(x) { return (x.sdn || 0) + (x.sup || 0); }
 /* ---------------------------------------------------------------- one sample arrived */
 function onSample(d) {
 	var nowMs = Date.now();
+	/* The router paused sampling to leave itself alone: it was busy or low on memory (arteria.sh's guard). The page says
+	   why and keeps asking, less often; the router starts again after 2 minutes if it's better. */
+	if (d && d.v === 1 && d.paused) {
+		if (!A.halt || !A.halt.paused) { A.halt = { paused: d.paused, load: d.load, cpus: d.cpus, mem: d.mem }; heartbeat(); }
+		setLive(); render(); return;
+	}
+	if (A.halt && A.halt.paused && d && d.v === 1) { A.halt = null; heartbeat(); }
 	if (d && d.v === 1 && (d.seq !== A.seq || d.up !== A.up)) {
 		var first = A.seq === null;
 		A.seq = d.seq; A.up = d.up;
 		if (d.interval > 0) A.interval = d.interval;
 		A.net = buildNet(d);
-		if (!first) { A.fresh = nowMs; A.gotAny = true; }
+		if (!first) { A.fresh = nowMs; A.gotAny = true; if (A.halt) { A.halt = null; heartbeat(); } }   /* samples again after giving up */
 		var w = A.net.wan;
 		A.hist.push({ dn: w.dn, up: w.up });
 		if (A.hist.length > Math.round(120 / A.interval)) A.hist.shift();
 	}
 	/* the router hasn't answered the first requests: try the classic form once */
 	if (!A.fresh && !A.useForm && nowMs - A.started > 12000) { A.useForm = true; poke('start_arteria'); }
+	/* No sample for a minute: stop asking the router (each request runs a script there) and say what to check. The Live
+	   button tries again. */
+	if (!A.halt && nowMs - (A.fresh || A.started) > 60000) { A.halt = { gaveup: true }; clearTimeout(A.timers.hb); }
 	setLive();
 	render();
 }
@@ -2229,12 +2246,12 @@ function buildMap(net, L) {
 /* Label placement: try spots around each object, keep the first that hits no other label, object,
    Wi-Fi arc or overlay. Widths come from the real text, measured once. */
 var ctx2d = null;
-function textW(s, bold) {
+function textW(s, bold, size) {
 	try {
 		ctx2d = ctx2d || document.createElement('canvas').getContext('2d');
-		ctx2d.font = (bold ? '700 ' : '') + '11px system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
+		ctx2d.font = (bold ? '700 ' : '') + (size || 11) + 'px system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
 		return ctx2d.measureText(s).width;
-	} catch (e) { return s.length * 6.6; }
+	} catch (e) { return s.length * 6.6 * (size || 11) / 11; }
 }
 function placeLabels(net, L, objs, arcs) {
 	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = 1000, rects = [], out = [];   /* a label on another label: only when there is nowhere else at all */
@@ -2252,7 +2269,9 @@ function placeLabels(net, L, objs, arcs) {
 		if (!it.o) return;
 		var name = it.name.length > 24 ? it.name.slice(0, 23) + '…' : it.name;
 		/* A node's second line can grow a " · weak" tag, so it gets room for that up front. */
-		var w = Math.round(Math.max(textW(name, true), it.x3 ? textW(it.x3) * 0.96 + 8 : 0, it.id.indexOf('node:') === 0 ? 112 : 76) + 22), bb = it.o.bbox(), ax = it.o.anchor[0];
+		/* room for the widest rates the second line can show ("↓ 99.9M ↑ 99.9M"), so a busy device's numbers never spill out */
+		var w = Math.round(Math.max(textW(name, true), it.x3 ? textW(it.x3) * 0.96 + 8 : 0, it.id === 'router' ? 0 : textW('↓ 99.9M↑ 99.9M', false, 10.5) + 8,
+			it.id.indexOf('node:') === 0 ? 112 : 76) + 22), bb = it.o.bbox(), ax = it.o.anchor[0];
 		var cands = [];
 		(G.big ? [0, -34, 34, -68, 68, -102, 102, -136, 136] : [0, -34, 34, -68, 68]).forEach(function (dx) {
 			cands.push({ x: ax - w / 2 + dx, y: bb[1] - 7 - HIT, px: ax + dx, py: bb[1] - 12, ay: bb[1] - 2, just: 'center' });
@@ -2347,7 +2366,7 @@ function render() {
 	var root = $('ar');
 	if (!root) return;
 	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : '', A.pz.s > 1 ? 'zoomed' : '', A.moving ? 'moving' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
-	if (!net) { setNotice('Starting the sampler on the router…', MUTED); return; }
+	if (!net) { var h = haltNotice(); setNotice(h ? h[0] : 'Starting the sampler on the router…', h ? h[1] : MUTED); return; }
 	try { renderSummary(net); } catch (e) { logErr(e); }
 	if (A.tab === 'map') { try { renderMap(net); } catch (e) { logErr(e); } }
 	else { try { renderFlow(net); } catch (e) { logErr(e); } }
@@ -2360,6 +2379,8 @@ function setLive() {
 	var cls = 'ar-live', txt;
 	if (A.paused) txt = 'Paused';
 	else if (document.hidden) txt = 'Hidden';
+	else if (A.halt && A.halt.gaveup) { txt = 'Stopped · try again'; cls += ' warn'; }
+	else if (A.halt) { txt = 'Router busy · paused'; cls += ' warn'; }
 	else if (!A.fresh) { txt = 'Connecting…'; cls += ' warn'; }
 	else if (stale()) { txt = 'Waiting for the router'; cls += ' warn'; }
 	else { txt = 'Live · every ' + A.interval + ' s'; cls += ' live'; }
@@ -2371,8 +2392,17 @@ function renderSummary(net) {
 	s.innerHTML = '<span class="v" aria-label="Internet download ' + esc(full(net.wan.dn)) + '"><span class="dn" aria-hidden="true">↓</span> <b>' + esc(full(net.wan.dn)) + '</b></span>' +
 		'<span class="v" aria-label="Internet upload ' + esc(full(net.wan.up)) + '"><span class="up" aria-hidden="true">↑</span> <b>' + esc(full(net.wan.up)) + '</b></span><span class="k n">' + net.clients + ' clients</span>';
 }
+function haltNotice() {
+	var h = A.halt;
+	if (!h) return null;
+	if (h.gaveup) return ['No samples from the router for a minute, so Arteria stopped asking for them. Run arteria.sh status on the router, then tap Stopped to try again.', ACC];
+	var why = h.paused === 'memory' ? 'is low on memory (' + h.mem + ' MB available)' : h.paused === 'slow' ? 'took over 15 s for each sample' :
+		'is busy (load ' + h.load + ' on ' + h.cpus + ' cores)';
+	return ['The router ' + why + ', so Arteria paused to leave it alone. It tries again in about 2 minutes.', ACC];
+}
 function noticeFor(net) {
 	if (A.paused) return ['Paused. The router stops sampling about 20 s after you pause.', MUTED];
+	var h = haltNotice(); if (h) return h;
 	if (!A.fresh) return [Date.now() - A.started > 20000 ? 'No samples from the router. Is Arteria installed? Run arteria.sh status on the router.' : 'Starting the sampler on the router…', Date.now() - A.started > 20000 ? ACC : MUTED];
 	if (stale()) return ['The router stopped sending samples. Retrying…', ACC];
 	for (var i = 0; i < net.nodes.length; i++) {
@@ -2831,6 +2861,12 @@ function readoutFor(net) {
 		sdn = pct(dn, net.total.dn) + '% of all download comes from the internet'; sup = pct(up, net.total.up) + '% of all upload goes to the internet';
 		k1 = 'Interface'; v1 = net.wanIf || '—'; k2 = 'Link rate'; v2 = net.wanSpeed ? net.wanSpeed + ' Mb/s' : '—';
 		path = 'Internet → ' + rname; note = 'Measured on the WAN interface counters.';
+		if (net.wans) {   /* dual WAN: both, and what each carries */
+			d.link = 'Two WANs · ' + net.wans.map(function (x) { return x.ifn; }).join(' + ');
+			k1 = net.wans[0].ifn; v1 = '↓ ' + short(net.wans[0].r.dn) + ' ↑ ' + short(net.wans[0].r.up);
+			k2 = net.wans[1].ifn; v2 = '↓ ' + short(net.wans[1].r.dn) + ' ↑ ' + short(net.wans[1].r.up);
+			note = 'Both WANs together, measured on their interface counters.';
+		}
 	} else if (isMore(id) && hiddenSet(net)) {
 		var t = hiddenSet(net).devs, sd = 0, su = 0;
 		t.forEach(function (dv) { sd += dv.dn; su += dv.up; });
@@ -3272,6 +3308,7 @@ function bigKeys(e) {
 	if (e.shiftKey ? i <= 0 : (i < 0 || i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
 }
 function togglePause() {
+	if (A.halt && A.halt.gaveup && !A.paused) { A.halt = null; resume(); render(); return; }   /* Stopped: try again */
 	A.paused = !A.paused;
 	if (A.paused) { suspend(); stopBeacon(); } else resume();
 	render();
@@ -3337,7 +3374,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>

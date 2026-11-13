@@ -142,6 +142,9 @@ async def scenario(b, scn, port):
         }''')
         # labels never sit on one another
         lbov = await pg.evaluate(LABEL_OVERLAPS)
+        # a label's rates (2.1M, 47k, 1.25G) fit inside it
+        spill = await pg.evaluate('''() => [...document.querySelectorAll('#arMapLabels .ar-lb')].filter(b => { const s = b.firstElementChild, v = s.querySelector('.v');
+            return v && v.getBoundingClientRect().right > s.getBoundingClientRect().right - 8; }).map(b => b.querySelector('.n').textContent)''')
         # anything cut short with "…" outside the map's labels (a name, a maker, a path) shows in full on hover; pointing at a
         # map label shows no tooltip at all, on it or on anything around it
         tip = await pg.evaluate('''() => {
@@ -167,6 +170,7 @@ async def scenario(b, scn, port):
         check(after == small, tag + 'closing the expanded view puts the stage back as it was')
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
         check(cover <= (1 if scn in ('bulbs', 'busy', 'hostile', 'newer') else 0), tag + 'labels don\'t cover other devices (%d)' % cover)
+        check(not spill, tag + 'every label\'s rates fit inside it' + ('' if not spill else ' (%s)' % ', '.join(spill[:4])))
         check(still is not None and still < 0.5, tag + 'the totals keep their place as the numbers change (%s px)' % still)
         check(lbov == 0 and lbov_big == 0, tag + 'labels don\'t sit on one another (%d in the page\'s view, %d expanded)' % (lbov, lbov_big))
         check(tip['bad'] == 0 and tip['labels'] == 0, tag + 'what is cut short shows in full on hover (%d), the map\'s labels show no tooltip' % tip['n'])
@@ -251,9 +255,9 @@ async def zoom(b, port):
         if lb:
             d0 = await z()
             await pg.mouse.move(lb[0], lb[1]); await pg.mouse.down(); await pg.mouse.move(lb[0] + 60, lb[1] + 40, steps=6)
-            await pg.evaluate("Arteria.render()")   # a sample landing mid-drag keeps the map moving and zoomed as it was
-            mid = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState]")
-            rings = await pg.evaluate("[...document.querySelectorAll('#arMapScene .df-ripple, #arMapScene .df-led')].map(e => getComputedStyle(e).animationName)")
+            # a sample landing mid-drag keeps the map moving and zoomed as it was: one more step of the drag, then a render and the reading at once
+            await pg.mouse.move(lb[0] + 64, lb[1] + 42)
+            mid, rings = await pg.evaluate("(() => { Arteria.render(); return [[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState], [...document.querySelectorAll('#arMapScene .df-ripple, #arMapScene .df-led')].map(e => getComputedStyle(e).animationName)]; })()")
             await pg.mouse.up()
             await pg.wait_for_timeout(100)
             d1 = await z()
@@ -339,6 +343,44 @@ async def rename(b, port):
         srv.terminate()
 
 
+async def guard(b, port_busy, port_dead):
+    # the router paused sampling because it was overloaded: the page says why, and asks less often
+    srv = await serve('overload', port_busy)
+    try:
+        ctx = await b.new_context(viewport={'width': 1600, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port_busy)
+        await pg.wait_for_timeout(3500)
+        live = await pg.evaluate("document.getElementById('arLiveTxt').textContent")
+        note = await pg.evaluate("(document.querySelector('#ar .ar-notice .tx') || {}).textContent || ''")
+        check(live == 'Router busy · paused' and 'busy (load 14.20 on 4 cores)' in note and 'about 2 minutes' in note,
+              'guard: when the router pauses itself, the page says why (%r, %r)' % (live, note[:70]))
+        await ctx.close()
+    finally:
+        srv.terminate()
+    # nothing ever comes back: after a minute the page stops asking, says what to check, and the Live button tries again
+    srv = await serve('dead', port_dead)
+    try:
+        ctx = await b.new_context(viewport={'width': 1600, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port_dead)
+        await pg.wait_for_timeout(1500)
+        await pg.evaluate("Arteria.state.started = Date.now() - 61000")
+        await pg.wait_for_timeout(2600)
+        live = await pg.evaluate("document.getElementById('arLiveTxt').textContent")
+        note = await pg.evaluate("(document.querySelector('#ar .ar-notice .tx') || {}).textContent || ''")
+        n0 = await pg.evaluate("fetch('/_posts').then(r => r.json())")
+        await pg.wait_for_timeout(9000)
+        n1 = await pg.evaluate("fetch('/_posts').then(r => r.json())")
+        check(live == 'Stopped · try again' and 'No samples from the router for a minute' in note and n1 == n0,
+              'guard: with no samples for a minute the page stops asking the router (%r, %d -> %d requests)' % (live, n0, n1))
+        await pg.click('#arLive'); await pg.wait_for_timeout(600)
+        n2 = await pg.evaluate("fetch('/_posts').then(r => r.json())")
+        live2 = await pg.evaluate("document.getElementById('arLiveTxt').textContent")
+        check(n2 > n1 and live2 == 'Connecting…', 'guard: the Live button asks again (%r, %d requests)' % (live2, n2 - n1))
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def outlines(b, port):
     # labels are placed around each drawing's outline (its bbox): every drawing must stay inside it, glows and beams included
     srv = await serve('home', port)
@@ -367,7 +409,7 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796))
         await b.close()
 
 

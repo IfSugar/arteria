@@ -151,6 +151,13 @@ lan_ports() {
 }
 
 wan_if() { w=$(nvram get wan0_gw_ifname); [ -n "$w" ] || w=$(nvram get wan0_ifname); printf '%s' "$w"; }
+# Dual WAN (Load Balance or Failover): the second WAN's interface, when one is set up (wans_dualwan "wan usb", "wan lan"...).
+wan2_if() {
+	set -- $(nvram get wans_dualwan)
+	[ -n "$2" ] && [ "$2" != none ] || return 0
+	w=$(nvram get wan1_gw_ifname); [ -n "$w" ] || w=$(nvram get wan1_ifname)
+	[ -n "$w" ] && [ "$w" != "$(wan_if)" ] && printf '%s' "$w"
+}
 
 # The router's own interface addresses. A node lists the router as a "station" on its backhaul
 # radio; the page drops these so the router never shows up as one of its own clients.
@@ -195,6 +202,34 @@ ssh_batch() { dbclient -o help 2>&1 | grep -q BatchMode && printf '%s' '-o Batch
 # True if this process can reach a terminal (dbclient opens /dev/tty itself to ask for a password,
 # whatever stdin is). The sampler, started by the router's service events, has none.
 has_tty() { ( exec < /dev/tty ) 2> /dev/null; }
+
+# The keys Arteria offers a node, in order: its own, then the one root on this router already logs in to nodes with,
+# Dropbear's default ~/.ssh/id_dropbear (the forum's passwordless guide and the Wireless Report addon keep it in
+# /jffs/.ssh and copy it there at boot). dbclient tries each in turn, so a router set up for passwordless logins to its
+# nodes needs nothing more for Arteria. Only regular, non-empty files that belong to root; each file once.
+node_keys() {
+	{ [ -s "$KEY" ] && printf '%s\n' "$KEY"
+	  for k in "$ROOT/tmp/home/root/.ssh/id_dropbear" "$ROOT/jffs/.ssh/id_dropbear" "$ROOT/jffs/.ssh/id_dropbear_rsa"; do
+		ours_file "$k" && [ -s "$k" ] && printf '%s\n' "$k"
+	  done; } | awk '!seen[$0]++'
+}
+key_args() { for k in ${TRY_KEYS:-$(node_keys)}; do printf '%s %s ' -i "$k"; done; }   # -> "-i key -i key ..."
+key_name() { case "$1" in "$KEY") printf "Arteria's key" ;; *) printf '%s' "${1#$ROOT}" ;; esac; }
+# Root's own logins to the nodes pin each node's SSH identity in root's known_hosts. A node pinned there but not yet
+# here is pinned here the same way: root on this router already trusted it. Nothing is ever pinned that root hadn't.
+import_pin() {   # ip -> 0 if a pin was copied   (its own variable names: callers' f, h and l are theirs)
+	pin_kh="$SSH_HOME/.ssh/known_hosts"; pin_h=$(printf '%s' "$1" | sed 's/\./\\./g')
+	grep -Eq "^(\[$pin_h\]:[0-9]+|$pin_h)[ ,]" "$pin_kh" 2>/dev/null && return 1
+	for pin_f in "$ROOT/tmp/home/root/.ssh/known_hosts" "$ROOT/jffs/.ssh/known_hosts"; do
+		ours_file "$pin_f" || continue
+		pin_l=$(grep -E "^(\[$pin_h\]:[0-9]+|$pin_h)[ ,]" "$pin_f" 2>/dev/null | head -4)
+		[ -n "$pin_l" ] || continue
+		ssh_home_init; printf '%s\n' "$pin_l" >> "$pin_kh"
+		log "trusted node $1's SSH identity as root's own known_hosts does"
+		return 0
+	done
+	return 1
+}
 
 ssh_port() { p=$(nvram get sshd_port); case "$p" in ''|*[!0-9]*) p=22 ;; esac; printf '%s' "$p"; }
 ssh_user() { if [ -n "$NODE_USER" ]; then printf '%s' "$NODE_USER"; else u=$(nvram get http_username); printf '%s' "${u:-admin}"; fi; }
@@ -280,7 +315,8 @@ node_start() {   # mac ip
 	: > "$f.out"; : > "$f.err"; now > "$f.start"; rm -f "$f.fail" "$f.last"
 	# ulimit -f: a session that writes more than about 1 MB between two trims is ended (nodes_tick trims at 128 KB),
 	# so a node that floods its output can't fill the router's RAM; it is reconnected like any dropped session.
-	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -K 10 -I 30 -p "$PORT" -i "$KEY" "$SSHUSER@$2" 'sh -s') \
+	import_pin "$2"
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -K 10 -I 30 -p "$PORT" $KEYARGS "$SSHUSER@$2" 'sh -s') \
 		< "$TMPD/node.sh" >> "$f.out" 2>> "$f.err" 8>&- &
 	echo $! > "$f.pid"
 }
@@ -292,15 +328,21 @@ node_stop_all() {
 }
 node_running() { pid_ours "$(cat "$1.pid" 2>/dev/null)" dbclient; }
 
+# How long a node takes for one round (its clients' counters, then the pause), from the uptimes its last two blocks
+# start with: a slow node (many clients, a slow driver) still counts as answering while it keeps that pace.
+node_period() {   # file-base -> seconds (at least INTERVAL)
+	cat "$1.last" "$1.out" 2>/dev/null | awk -v i="$INTERVAL" '/^#B [0-9.]+$/ { a = b; b = $2 + 0 } END { p = (a != "" && b > a) ? int(b - a + 0.999) : i; print (p > i ? p : i) }'
+}
 # ok: fresh counters; wait: connecting; nokey: the node refused the key ('nodekey' fixes it);
 # hostkey: the node's identity changed ('nodekey' re-pins it); down: unreachable; off: node access is off.
 node_state() {   # file-base -> state
 	if [ "$NODES" != on ]; then echo off; return; fi
-	if [ ! -s "$KEY" ] || ! have dbclient; then echo nokey; return; fi
+	if [ -z "${KEYARGS-$(key_args)}" ] || ! have dbclient; then echo nokey; return; fi
 	f=$1
 	if grep -q '^#E' "$f.out" 2>/dev/null || grep -q '^#E' "$f.last" 2>/dev/null; then
 		age=$(( $(now) - $(date -r "$f.out" +%s 2>/dev/null || echo 0) ))
-		[ "$age" -le $((INTERVAL * 3 + 4)) ] && { echo ok; return; }
+		win=$(( $(node_period "$f") * 2 + 4 )); [ $win -lt $((INTERVAL * 3 + 4)) ] && win=$((INTERVAL * 3 + 4)); [ $win -gt 64 ] && win=64
+		[ "$age" -le "$win" ] && { echo ok; return; }
 	fi
 	if node_running "$f"; then
 		st=$(cat "$f.start" 2>/dev/null || echo 0)
@@ -323,6 +365,7 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 		f=$(node_file "$mac")
 		node_running "$f" && continue
 		[ -f "$f.fail" ] && continue
+		[ -n "$NODE_NOSTART" ] && continue   # the router is busy: no new sessions (the running ones carry on)
 		st=$(cat "$f.start" 2>/dev/null || echo 0)
 		if [ -f "$f.start" ]; then
 			case "$(node_state "$f")" in nokey|hostkey) touch "$f.fail"; continue ;; esac
@@ -370,22 +413,30 @@ nodes_json() {
 # ---- one sample ---------------------------------------------------------------------
 links_json() {   # [port, carrier, Mb/s] for the WAN and every wired port
 	c=0; printf '['
-	for p in $WAN_IF $PORTS; do
+	for p in $WAN_IF $WAN2_IF $PORTS; do
 		[ $c -gt 0 ] && printf ','; c=1
 		printf '["%s",%s,%s]' "$p" "$(jnum "$(cat "$SYSNET/$p/carrier" 2>/dev/null)")" "$(jnum "$(cat "$SYSNET/$p/speed" 2>/dev/null)")"
 	done
 	printf ']'
 }
-macs_json() {    # [port, MAC] for every address the bridge has learned on a wired port
-	map=$(brctl showstp br0 2>/dev/null | sed -n 's/^\([A-Za-z0-9.]*\) (\([0-9]*\))$/\2 \1/p' | tr '\n' ';')
+# The LAN bridges: br0, and the ones Guest Network Pro adds (br52, br53...), which reach a wired port through a VLAN
+# interface on it (eth3.52 is LAN port eth3).
+bridges() {
+	b=$(for d in "$SYSNET"/*/bridge; do [ -d "$d" ] && basename "$(dirname "$d")"; done)
+	printf '%s\n' "${b:-br0}"
+}
+macs_json() {    # [port, MAC] for every address a LAN bridge has learned on a wired port
 	printf '['
-	brctl showmacs br0 2>/dev/null | awk -v map="$map" -v want=" $PORTS " '
-		BEGIN { n = split(map, a, ";"); for (i = 1; i <= n; i++) { split(a[i], b, " "); P[b[1]] = b[2] } }
-		NR > 1 && $3 == "no" && $2 ~ /^[0-9A-Fa-f:]+$/ { p = P[$1]; if (p != "" && index(want, " " p " ") && N[p]++ < 64) printf "%s[\"%s\",\"%s\"]", (c++ ? "," : ""), p, toupper($2) }'
+	for br in $(bridges); do
+		map=$(brctl showstp "$br" 2>/dev/null | sed -n 's/^\([A-Za-z0-9.]*\) (\([0-9]*\))$/\2 \1/p' | tr '\n' ';')
+		brctl showmacs "$br" 2>/dev/null | awk -v map="$map" '
+			BEGIN { n = split(map, a, ";"); for (i = 1; i <= n; i++) { split(a[i], b, " "); P[b[1]] = b[2] } }
+			NR > 1 && $3 == "no" && $2 ~ /^[0-9A-Fa-f:]+$/ { p = P[$1]; sub(/\.[0-9]+$/, "", p); if (p != "") print p, toupper($2) }'
+	done | awk -v want=" $PORTS " 'index(want, " " $1 " ") && !seen[$2]++ && N[$1]++ < 64 { printf "%s[\"%s\",\"%s\"]", (c++ ? "," : ""), $1, $2 }'
 	printf ']'
 }
 ifs_json() {     # [ifname, rx bytes, tx bytes] for the WAN, the wired ports and the AiMesh WDS links
-	awk -v want=" $WAN_IF $PORTS " 'NR > 2 {
+	awk -v want=" $WAN_IF $WAN2_IF $PORTS " 'NR > 2 {
 		sub(/^[ \t]+/, ""); i = index($0, ":"); if (!i) next
 		n = substr($0, 1, i - 1); split(substr($0, i + 1), f, " ")
 		if (index(want, " " n " ") || n ~ /^wds/) printf "%s[\"%s\",\"%s\",\"%s\"]", (c++ ? "," : ""), n, f[1], f[9] }' "$PROC/net/dev"
@@ -394,11 +445,11 @@ ifs_json() {     # [ifname, rx bytes, tx bytes] for the WAN, the wired ports and
 sample_init() {
 	RADIOS=$(radio_list | tr '\n' ' ')
 	PORTS=$(lan_ports | tr '\n' ' ')
-	WAN_IF=$(wan_if)
+	WAN_IF=$(wan_if); WAN2_IF=$(wan2_if)
 	MODEL=$(nvram get productid)
 	FW=$(fw_version)
 	OWN=$(own_macs | awk '{ printf "%s\"%s\"", (c++ ? "," : ""), $1 }')
-	PORT=$(ssh_port); SSHUSER=$(ssh_user); BATCH=$(ssh_batch)
+	PORT=$(ssh_port); SSHUSER=$(ssh_user); BATCH=$(ssh_batch); KEYARGS=$(key_args)
 	ssh_home_init
 	NODE_LIST=""
 	[ "$NODES" = on ] && NODE_LIST=$(node_list)
@@ -407,8 +458,8 @@ sample_init() {
 
 sample_json() {   # seq ms -> one sample as JSON on stdout
 	printf '{"v":1,"seq":%s,"up":"%s","epoch":%s,"ms":%s,' "$1" "$(cut -d' ' -f1 "$PROC/uptime")" "$(now)" "$2"
-	printf '"router":{"model":"%s","fw":"%s","load":"%s"},' "$(js "$MODEL")" "$(js "$FW")" "$(cut -d' ' -f1 "$PROC/loadavg")"
-	printf '"interval":%s,"nodes_mode":"%s","wan":"%s","ports":[%s],"own":[%s],' "$INTERVAL" "$NODES" "$WAN_IF" "$PORTS_JSON" "$OWN"
+	printf '"router":{"model":"%s","fw":"%s","load":"%s","cpus":%s,"mem":%s,"busy":%s},' "$(js "$MODEL")" "$(js "$FW")" "$(cut -d' ' -f1 "$PROC/loadavg")" "${CPUS:-2}" "$(jnum "${MEMMB:--}")" "${HEALTH:-0}"
+	printf '"interval":%s,"nodes_mode":"%s","wan":"%s","wan2":"%s","ports":[%s],"own":[%s],' "${EFF:-$INTERVAL}" "$NODES" "$WAN_IF" "$WAN2_IF" "$PORTS_JSON" "$OWN"
 	printf '"links":'; cat "$TMPD/links.json" 2>/dev/null || printf '[]'
 	printf ',"macs":'; cat "$TMPD/macs.json" 2>/dev/null || printf '[]'
 	printf ',"ifs":['; ifs_json; printf ']'
@@ -444,6 +495,41 @@ export_names() {
 
 uptime_cs() { awk '{ printf "%d", ($1 % 1000000) * 100 }' "$PROC/uptime"; }   # centiseconds (mod 11.5 days: 32-bit safe), for timing a sample
 
+# ---- keeping the router safe ------------------------------------------------------------
+# Arteria must never be what makes a router struggle. Before and while it samples it looks at the load (the 1-minute
+# average, per core) and the memory still available. When the router is busy it samples less often and starts no new
+# node sessions; when it is overloaded three rounds in a row (or already is when the page opens) it stops, says why on
+# the page and in the system log, and doesn't start again for 2 minutes.
+PAUSED="$TMPD/paused"
+cpu_count() { n=$(grep -c '^processor' "$PROC/cpuinfo" 2>/dev/null); case "$n" in ''|0|*[!0-9]*) n=2 ;; esac; echo "$n"; }
+mem_avail_kb() {   # MemAvailable, or on old kernels free + buffers + cache; nothing if unknown
+	awk '/^MemAvailable:/ { a = $2 } /^(MemFree|Buffers|Cached):/ { f += $2 } END { if (a != "") print a; else if (f) print f }' "$PROC/meminfo" 2>/dev/null
+}
+# HEALTH: 0 fine, 1 busy (load at least 2 per core, or under 48 MB free), 2 overloaded (4 per core, or under 24 MB);
+# HWHY: load or memory; LOAD, MEMMB: the figures, for the page and the log.
+health() {
+	set -- $(awk -v c="${CPUS:-2}" -v m="$(mem_avail_kb)" 'NR == 1 { l = $1 + 0
+		lv = (l >= 4 * c) ? 2 : (l >= 2 * c) ? 1 : 0
+		mv = (m == "") ? 0 : (m < 24576) ? 2 : (m < 49152) ? 1 : 0
+		printf "%d %s %s %s", (lv > mv ? lv : mv), $1, (m == "" ? "-" : int(m / 1024)), (mv > lv ? "memory" : "load") }' "$PROC/loadavg" 2>/dev/null)
+	HEALTH=${1:-0}; LOAD=${2:-?}; MEMMB=${3:--}; HWHY=${4:-load}
+}
+health_text() {   # why -> a sentence for the log and the terminal
+	case "$1" in
+		memory) printf 'the router is low on memory (%s MB available)' "$MEMMB" ;;
+		slow) printf 'each sample took over 15 s' ;;
+		*) printf 'the router is busy (load %s on %s cores)' "$LOAD" "${CPUS:-2}" ;;
+	esac
+}
+pause_sampling() {   # why: load | memory | slow
+	printf '%s %s\n' "$(now)" "$1" > "$PAUSED"
+	log "paused for 2 minutes: $(health_text "$1")"
+	node_stop_all
+	printf '{"v":1,"paused":"%s","epoch":%s,"load":"%s","cpus":%s,"mem":%s}' "$1" "$(now)" "$(js "$LOAD")" "${CPUS:-2}" "$(jnum "$MEMMB")" \
+		| write_atomic "$(web_dir)/live.htm"
+}
+paused_recently() { p=$(date -r "$PAUSED" +%s 2>/dev/null) || return 1; [ $(( $(now) - p )) -lt 120 ]; }
+
 # ---- the sampler: runs only while the page is open ----------------------------------------
 # The page asks for "start_arteria" every few seconds (service-event). Each request refreshes a
 # heartbeat file; the sampler stops IDLE_STOP seconds after the last one, and at once if the page
@@ -462,23 +548,37 @@ sampler() {
 	echo $$ > "$TMPD/sampler.pid"
 	trap 'node_stop_all; rm -f "$TMPD/sampler.pid"; exit 0' INT TERM
 	sample_init
+	CPUS=$(cpu_count); health
+	if [ "$HEALTH" -ge 2 ]; then pause_sampling "$HWHY"; rm -f "$TMPD/sampler.pid"; exit 0; fi
+	rm -f "$PAUSED"
 	write_node_script > "$TMPD/node.sh"
-	rm -f "$TMPD"/node.*.fail "$TMPD"/node.*.start "$TMPD"/node.*.last
-	WD=$(web_dir); seq=0; ms=0
+	rm -f "$TMPD"/node.*.fail "$TMPD"/node.*.start "$TMPD"/node.*.last "$TMPD"/node.*.k
+	WD=$(web_dir); seq=0; ms=0; over=0; slow=0; EFF=$INTERVAL
 	log "sampling started (page open)"
 	export_names
 	while hb_fresh; do
 		t0=$(uptime_cs)
+		health
+		if [ "$HEALTH" -ge 2 ]; then over=$((over + 1)); else over=0; fi
+		[ $over -ge 3 ] && { pause_sampling "$HWHY"; break; }
 		if [ $((seq % 5)) -eq 0 ]; then
 			links_json > "$TMPD/links.json"; macs_json > "$TMPD/macs.json"
 		fi
 		[ $((seq % 15)) -eq 14 ] && export_names
 		[ $((seq % 30)) -eq 29 ] && sample_init      # nodes and radios can change while the page is open
+		NODE_NOSTART=""; [ "$HEALTH" -ge 1 ] && NODE_NOSTART=1
 		[ "$NODES" = on ] && nodes_tick
 		sample_json "$seq" "$ms" | write_atomic "$WD/live.htm"
 		ms=$(( ($(uptime_cs) - t0) * 10 )); [ "$ms" -lt 0 ] && ms=0   # the counter wrapped during this sample
+		if [ "$ms" -gt 15000 ]; then slow=$((slow + 1)); else slow=0; fi
+		[ $slow -ge 2 ] && { pause_sampling slow; break; }
+		# Sampling takes at most about a third of the time: a router that needs longer for a sample is sampled less
+		# often (up to every 10 s), and a busy one at a third of the rate. The page polls at the interval each sample states.
+		EFF=$(( (ms * 3 + 999) / 1000 )); [ "$EFF" -lt "$INTERVAL" ] && EFF=$INTERVAL
+		[ "$HEALTH" -ge 1 ] && [ "$EFF" -lt $((INTERVAL * 3)) ] && EFF=$((INTERVAL * 3))
+		[ "$EFF" -gt 10 ] && EFF=10
 		seq=$((seq + 1))
-		sleep "$INTERVAL"
+		sleep "$EFF"
 	done
 	node_stop_all
 	rm -f "$TMPD/sampler.pid"
@@ -490,7 +590,7 @@ service_event() {   # action service
 	case "$2" in
 		"$NAME")
 			tmpd; touch "$TMPD/heartbeat"
-			sampler_running || (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>&1 &) ;;
+			sampler_running || paused_recently || (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>&1 &) ;;   # paused: the page says why
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat" ;;
 		"${NAME}names")   # a device was renamed on the page (it saved the router's client list first): show it now, not in 30 s
@@ -627,9 +727,9 @@ hook_add() {   # file line
 	chmod 755 "$f"
 }
 
-hook_del() {   # only lines this addon wrote: start with our script path, end with our tag
+hook_del() {   # only lines this addon wrote: they run our script and end with our tag (older versions' lines start with it)
 	f="$SCRIPTS_DIR/$1"
-	[ -f "$f" ] && sed -i "\\|^$SCRIPT .*# $NAME\$|d" "$f"
+	[ -f "$f" ] && sed -i "\\|^$SCRIPT .*# $NAME\$|d; \\|^case \"\$2\" in $NAME\*) $SCRIPT .*# $NAME\$|d" "$f"
 	return 0
 }
 
@@ -692,7 +792,7 @@ node_try() {   # ip [pin] [command]   pin: also trust and pin the identity that 
 	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0; TRY_NEW=0; TRY_FP=""; TRY_OUT=""; y=""; [ "$2" = pin ] && y=-y
 	b=$(ssh_batch)
 	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
-	(HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" "${3:-echo arteria-ok}") \
+	(HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "${3:-echo arteria-ok}") \
 		< /dev/null > "$o" 2>&1 &
 	p=$!; i=0
 	while kill -0 "$p" 2>/dev/null; do
@@ -709,17 +809,22 @@ node_try() {   # ip [pin] [command]   pin: also trust and pin the identity that 
 	return $rc
 }
 
+# Which of the keys a node takes, for the terminal: each tried on its own (key only, never a password).
+key_used() {   # ip -> the key's name, or nothing
+	for k in $(node_keys); do TRY_KEYS="$k" node_try "$1" > /dev/null 2>&1 && { key_name "$k"; return 0; }; done
+	return 1
+}
 # For text that may be posted in a bug report: addresses and user names out.
 scrub() { sed 's/[0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}/IP/g; s/[0-9A-Fa-f]\{2\}\(:[0-9A-Fa-f]\{2\}\)\{5\}/MAC/g; s/[A-Za-z0-9._-]*@/user@/g'; }
 
 # One round of the script the page runs on a node: whether it works there, how many devices it reads and how
-# long that takes. The page counts a node as answering while its output is at most 3 rounds + 4 s old, so a round
-# much slower than that shows as "not answering" even though key login works.
+# long that takes. The page counts a node as answering while its output keeps up with its own pace, up to a round every
+# 30 s, so a node slower than that shows as "not answering" even though key login works.
 node_probe() {   # ip -> PROBE_MSG; 0 if a round came back
 	tmpd; ssh_home_init; s="$TMPD/probe.$$.sh"; o="$TMPD/probe.$$"; PROBE_MSG=""
 	write_node_script 1 > "$s"
 	t0=$(now)
-	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" -i "$KEY" "$(ssh_user)@$1" 'sh -s') < "$s" > "$o" 2>&1 &
+	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" 'sh -s') < "$s" > "$o" 2>&1 &
 	p=$!; i=0
 	while kill -0 "$p" 2>/dev/null; do
 		[ $i -ge 30 ] && { kill "$p" 2>/dev/null; break; }
@@ -728,7 +833,7 @@ node_probe() {   # ip -> PROBE_MSG; 0 if a round came back
 	t=$(( $(now) - t0 )); [ $t -ge 1 ] || t=1
 	if grep -q '^#E' "$o" 2>/dev/null; then
 		PROBE_MSG="reads $(grep -c '^S ' "$o") device(s), one round takes about $t s"
-		[ $t -gt $((INTERVAL * 2 + 4)) ] && PROBE_MSG="$PROBE_MSG: too slow, the page shows it as not answering"
+		[ $t -gt 30 ] && PROBE_MSG="$PROBE_MSG: too slow, the page shows it as not answering"
 		rc=0
 	elif [ $i -ge 30 ]; then PROBE_MSG="reading its devices took over 30 s"; rc=1
 	else
@@ -748,10 +853,10 @@ nodes_cmd() {   # [test]
 		al=$(node_alias "$mac")
 		line="  ${al:-$model} ($model, $ip)"
 		if [ "$1" = test ]; then
-			if [ ! -s "$KEY" ]; then line="$line: no key yet, run '$SCRIPT nodekey'"
+			if [ -z "$(node_keys)" ]; then line="$line: no key yet, run '$SCRIPT nodekey'"
 			else
-				node_try "$ip"; rc=$?
-				if [ $rc -eq 0 ]; then node_probe "$ip"; line="$line: key login OK, $PROBE_MSG"
+				import_pin "$ip"; node_try "$ip"; rc=$?
+				if [ $rc -eq 0 ]; then node_probe "$ip"; line="$line: key login OK ($(key_used "$ip")), $PROBE_MSG"
 				elif [ $rc -eq 2 ]; then line="$line: can't test here ($TRY_ERR); open the page, it shows whether the node answers"
 				elif [ "$TRY_NEW" = 1 ]; then line="$line: not trusted yet (Arteria hasn't connected to it before); run '$SCRIPT nodekey', which shows its fingerprint first"
 				else line="$line: key login failed${TRY_ERR:+ ($TRY_ERR)}; run '$SCRIPT nodekey'"
@@ -807,6 +912,28 @@ trust_first_contact() {   # ip -> 0 to go ahead
 	case "$a" in [yY]*) return 0 ;; *) say "  Left alone."; return 1 ;; esac
 }
 
+# Arteria's key in the router's own list (once per nodekey run), so AiMesh keeps it on the nodes. On nodes with ASUS's
+# own firmware only the first key of that list works once the router's web page has saved it (Merlin joins its keys with
+# '>', which that firmware doesn't split), so when other keys are already listed it says so.
+nodekey_router_list() {   # uses $pub and $b64; sets rk
+	[ "$rk" = 1 ] && return 0; rk=1
+	others=$(nvram get sshd_authkeys | tr '>' '\n' | grep -c '^ssh-')
+	router_key_add "$pub" "$b64" || return 0
+	say "  Added Arteria's key to the router's own SSH key list (Administration > System > Authorized Keys): AiMesh"
+	say "  copies that list to the nodes, so they keep it."
+	if [ "${others:-0}" -gt 0 ]; then
+		say "  That list already had $others key(s). Nodes with ASUS's own firmware take only the first key in it once the"
+		say "  router's web page has saved it, so Arteria's may not reach those nodes: a key of the router's own (see below) does."
+	fi
+}
+# A node takes one of the keys: with Arteria's, keep it listed on the node and in the router's list; with the key root
+# already logs in to the nodes with, there's nothing to add.
+nodekey_works() {   # ip message
+	w=$(key_used "$1")
+	if [ -n "$w" ] && [ "$w" != "Arteria's key" ]; then say "  Key login works with $w, the key root on this router already uses for the nodes: nothing to add."; return 0; fi
+	say "  $2"; nodekey_router_list; node_keep_key "$1"
+}
+
 # Give each node the router's Arteria key. Asks for the node's password once (the router's admin
 # password, which AiMesh nodes share); it goes to the node only and is never stored. The key is
 # added to the node's authorized keys, keeping any that are already there.
@@ -819,11 +946,7 @@ nodekey() {   # [node-ip | print]
 	[ -s "$KEY" ] || make_key || die "Couldn't create the key in $KEY"
 	pub=$(pub_key); b64=$(printf '%s' "$pub" | cut -d' ' -f2)
 	[ -n "$b64" ] || die "Couldn't read the public key from $KEY"
-	ssh_home_init
-	if router_key_add "$pub" "$b64"; then
-		say "Added the key to the router's own SSH key list too (Administration > System > Authorized Keys): AiMesh"
-		say "copies that list to the nodes whenever it syncs settings, so they keep the key."
-	fi
+	ssh_home_init; rk=0
 	list=$(node_list)
 	[ -n "$1" ] && list=$(printf '%s\n' "$list" | awk -v ip="$1" '$2 == ip')
 	if [ -z "$list" ]; then [ -n "$1" ] && die "No AiMesh node at $1 found."; nodes_none_why; exit 1; fi
@@ -839,14 +962,16 @@ nodekey() {   # [node-ip | print]
 		al=$(node_alias "$mac")
 		say ""
 		say "${al:-$model} ($model, $ip)"
+		import_pin "$ip" && say "  Trusted its SSH identity as root on this router already does."
 		node_try "$ip"; rc=$?
-		if [ $rc -eq 0 ]; then say "  Already has the key."; node_keep_key "$ip"; continue; fi
+		if [ $rc -eq 0 ]; then nodekey_works "$ip" "Already has the key."; continue; fi
 		if [ "$TRY_HOSTKEY" = 1 ] && ! trust_new_identity "$ip"; then fails=$((fails + 1)); continue; fi
 		if [ "$TRY_NEW" = 1 ] && ! trust_first_contact "$ip"; then fails=$((fails + 1)); continue; fi
 		if [ "$TRY_HOSTKEY" = 1 ] || [ "$TRY_NEW" = 1 ]; then   # trusted now: the key may already be there (an AiMesh sync)
-			node_try "$ip" pin && { say "  Key login works."; node_keep_key "$ip"; continue; }
+			node_try "$ip" pin && { nodekey_works "$ip" "Key login works."; continue; }
 		fi
-		if [ $nopass = 1 ]; then say "  Password login over SSH is off on the router, so the key reaches this node with the next AiMesh sync."; sync=$((sync + 1)); continue; fi
+		nodekey_router_list
+		if [ $nopass = 1 ]; then say "  Password login over SSH is off on the router, so the key reaches this node from the router's list."; sync=$((sync + 1)); continue; fi
 		say "  Enter the node's password (your router's admin password). It goes to the node only and isn't stored."
 		out=$(HOME="$SSH_HOME" dbclient -y -p "$(ssh_port)" "$(ssh_user)@$ip" "$cmd" < /dev/tty 2>&1)
 		case "$out" in *[Hh]ost\ key\ mismatch*)   # only seen here when the key couldn't be tried first (an older dbclient)
@@ -855,7 +980,7 @@ nodekey() {   # [node-ip | print]
 		case "$out" in
 			*arteria-had-key*)   say "  The node already listed the key." ;;
 			*arteria-added-key*) say "  Key added."; sleep 4 ;;
-			*[Nn]o\ auth\ methods*) say "  The node doesn't take passwords over SSH, so the key reaches it with the next AiMesh sync."; sync=$((sync + 1)); continue ;;
+			*[Nn]o\ auth\ methods*) say "  The node doesn't take passwords over SSH, so the key reaches it from the router's list."; sync=$((sync + 1)); continue ;;
 			*) say "  Couldn't log in: $(printf '%s' "$out" | tail -1 | tr -cd '\040-\176' | cut -c1-120)"; fails=$((fails + 1)); continue ;;
 		esac
 		node_try "$ip"; rc=$?
@@ -867,10 +992,11 @@ nodekey() {   # [node-ip | print]
 	rm -f "$TMPD/nodekey.list" "$TMPD"/node.*.fail
 	say ""
 	if [ $sync -gt 0 ]; then
-		say "$sync node(s) will get the key from the router: it is in the router's Authorized Keys (Administration >"
-		say "System), and AiMesh copies that list to the nodes when it syncs settings. Start a sync by saving a setting"
-		say "in the router's web page (saving Wireless > General works; Wi-Fi restarts briefly), wait a few minutes"
-		say "until the node is back in the AiMesh list, then run '$SCRIPT nodes test'."
+		say "$sync node(s) will get Arteria's key from the router's own list (Administration > System > Authorized Keys)."
+		say "A node loads that list when it starts: reboot it (in the router's web page: AiMesh, pick the node, reboot),"
+		say "wait until it's back in the AiMesh list, then run '$SCRIPT nodes test'."
+		say "If this router already has a key it logs in to the nodes with, Arteria uses it too: keep it in"
+		say "/jffs/.ssh/id_dropbear (or ~/.ssh/id_dropbear), and its nodes in root's known_hosts."
 		[ $fails -eq 0 ] && return 0
 		say ""
 	fi
@@ -887,6 +1013,7 @@ nodekey() {   # [node-ip | print]
 # ---- support check (read-only: changes nothing on the router) ------------------
 ck_ok()   { say "  [ OK ] $*"; }
 ck_warn() { say "  [WARN] $*"; }
+ck_info() { say "  [INFO] $*"; }
 ck_fail() { say "  [FAIL] $*"; ck_fails=$((ck_fails + 1)); }
 
 free_kb() { df -Pk "$1" 2>/dev/null | awk 'NR == 2 { print $4 }'; }
@@ -929,7 +1056,7 @@ check_support() {
 				*) ck_ok "Per-client Wi-Fi counters (wl sta_info)" ;;
 			esac
 		else
-			ck_warn "No Wi-Fi clients right now, so the per-client counters couldn't be checked."
+			ck_info "No Wi-Fi clients on the router itself right now (devices on AiMesh nodes don't count here), so the per-client counters will be checked once one connects: run check again then."
 		fi
 	fi
 	w=$(wan_if)
@@ -1076,7 +1203,7 @@ install() {
 	if [ -n "$AR_BUILD" ]; then printf '%s\n' "$AR_BUILD" > "$BUILD_FILE"; else rm -f "$BUILD_FILE"; fi
 	[ -f "$CONF" ] || write_conf
 	hook_add services-start "$SCRIPT startup &"
-	hook_add service-event "$SCRIPT service_event \"\$@\" &"
+	hook_add service-event "case \"\$2\" in $NAME*) $SCRIPT service_event \"\$@\" & ;; esac"
 	# left by an older version's key setup, or by a development version's device recognition
 	rm -f "$KEY.new.pub" "$ADDON_DIR/discovered" "$ADDON_DIR/fingerbank" "$ADDON_DIR/fingerbank_key"
 	startup
@@ -1089,7 +1216,7 @@ install() {
 		missing=""
 		printf '%s\n' "$nl" > "$TMPD/install.nodes"
 		while read -r mac ip model; do
-			node_try "$ip" || missing="$missing $ip"
+			import_pin "$ip"; node_try "$ip" || missing="$missing $ip"
 		done < "$TMPD/install.nodes"
 		rm -f "$TMPD/install.nodes"
 		say ""
@@ -1213,6 +1340,12 @@ status() {
 	else
 		say "Sampling:    no (starts when the page opens, stops ${IDLE_STOP} s after it closes)"
 	fi
+	CPUS=$(cpu_count); health
+	say "Router:      load $LOAD on $CPUS cores, $MEMMB MB memory available$( [ "$HEALTH" -ge 2 ] && printf ': overloaded, Arteria would pause' )$( [ "$HEALTH" = 1 ] && printf ': busy, Arteria samples less often' )"
+	if [ -f "$PAUSED" ]; then
+		read -r pt pw < "$PAUSED"
+		say "Last pause:  $(date -d "@$pt" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$pt"), $(health_text "$pw")$(paused_recently && printf ' (resumes within 2 minutes)')"
+	fi
 	say "Node access: $NODES$( [ "$NODES" = on ] && { [ -s "$KEY" ] && printf ', key present' || printf ", no key yet ('nodekey' creates it)"; })"
 	nl=$(node_list)
 	[ -n "$nl" ] && say "Nodes:       $(node_models "$nl") (details: '$SCRIPT nodes test')"
@@ -1225,7 +1358,9 @@ debug() {
 	say "Router:      $(nvram get productid) $(nvram get odmpid)  firmware $(fw_version)  $(uname -m)"
 	say "BusyBox:     $(busybox 2>/dev/null | head -1 | cut -d' ' -f2)   dbclient: $(have dbclient && echo yes || echo no)   dropbearkey: $(have dropbearkey && echo yes || echo no)"
 	say "Settings:    INTERVAL=$INTERVAL IDLE_STOP=$IDLE_STOP NODES=$NODES amtm=$AMTM_UPDATE"
-	say "WAN:         $(wan_if) ($(nvram get wan0_proto))"
+	CPUS=$(cpu_count); health
+	say "Health:      load $LOAD on $CPUS cores, $MEMMB MB available (level $HEALTH)$( [ -f "$PAUSED" ] && read -r pt pw < "$PAUSED" && printf ', last pause: %s, %s s ago' "$pw" "$(( $(now) - pt ))")"
+	say "WAN:         $(wan_if) ($(nvram get wan0_proto))$(w2=$(wan2_if); [ -n "$w2" ] && printf ', second WAN: %s (%s, %s)' "$w2" "$(nvram get wan1_proto)" "$(nvram get wans_mode)")"
 	for p in $(radio_list); do
 		x=${p%%:*}
 		say "Wi-Fi:       $x band ${p#*:} GHz, up=$(wl -i "$x" isup 2>/dev/null), clients=$(wl -i "$x" assoclist 2>/dev/null | wc -l | tr -d ' ')"
@@ -1236,11 +1371,15 @@ debug() {
 	say "WDS links:   $(grep -c '^ *wds' "$PROC/net/dev")"
 	nl=$(node_list)
 	say "Nodes:       $(printf '%s\n' "$nl" | grep -c .) $(printf '%s\n' "$nl" | awk '{ printf "%s%s", (c++ ? "," : ""), $3 }')   ssh port: $(ssh_port)   sshd_enable: $(nvram get sshd_enable)"
+	[ -n "$nl" ] && say "Node keys:   $(for k in $(node_keys); do printf '%s; ' "$(key_name "$k")"; done | sed 's/; $//')"
 	printf '%s\n' "$nl" | while read -r mac ip model; do
 		[ -n "$mac" ] || continue
-		f=$(node_file "$mac")
-		if sampler_running; then st=$(node_state "$f"); else st="(page closed)"; fi
-		say "  $model: backhaul stations=$(node_stas "$mac" | wc -w | tr -d ' ') state=$st"
+		f=$(node_file "$mac"); x=""
+		if sampler_running; then
+			st=$(node_state "$f")
+			[ -f "$f.out" ] && x=", a round every $(node_period "$f") s, last output $(( $(now) - $(date -r "$f.out" +%s) )) s ago, $(cat "$f.last" "$f.out" 2>/dev/null | awk "$NODE_AWK" | grep -o '\["[A-Za-z0-9.]*","[0-9.]*","[0-9A-F:]*"' | wc -l | tr -d ' ') station(s)"
+		else st="(page closed)"; fi
+		say "  $model: backhaul stations=$(node_stas "$mac" | wc -w | tr -d ' ') state=$st$x"
 		e=$(tail -c 2048 "$f.err" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
 		[ -n "$e" ] && say "    last SSH message: $e"
 	done

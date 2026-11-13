@@ -3,7 +3,7 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile.
+Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile.
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -221,8 +221,14 @@ class H(BaseHTTPRequestHandler):
             page = re.sub(r'<%.*?%>', '', page)
             return self.send(page)
         if path == '/ext/arteria/live.htm':
+            if SCN == 'overload':   # the router paused sampling to leave itself alone (arteria.sh's load guard)
+                return self.send(json.dumps({'v': 1, 'paused': 'load', 'epoch': int(time.time()), 'load': '14.20', 'cpus': 4, 'mem': 180}), 'text/html')
+            if SCN == 'dead':       # nothing ever comes back: the sampler never starts
+                return self.send('not found', code=404)
             H.seq += 1
             return self.send(json.dumps(sample(H.seq)), 'text/html')
+        if path == '/_posts':       # for the tests: how many times the page asked the router for something
+            return self.send(json.dumps(len(SAVED['posts'])), 'application/json')
         if path == '/ext/arteria/names.htm':
             return self.send(json.dumps(names()), 'text/html')
         if path.endswith('.js'):
