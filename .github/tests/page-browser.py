@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile']
+SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile']
 fails = []
 
 
@@ -42,6 +42,14 @@ async def serve(scn, port):
         except OSError:
             await asyncio.sleep(0.1)
     return srv
+
+
+LABEL_OVERLAPS = '''() => {
+    const rs = [...document.querySelectorAll('#ar .ar-lb')].map(b => b.firstElementChild.getBoundingClientRect()).filter(r => r.width);
+    let n = 0;
+    rs.forEach((a, i) => rs.slice(i + 1).forEach(b => { if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) n++; }));
+    return n;
+}'''
 
 
 async def ready(pg):   # two samples in: rates, stands and the tray are known
@@ -80,6 +88,11 @@ async def scenario(b, scn, port):
         # the expanded view
         await pg.evaluate("Arteria.pick(null)")
         await pg.click('#arBig'); await pg.wait_for_timeout(400)
+        lbov_big = await pg.evaluate(LABEL_OVERLAPS)
+        if scn == 'crowd':   # a smaller window, where a crowd of labels has the least room
+            await pg.set_viewport_size({'width': 1280, 'height': 720}); await pg.wait_for_timeout(700)
+            lbov_big += await pg.evaluate(LABEL_OVERLAPS)
+            await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
         await pg.click('#arTabFlow'); await pg.wait_for_timeout(250)
         await pg.click('#arTabMap'); await pg.wait_for_timeout(250)
         order = []
@@ -107,9 +120,9 @@ async def scenario(b, scn, port):
         after = await pg.evaluate(STAGE)
         await pg.wait_for_timeout(2200)   # one more sample after all of it: errors in the next render show up too
         inj = await pg.evaluate(INJECTED)
-        # the totals in the tab bar keep their place whatever the numbers: the narrowest and the widest leave "Internet" where it is
+        # the totals in the tab bar keep their place whatever the numbers: the narrowest and the widest leave them where they are
         still = await pg.evaluate('''() => {
-            const s = document.getElementById('arSum'), k = s && s.querySelector('.k'), bs = s ? [...s.querySelectorAll('.v b')] : [];
+            const s = document.getElementById('arSum'), k = s && s.querySelector('.v'), bs = s ? [...s.querySelectorAll('.v b')] : [];
             if (!k || bs.length !== 2) return null;
             const at = () => k.getBoundingClientRect().left, old = bs.map(b => b.textContent), x0 = at();
             bs.forEach(b => { b.textContent = '99.9 MB/s'; }); const x1 = at();
@@ -127,14 +140,25 @@ async def scenario(b, scn, port):
             });
             return n;
         }''')
-        # anything cut short with "…" (a name, a maker, a path) shows in full on hover
+        # labels never sit on one another
+        lbov = await pg.evaluate(LABEL_OVERLAPS)
+        # anything cut short with "…" outside the map's labels (a name, a maker, a path) shows in full on hover; pointing at a
+        # map label shows no tooltip at all, on it or on anything around it
         tip = await pg.evaluate('''() => {
-            const cut = [...document.querySelectorAll('#ar *')].filter(e => e.clientWidth && e.scrollWidth > e.clientWidth + 1 && e.offsetParent && !e.children.length);
-            const btn = [...document.querySelectorAll('#ar .ar-lb[title]')];
-            if (!cut.length && !btn.length) return null;
+            const cut = [...document.querySelectorAll('#ar *')].filter(e => e.clientWidth && e.scrollWidth > e.clientWidth + 1 && e.offsetParent && !e.children.length && !e.closest('#arMapLabels'));
             const bad = cut.filter(e => { e.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return e.title !== e.textContent.trim(); });
-            return { n: cut.length + btn.length, bad: bad.length, btn: btn.every(b => b.title.length > b.querySelector('.n').textContent.length - 1) };
+            document.querySelectorAll('#arMapLabels .ar-lb .n, #arMapLabels .ar-lb .v').forEach(e => e.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+            const lb = document.querySelector('#arMapLabels'), tipped = [...document.querySelectorAll('[title]')].filter(e => e.contains(lb) || e.closest('#arMapLabels'));
+            return { n: cut.length, bad: bad.length, labels: tipped.length };
         }''')
+        # a device's drawing does what its label does: tapping it traces the device, tapping again shows everything
+        dev = await pg.evaluate('''() => { const g = [...document.querySelectorAll('#ar g[data-obj]')].find(g => /^[0-9A-F]{2}:/.test(g.getAttribute('data-obj')) && g.getBoundingClientRect().width); return g ? g.getAttribute('data-obj') : null; }''')
+        tap = None
+        if dev:
+            await pg.dispatch_event('#ar g[data-obj="%s"]' % dev, 'click'); await pg.wait_for_timeout(150)
+            a = await pg.evaluate('Arteria.state.sel')
+            await pg.dispatch_event('#ar g[data-obj="%s"]' % dev, 'click'); await pg.wait_for_timeout(150)
+            tap = (a == dev, await pg.evaluate('Arteria.state.sel') is None)
         await ctx.close()
         check(not errs, tag + 'no page errors' + ('' if not errs else ': ' + ' / '.join(errs[:3])))
         check(small['w'] == 728 and small['h'] == 518 and small['td'] == 'TD', tag + 'the page\'s view is 728 x 518 inside the router\'s page')
@@ -144,8 +168,10 @@ async def scenario(b, scn, port):
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
         check(cover <= (1 if scn in ('bulbs', 'busy', 'hostile', 'newer') else 0), tag + 'labels don\'t cover other devices (%d)' % cover)
         check(still is not None and still < 0.5, tag + 'the totals keep their place as the numbers change (%s px)' % still)
-        if tip is not None:
-            check(tip['bad'] == 0 and tip['btn'], tag + 'what is cut short shows in full on hover (%d)' % tip['n'])
+        check(lbov == 0 and lbov_big == 0, tag + 'labels don\'t sit on one another (%d in the page\'s view, %d expanded)' % (lbov, lbov_big))
+        check(tip['bad'] == 0 and tip['labels'] == 0, tag + 'what is cut short shows in full on hover (%d), the map\'s labels show no tooltip' % tip['n'])
+        if tap is not None:
+            check(tap == (True, True), tag + 'tapping a device\'s drawing traces it, tapping again shows everything')
     finally:
         srv.terminate()
 

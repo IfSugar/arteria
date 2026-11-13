@@ -3,7 +3,7 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), nokey, offline, weak, busy, quiet, nonode, bulbs, kinds1..kinds6, newer, hostile.
+Scenarios: home (default), nokey, offline, weak, busy, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile.
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -51,6 +51,16 @@ if SCN == 'bulbs':   # the real-world mix: a desktop PC, a Mac desktop, an AC un
     for i in range(18):
         dev('02:CC:00:00:03:%02X' % i, '', 'router' if i % 3 else 'node', '2.4', 0.002 + (i % 6) * 0.004, 0.001 + (i % 4) * 0.002, -52 - i,
             nick=False, host='wiz_%06x' % (0xa1b2c3 + i * 7919), vendor='WiZ Connected Lighting Company Limited' if i % 2 else '', ntype=60 if i % 5 == 0 else 0, vc='udhcp 1.24.2')
+if SCN == 'crowd':   # a real-world crowd: 28 clients, many quiet and unnamed, half of them on the node
+    for i, (nm, where, band, host, vendor) in enumerate([
+            ('Work MacBook', 'router', '5', '', ''), ('', 'router', '2.4', '', ''), ('LGwebOSTV', 'router', '5', 'LGwebOSTV', ''),
+            ('', 'node', '5', 'amazon-1a2b3c4d5', 'Amazon Technologies Inc.'), ('', 'router', '5', 'amazon-9f8e7d6c5', 'Amazon Technologies Inc.'),
+            ('Studio Mac', 'router', '5', 'Mac-Studio', ''), ('ems-esp-boiler', 'node', '2.4', 'ems-esp', 'Espressif Inc.'),
+            ('tado-bridge-x', 'node', '2.4', 'tado-bridge-x', ''), ('Philips Air', 'node', '2.4', 'mxchip', 'Shanghai MXCHIP Information Technology Co., Ltd.'),
+            ('', 'node', '2.4', '', 'Beijing Xiaomi Mobile Software Co., Ltd'), ('', 'node', '5', '', ''), ('', 'node', '2.4', '', ''),
+            ('Lounge Daikin AC', 'node', '2.4', 'Client', 'Murata Manufacturing Co., Ltd.'), ('', 'router', '2.4', 'L630', ''), ('', 'node', '2.4', '', '')]):
+        dev('02:CC:00:00:03:%02X' % i, nm, where, band, 0.002 + (i % 4) * 0.004, 0.001 + (i % 3) * 0.002, -44 - i * 2,
+            nick=bool(nm), **({'host': host} if host else {}), **({'vendor': vendor} if vendor else {}))
 if SCN == 'hostile':   # names that look like HTML (host names, makers): the page must show them as text and never run them
     dev('02:CC:00:00:05:01', 'Tom\'s "test" & co', 'router', '5', 9.0, 1.0, -55, host='<b>bold</b>', vendor='<img src=x onerror="window.__xss=1">', vc='<i>vc</i>')
     dev('02:CC:00:00:05:02', '', 'node', '2.4', 0.01, 0.01, -60, nick=False, host='<svg/onload=window.__xss=2>', vendor='"><script>window.__xss=3</script>')

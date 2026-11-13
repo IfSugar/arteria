@@ -53,11 +53,12 @@
 #ar .ar-sum .n { display: inline-block; min-width: 9.6ch; text-align: right; }
 #ar .ar-sum .dn { color: var(--dnt); font-weight: 700; }
 #ar .ar-sum .up { color: var(--upt); font-weight: 700; }
-#ar .ar-unit { display: flex; flex: none; height: 32px; border: 1px solid #6b7b80; border-radius: 16px; overflow: hidden; }
-#ar .ar-unit button { background: none; border: 0; margin: 0; padding: 0 9px; min-width: 44px; color: #c3c2b7; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Every pill-shaped control is the same: 44px tall overall, a dark fill, the same border, 12px text, 14px sides */
+#ar .ar-unit { display: flex; flex: none; height: 44px; border: 1px solid #6b7b80; border-radius: 22px; overflow: hidden; background: var(--surface); }
+#ar .ar-unit button { background: none; border: 0; margin: 0; padding: 0 14px; min-width: 44px; color: #c3c2b7; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 #ar .ar-unit button:hover { color: #fff; }
 #ar .ar-unit button.on { background: #3a4549; color: #fff; cursor: default; }
-#ar .ar-live { min-height: 44px; padding: 0 12px; display: flex; align-items: center; gap: 8px; border-radius: 22px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
+#ar .ar-live { min-height: 44px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-radius: 22px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
 #ar .ar-live .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); flex: none; }
 #ar .ar-live.live .dot { background: #3ddc97; animation: arblink 1.6s ease-in-out infinite; }
 #ar .ar-live.warn .dot { background: var(--accent); }
@@ -134,8 +135,8 @@
 #ar .ar-hist .vals span.n { font-size: 18px; line-height: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 #ar .ar-hist .vals span.u, #ar .ar-hist .vals span.l { font-size: 11px; color: var(--muted); }
 #ar .ar-flowbar { position: absolute; left: 12px; top: 10px; right: 16px; height: 44px; display: flex; align-items: center; gap: 14px; }
-#ar .ar-seg { display: flex; border-radius: 22px; border: 1px solid #6b7b80; overflow: hidden; flex: none; }
-#ar .ar-seg button { height: 44px; margin: 0; padding: 0 16px; border: 0; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+#ar .ar-seg { display: flex; height: 44px; border-radius: 22px; border: 1px solid #6b7b80; overflow: hidden; flex: none; background: var(--surface); }
+#ar .ar-seg button { height: 42px; margin: 0; padding: 0 14px; border: 0; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 #ar .ar-seg button.on-dn { background: #1f4a63; color: var(--dnt); }
 #ar .ar-seg button.on-up { background: #5a3520; color: var(--upt); }
 #ar .ar-scale { display: flex; align-items: center; gap: 7px; flex: none; font-size: 11px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -185,6 +186,7 @@
 #ar .df-ripple { transform-box: fill-box; transform-origin: center; animation-name: arripple; animation-duration: 2.6s; animation-timing-function: ease-out; }
 #ar.paused .df-a, #ar.paused .ar-live .dot { animation-play-state: paused !important; }
 #ar .lk, #ar .ob, #ar .rb { transition: opacity .3s ease; }
+#ar .ob { cursor: pointer; }
 #ar .lk.dim { opacity: .14; } #ar .ob.dim { opacity: .38; } #ar .ob.off { opacity: .3; }
 #ar .rb.dim { opacity: .2; } #ar .rb.mid { opacity: .55; }
 #ar .alt-off { stroke: #ff9c8a; } #ar .alt-nd { stroke: #c3c2b7; } #ar .alt-warn { stroke: #ffcc00; }
@@ -2076,7 +2078,7 @@ function buildMap(net, L) {
 		objs.map(function (o) { return '<g data-obj="' + o.id + '" class="ob">' + o.svg.join('') + '</g>'; }).join('') +
 		arcs.map(function (a) { return a.svg; }).join('') + hubs.join('') + marks.join('') + leaders.join('') + '</svg>';
 	var html = labels.map(function (lb) {
-		return '<button type="button" class="ar-lb' + (lb.x3 ? ' x3' : '') + '" data-id="' + esc(lb.id) + '"' + (lb.full && lb.full !== lb.name ? ' title="' + esc(lb.full) + '"' : '') + ' style="left:' + lb.x + 'px;top:' + lb.y + 'px;width:' + lb.w + 'px;height:' + G.hit + 'px;justify-content:' + lb.just + '" aria-pressed="false">' +
+		return '<button type="button" class="ar-lb' + (lb.x3 ? ' x3' : '') + '" data-id="' + esc(lb.id) + '" style="left:' + lb.x + 'px;top:' + lb.y + 'px;width:' + lb.w + 'px;height:' + G.hit + 'px;justify-content:' + lb.just + '" aria-pressed="false">' +
 			'<span><span class="n">' + esc(lb.name) + '</span><span class="v"></span>' + (lb.x3 ? '<span class="x">' + esc(lb.x3) + '</span>' : '') + '</span></button>';
 	}).join('');
 	return { svg: svg, labels: html };
@@ -2093,7 +2095,7 @@ function textW(s, bold) {
 	} catch (e) { return s.length * 6.6; }
 }
 function placeLabels(net, L, objs, arcs) {
-	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = G.big ? 250 : 100, rects = [], out = [];   /* the big view's labels would rather cover a drawing than another label */
+	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = 1000, rects = [], out = [];   /* a label on another label: only when there is nowhere else at all */
 	var zones = [[0, 0, 244, 78], [SW - 266, 0, SW, 62], [0, SH - 40, 440, SH]];
 	var byId = {};
 	objs.forEach(function (o) { byId[o.id] = o; });
@@ -2119,16 +2121,16 @@ function placeLabels(net, L, objs, arcs) {
 		/* When all of those cover something, further out to either side, a little higher or lower: a longer line costs a
 		   little for every pixel, covering another device's drawing a lot more. */
 		var mid = (bb[1] + bb[3]) / 2, near = cands.length;
-		[0, 40, 80, 130, 190].forEach(function (sx) {
-			[0, -26, 26].forEach(function (dy) {
+		[0, 40, 80, 130, 190, 260, 340, 440].forEach(function (sx) {   /* as far as the free space beside the floor */
+			[0, -26, 26, -52, 52, -78, 78].forEach(function (dy) {
 				if (!sx && !dy) return;
 				var d = 20 + sx + Math.abs(dy);
 				cands.push({ x: bb[2] + 11 + sx, y: mid - HIT / 2 + dy, px: bb[2] + 15 + sx, py: mid + dy, ay: mid, axr: bb[2] + 1, just: 'flex-start', d: d });
 				cands.push({ x: bb[0] - 11 - w - sx, y: mid - HIT / 2 + dy, px: bb[0] - 15 - sx, py: mid + dy, ay: mid, axr: bb[0] - 1, just: 'flex-end', d: d });
 			});
 		});
-		(G.big ? [0, -34, 34, -68, 68, -102, 102] : [0, -34, 34, -68, 68]).forEach(function (dx) {
-			[24, 48].forEach(function (dy) {
+		(G.big ? [0, -34, 34, -68, 68, -102, 102, -170, 170] : [0, -34, 34, -68, 68, -102, 102]).forEach(function (dx) {
+			[24, 48, 80, 120, 170].forEach(function (dy) {
 				var d = 20 + Math.abs(dx) + dy;
 				cands.push({ x: ax - w / 2 + dx, y: bb[3] + 7 + dy, px: ax + dx, py: bb[3] + 12 + dy, ay: bb[3] + 2, just: 'center', d: d });
 				cands.push({ x: ax - w / 2 + dx, y: bb[1] - 7 - HIT - dy, px: ax + dx, py: bb[1] - 12 - dy, ay: bb[1] - 2, just: 'center', d: d });
@@ -2142,12 +2144,12 @@ function placeLabels(net, L, objs, arcs) {
 			rects.forEach(function (o) { if (ov(r, o)) cost += LBL; });
 			objs.forEach(function (o) { if (o !== it.o && ov(r, o.bbox())) cost += OBJ; });
 			zones.forEach(function (z) { if (ov(r, z)) cost += 60; });
-			arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) cost += 0.6; });
+			if (cost < bestCost) arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) cost += 0.6; });
 			if (cost < bestCost) { bestCost = cost; best = c; }
 		});
 		var x = Math.round(best.x), y = Math.round(best.y);
 		rects.push([x, y + 5, x + w, y + HIT - 5]);
-		out.push({ id: it.id, name: name, full: it.name, x3: it.x3 || '', x: x, y: y, w: w, just: best.just, px: best.px, py: best.py, ax: best.axr !== undefined ? best.axr : ax, ay: best.ay });
+		out.push({ id: it.id, name: name, x3: it.x3 || '', x: x, y: y, w: w, just: best.just, px: best.px, py: best.py, ax: best.axr !== undefined ? best.axr : ax, ay: best.ay });
 	});
 	return out;
 }
@@ -2224,7 +2226,8 @@ function setLive() {
 }
 function renderSummary(net) {
 	var s = $('arSum');
-	s.innerHTML = '<span class="k">Internet</span><span class="v"><span class="dn">↓</span> <b>' + esc(full(net.wan.dn)) + '</b></span><span class="v"><span class="up">↑</span> <b>' + esc(full(net.wan.up)) + '</b></span><span class="k n">' + net.clients + ' clients</span>';
+	s.innerHTML = '<span class="v" aria-label="Internet download ' + esc(full(net.wan.dn)) + '"><span class="dn" aria-hidden="true">↓</span> <b>' + esc(full(net.wan.dn)) + '</b></span>' +
+		'<span class="v" aria-label="Internet upload ' + esc(full(net.wan.up)) + '"><span class="up" aria-hidden="true">↑</span> <b>' + esc(full(net.wan.up)) + '</b></span><span class="k n">' + net.clients + ' clients</span>';
 }
 function noticeFor(net) {
 	if (A.paused) return ['Paused. The router stops sampling about 20 s after you pause.', MUTED];
@@ -2267,6 +2270,7 @@ function renderMap(net) {
 		[['data-link', 'links'], ['data-alt', 'alts'], ['data-obj', 'objs'], ['data-lead', 'leads'], ['data-ring', 'rings'], ['data-zone', 'zones'], ['data-mk', 'marks']].forEach(function (p) {
 			Array.prototype.forEach.call(root.querySelectorAll('[' + p[0] + ']'), function (el) { refs[p[1]][el.getAttribute(p[0])] = el; });
 		});
+		Object.keys(refs.objs).forEach(function (id) { refs.objs[id].addEventListener('click', function () { pick(id); focusMore(); }); });   /* a drawing does what its label does */
 		Array.prototype.forEach.call(root.querySelectorAll('.ar-lb'), function (el) {
 			refs.labels[el.getAttribute('data-id')] = el;
 			el.addEventListener('click', function () { pick(el.getAttribute('data-id')); focusMore(); });
@@ -2329,7 +2333,7 @@ function renderMap(net) {
 		el.setAttribute('aria-pressed', isOn ? 'true' : 'false');
 	});
 	if (R.marks['more:on']) R.marks['more:on'].setAttribute('class', trayOn ? '' : 'hide');
-	var nt = noticeFor(net) || (trayOn ? ['The tray\'s devices are listed ' + (G.big && !A.narrow ? 'on the right' : 'below the map') + '. Pick one to trace it.', MUTED] : ['Tap a device label to trace its path. Tap it again to show everything.', MUTED]);
+	var nt = noticeFor(net) || (trayOn ? ['The tray\'s devices are listed ' + (G.big && !A.narrow ? 'on the right' : 'below the map') + '. Pick one to trace it.', MUTED] : ['Tap a device or its label to trace its path. Tap it again to show everything.', MUTED]);
 	setNotice(nt[0], nt[1]);
 }
 
@@ -2658,7 +2662,7 @@ function readoutFor(net) {
 	var dn = net.total.dn, up = net.total.up;
 	var sdn = full(net.wan.dn) + ' internet + ' + full(net.local.dn) + ' local', sup = full(net.wan.up) + ' internet + ' + full(net.local.up) + ' local';
 	var k1 = 'Clients', v1 = net.clients + ' online', k2 = 'Local traffic', v2 = full(net.local.dn), path = 'Through the router';
-	var note = A.tab === 'map' ? 'Tap a device label on the map to trace its path.' : 'Tap a device row to trace it through the ribbons.', tone = INK2;
+	var note = A.tab === 'map' ? 'Tap a device or its label on the map to trace its path.' : 'Tap a device row to trace it through the ribbons.', tone = INK2;
 	var pct = function (a, b) { return a === null || !(b > 0) ? 0 : Math.max(0, Math.min(100, Math.round(100 * a / b))); };
 	var rname = net.router.model || 'Router';
 	if (id === 'wan') {
@@ -2956,9 +2960,11 @@ function boot() {
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
-	/* anything cut short with "…" shows in full on hover: names, makers, paths */
+	/* a name, a maker or a path cut short with "…" shows in full on hover: only the text itself (a few inline parts at most),
+	   never a container, and never the map's labels (tap one for its details) */
 	$('ar').addEventListener('mouseover', function (e) {
-		for (var el = e.target, i = 0; el && el.nodeType === 1 && el.id !== 'ar' && i < 4; el = el.parentNode, i++) {
+		if (!e.target.closest || e.target.closest('#arMapLabels, svg')) return;
+		for (var el = e.target, i = 0; el && el.nodeType === 1 && el.id !== 'ar' && i < 2 && el.querySelectorAll('*').length <= 3; el = el.parentNode, i++) {
 			if (el.clientWidth && el.scrollWidth > el.clientWidth + 1) { if (!el.title || el._tip) { el.title = el.textContent.trim(); el._tip = true; } return; }
 			if (el._tip) { el.removeAttribute('title'); el._tip = false; }
 		}
