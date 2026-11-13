@@ -326,10 +326,16 @@ var ICON = {
 	hub: rr(4, 13, 16, 6, 2) + 'M8 16h.01M12 16h.01M16 16h.01M8.5 9.5a5 5 0 0 1 7 0M10.6 11.4a2 2 0 0 1 2.8 0',
 	vacuum: ci(12, 12, 8.5) + ci(12, 9, 2) + 'M9.5 16.5h5',
 	appliance: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5',
+	washer: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5M10 14.5c.7-.6 1.3-.6 2 0s1.3.6 2 0',
+	dryer: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5M10.5 12.5h3M10.5 14.5h3',
+	dishwasher: rr(5, 3, 14, 18, 2) + 'M5 8.5h14M8 6h.01M11 6h5M9 11.5h6',
 	iot: rr(5, 5, 14, 14, 3) + 'M12 9.5v2.5M12 14.5h.01',
 	pi: rr(2.5, 6, 19, 12, 2) + rr(8.5, 10, 5, 5, 1) + 'M5.5 8.5h7' + rr(16, 9.5, 3.5, 6, .8),
 	stick: rr(2.5, 9, 13.5, 6, 2) + 'M16 10.5h3.5v3H16M6 12h.01',
 	smartspeaker: 'M6 5.5c0-1.4 2.7-2.5 6-2.5s6 1.1 6 2.5v13c0 1.4-2.7 2.5-6 2.5s-6-1.1-6-2.5zM6 5.5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5',
+	purifier: rr(6.5, 3, 11, 18, 3.5) + 'M9.5 6.5h5M9.5 10v5M12 10v5M14.5 10v5' + rr(8.5, 16.5, 7, 2.5, .8),
+	wallswitch: rr(4, 4, 16, 16, 2.5) + rr(9, 7, 6, 10, 1.5) + 'M12 9v2',
+	contact: rr(3.5, 5, 6, 14, 1.5) + rr(12, 8, 3.5, 8, 1) + 'M6.5 8.5h.01M19.5 3v18',
 	more: ci(6, 12, 1.6) + ci(12, 12, 1.6) + ci(18, 12, 1.6),
 	expand: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
 	collapse: 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5',
@@ -448,9 +454,18 @@ function parseNames(n) {
 /* A device's label, and where it came from: your nickname, a nickname matched by host name (al, see
    buildAliases), the name the device gave, its maker, or nothing ('tail': buildNet then uses the kind,
    "Light …F5:86", once the device is classified). */
+/* The router's client editor fills its name box with what it shows, so saving just an icon can store "dhcpcd-6 8 2 …"
+   or the maker's name as a nickname: those aren't yours, and the device's own name is better. */
+var JUNK_NICK = /^(dhcpcd|android-dhcp|udhcp|espressif|esp[_-]|unknown|localhost|wlan\d*$)/i;
+function nickOf(c, m) {
+	var n = String(c && c.name || '').trim(), k = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }, kn = k(n);
+	if (!n || JUNK_NICK.test(n)) return '';
+	if (m && kn.length >= 6 && [m.vendor, m.vendorclass].some(function (v) { return v && k(v).indexOf(kn) === 0; })) return '';
+	return n;
+}
 function nameInfo(mac, al) {
 	var N = A.names, c = N && N.custom[mac], m = N && N.nmp[mac], l = N && N.lease[mac];
-	if (c && c.name) return { name: c.name, src: 'nick' };
+	if (nickOf(c, m)) return { name: nickOf(c, m), src: 'nick' };
 	if (al && al.name) return { name: al.name, src: 'alias' };
 	if (m && m.name && !JUNK_NAME.test(m.name) && m.name !== m.vendor) return { name: String(m.name).trim(), src: 'device' };
 	if (l && l.host && !JUNK_NAME.test(l.host)) return { name: l.host, src: 'device' };
@@ -498,18 +513,27 @@ var KIND_STRONG = [
 	['watch', /watch\b|fitbit|garmin|\bmi ?band\b|bracelet/i],
 	['phone', /iphone|\bpixel[ _-]?\d|galaxy[ _-]?[asz]\d|phone\b|redmi|oneplus|\bpoco\b/i],
 	['printer', /printer|laserjet|officejet|deskjet|envy[ _-]?\d|\bepson|\bbrother\b|\bcanon\b|\bet-\d|\bmfc-|\bhl-l|scanner/i],
+	['contact', /(door|window)[ _-]?(\/ ?window[ _-]?)?(sensor|contact)|contact[ _-]?sensor|shelly[ _-]?(door|dw)/i],
 	['doorbell', /doorbell|ring[ _-]?pro|\bring[ _-]?(door|video)/i],
-	['camera', /\bcam\b|[a-z]cam(\b|\d)|camera|kamera|ipcam|reolink|\barlo\b|\bblink|\bwyze|\beufy|hikvision|dahua|\bnvr\b|nest[ _-]?cam/i],
+	['camera', /\bcam\b|[a-z]cam(\b|\d)|camera|kamera|ipcam|reolink|\barlo\b|\bblink|\bwyze|\beufy|hikvision|dahua|\bnvr\b|nest[ _-]?cam|^(tapo[ _-]?)?c[1-5]\d\d(ws?)?$/i],   /* Tapo cameras name themselves by model: C200 */
 	['lock', /\block\b|smart ?lock|\bnuki\b|\byale\b|schlage/i],
-	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning/i],
-	['light', /bulb|\blamp|\bwled\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee/i],
-	['hub', /\bbridge\b|\bhub\b|\bmyq|garage[ _-]?(door|opener)|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee/i],
+	['thermostat', /thermostat|\btstat|lennox|icomfort|honeywell|resideo|\bsensi\b|\bmysa\b|\btado\b|ecobee|\btrv\b|netatmo|nest[ _-]?learning|ems[-_]?esp/i],   /* EMS-ESP: a boiler's gateway */
+	['wallswitch', /wall ?switch|light ?switch|smart ?switch|switch ?module|\bdimmer\b|shelly[ _-]?(1|2|plus ?[12]|pro ?[12]|i4|dimmer)\b|sonoff[ _-]?(t[0-4]|tx|mini)\b|^(tapo[ _-]?)?s5\d\d[a-z]?$|^(hs2[0-2]0|ks2\d\d|es20m)\b/i],
+	/* Tapo and Kasa devices name themselves by model (L630, KL130), Govee's by its maker and model (ihoment_H6159_…) */
+	['light', /bulb|\blamp|\bwled\b|light\b|light ?strip|led ?strip|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|govee|^(tapo[ _-]?)?l[5-9]\d\d[a-z]?$|^(kl|lb)\d{3}\b|ihoment[_-]?h(6|70)/i],
+	['hub', /\bbridge\b|\bhub\b|\bmyq|garage[ _-]?(door|opener)|home[ _-]?assistant|\bhass|smartthings|zigbee|\bthread\b|hubitat|\bhomey\b|\bhue\b|conbee|^(tapo[ _-]?)?h[12]00$/i],
+	['purifier', /purifier|humidifier|air[ _-]?(cleaner|performer|treatment)|philips[ _-]?air\b|\bblueair|levoit|\bcoway|\bwinix|airmega|ihoment[_-]?h71[24]/i],
 	['air', /\bac\b|a\/c|air ?con|daikin|heat ?pump|climate|mitsubishi|sensibo|midea|\bgree\b/i],
-	['vacuum', /vacuum|roborock|rockrobo|roomba|irobot|deebot|ecovacs|dreame|\bmop\b/i],
-	['appliance', /washer|washing|dryer|fridge|refrigerator|freezer|\boven\b|dishwasher|microwave|kettle|coffee|purifier|humidifier|\bfan\b|heater|boiler|cooker|air ?fryer/i],
-	['plug', /\bplug|\bchime|\bsp1\d\d\b|chargepoint|ev[ _-]?charger|wallbox|juicebox|\beasee\b|\bzappi\b|wall[ _-]?connector|smart ?plug|\boutlet\b|socket|wall ?switch|power ?strip|\bhs1\d\d\b|\bkp1\d\d\b/i],
-	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara/i],
-	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life/i]
+	['vacuum', /vacuum|roborock|rockrobo|roomba|irobot|deebot|ecovacs|dreame|\bmop\b|^(tapo[ _-]?)?rv\d\d/i],
+	/* Bosch, Siemens and Neff machines name themselves "BOSCH-WAX32EH0EU-…": the model number says what each is
+	   (WA, WG, WM, WU washers; WT, WQ dryers; WN, WD, WV washer-dryers; SM, SN, SB, SP, SX dishwashers) */
+	['dishwasher', /dish ?washer|geschirr|^(bosch|siemens|neff|gaggenau|bsh|constructa|balay|pitsos|profilo)[-_ ]s[mnbpgrx][a-z]{0,2}\d/i],
+	['dryer', /tumble|dryer|trockner|^(bosch|siemens|neff|bsh|constructa|balay|pitsos|profilo)[-_ ]w[tq][a-z]{0,2}\d/i],
+	['washer', /washer|washing|waschmaschine|^(bosch|siemens|neff|bsh|constructa|balay|pitsos|profilo)[-_ ]w[agmnuvdx][a-z]{0,2}\d/i],
+	['appliance', /appliance|fridge|refrigerator|freezer|\boven\b|microwave|kettle|coffee|\bfan\b|heater|boiler|cooker|air ?fryer|ihoment[_-]?h7|^(bosch|siemens|neff|gaggenau|bsh)[-_ ][a-z]{2}/i],
+	['plug', /\bplug|\bchime|\bsp1\d\d\b|chargepoint|ev[ _-]?charger|wallbox|juicebox|\beasee\b|\bzappi\b|wall[ _-]?connector|smart ?plug|\boutlet\b|socket|power ?strip|\bhs1\d\d\b|\bkp\d{3}\b|^(tapo[ _-]?)?p[13]\d\d[a-z]?$|^ep\d\d\b/i],
+	['sensor', /sensor|\bmotion\b|\bleak\b|smoke|detector|alarm|weather ?station|aqara|ihoment[_-]?h5/i],
+	['iot', /espressif|\besp[-_]?(32|8266|home)|tuya|shelly|sonoff|meross|\btapo\b|\bkasa\b|tasmota|\bwled\b|dyson|smart ?life|ihoment/i]
 ];
 /* Weaker hints: the maker (from the MAC address) and the DHCP vendor class. Used only when nothing above matched. */
 var KIND_WEAK = [
@@ -524,7 +548,8 @@ var KIND_WEAK = [
 	['console', /nintendo|sony interactive/i],
 	['camera', /hikvision|dahua|reolink|arlo/i],
 	['vacuum', /roborock|irobot|ecovacs/i],
-	['iot', /espressif|tuya|shelly|itead|texas instruments|murata|azurewave|\budhcp/i]
+	['appliance', /electrolux|\baeg\b|bsh hausger|miele|whirlpool|bauknecht|haier|candy|beko|arcelik|liebherr|vorwerk/i],
+	['iot', /espressif|tuya|shelly|itead|texas instruments|murata|azurewave|mxchip|\budhcp/i]
 ];
 /* Why a device got its kind: kept for the readout's Details and the classification report. */
 function classify(mac, name, link, al) {
@@ -534,7 +559,7 @@ function classify(mac, name, link, al) {
 	/* 1. the icon you picked in the router's client list (not one the router saved along with a nickname) */
 	if (ct && TYPE_KIND[ct] && (!TYPE_LOOSE[ct] || (nt && ct !== nt))) return res(TYPE_KIND[ct], 'your icon');
 	/* 2. a name that says what it is: your nickname, then the names the device gave */
-	var names = [c && c.name, name, l && l.host, m && m.name], i, j;
+	var names = [al ? c.name : nickOf(c, m), name, l && l.host, m && m.name], i, j;
 	for (j = 0; j < names.length; j++) {
 		if (!names[j]) continue;
 		for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(names[j])) return res(KIND_STRONG[i][0], 'name', ['nickname', 'label', 'hostname', 'router name'][j] + ' #' + i);
@@ -596,8 +621,8 @@ var OS_NAME = { 1: 'Android', 2: 'Windows', 3: 'Linux', 4: 'ASUS', 5: 'Apple' };
 var WIFI_STD = { n: 'Wi-Fi 4 (802.11n)', ac: 'Wi-Fi 5 (802.11ac)', ax: 'Wi-Fi 6 (802.11ax)', be: 'Wi-Fi 7 (802.11be)' };
 var KIND_LABEL = { desktop: 'Desktop PC', mac: 'Mac desktop', laptop: 'Laptop', phone: 'Phone', tablet: 'Tablet', watch: 'Watch', printer: 'Printer', tv: 'TV', streamer: 'Streaming box',
 	speaker: 'Speaker', soundbar: 'Home cinema', console: 'Game console', nas: 'NAS', camera: 'Camera', doorbell: 'Doorbell', lock: 'Smart lock', thermostat: 'Thermostat', light: 'Light',
-	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
-	pi: 'Single-board computer', stick: 'Streaming stick', smartspeaker: 'Smart speaker' };
+	hub: 'Smart-home hub', air: 'Air conditioner', vacuum: 'Robot vacuum', appliance: 'Appliance', washer: 'Washing machine', dryer: 'Dryer', dishwasher: 'Dishwasher', plug: 'Smart plug', sensor: 'Sensor', iot: 'Smart device', switch: 'Network device', generic: 'Device',
+	pi: 'Single-board computer', stick: 'Streaming stick', smartspeaker: 'Smart speaker', purifier: 'Air purifier', wallswitch: 'Smart switch', contact: 'Door sensor' };
 function ago(s) {
 	if (s === null || s === undefined || isNaN(s)) return '—';
 	s = Math.max(0, Math.round(s));
@@ -646,7 +671,7 @@ function detailsFor(net, dv) {
 		['IPv6', v6.length ? v6[0] + (v6.length > 1 ? ' +' + (v6.length - 1) : '') : '—', v6.join('\n')],
 		['Address', lease, l && left > 0 ? 'DHCP lease, ' + ago(left) + ' left' : ''],
 		al ? ['Matched', 'by host name', 'This private address has no name of its own. It uses the host name of the device you named "' + al.name + '", which is not connected now, so it is shown under that name.']
-			: ['Name from', (N.custom[mac] && N.custom[mac].name) ? 'your client list' : ((l && l.host) || (m && m.name) ? 'the device' : 'its maker or kind')]
+			: ['Name from', nickOf(N.custom[mac], m) ? 'your client list' : ((l && l.host) || (m && m.name) ? 'the device' : 'its maker or kind')]
 	];
 	return cells;
 }
@@ -1371,16 +1396,65 @@ function drawVacuum(id, kind, cx, cy, face) {   /* a robot vacuum */
 	o.target = P(cx, cy, 0.3);
 	return o;
 }
-function drawAppliance(id, kind, cx, cy, face) {   /* white goods: washer, dryer, fridge, oven, purifier, fan, heater */
+function drawAppliance(id, kind, cx, cy, face) {   /* white goods: a washing machine, a dryer, a dishwasher, or another appliance */
 	var o;
 	o = new Obj(id, cx, cy, 1.2);
 	o.box(cx - 0.5, cy - 0.5, 0, 1.0, 1.0, 1.15, M_WHITE, { ao: true, shadow: true });
-	o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
-	o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
-	o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
-	o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');
 	[0.3, 0.45, 0.6].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#7f8a8e', 1.1); });
+	if (kind === 'dishwasher') {   /* a plain door: the control strip along its top, a handle under it */
+		o.face('L', 0.04, 0.84, 0.96, 0.96, 'fill:#20282b;stroke:#8f9a9e;stroke-width:.6');
+		o.led('L', 0.84, 0.9, '#3ddc97', 0, 0, 0.9);
+		o.face('L', 0.14, 0.88, 0.5, 0.92, 'fill:url(#ar-scr4);opacity:.7');
+		o.face('L', 0.3, 0.7, 0.7, 0.75, 'fill:#8f9a9e');
+		o.line('L', 0.04, 0.06, 0.96, 0.06, '#aab4b8', 1);
+	} else {
+		o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
+		o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
+		o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
+		if (kind === 'dryer') {   /* an empty drum: no water, a lint filter under the door */
+			o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:#3a4448');
+			[0.36, 0.48].forEach(function (v) { o.line('L', 0.38, v, 0.62, v, '#56646a', 1); });
+			o.face('L', 0.36, 0.04, 0.64, 0.09, 'fill:#8f9a9e');
+		} else o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');   /* water behind the glass */
+	}
 	o.target = P(cx, cy, 1.2);
+	return o;
+}
+function drawPurifier(id, kind, cx, cy, face) {   /* an air purifier or humidifier: a white tower, its water tank, side grilles, an air ring on top */
+	var o, c;
+	o = new Obj(id, cx, cy, 1.25);
+	o.box(cx - 0.32, cy - 0.32, 0, 0.64, 0.64, 1.2, M_WHITE, { ao: true, shadow: true });
+	o.face('L', 0.1, 0.06, 0.9, 0.34, 'fill:#8fc3e3;fill-opacity:.55;stroke:#8f9a9e;stroke-width:.6');   /* the water tank */
+	o.line('L', 0.1, 0.12, 0.9, 0.12, 'rgba(255,255,255,.5)', 0.8);
+	[0.22, 0.36, 0.5, 0.64, 0.78].forEach(function (u) { o.line('L', u, 0.44, u, 0.9, '#9aa5a9', 1.1); o.line('R', u, 0.44, u, 0.9, '#8a9599', 1); });
+	c = P(cx, cy, 1.2);
+	o.svg.push(ell(c, 0.24, 'fill:#20282b;stroke:#8f9a9e;stroke-width:.8'), ell(c, 0.15, 'fill:none;stroke:' + DN + ';stroke-width:1.3'));
+	o.led('L', 0.5, 0.96, '#3ddc97', 0, 0, 0.9);
+	o.target = P(cx, cy, 1.26);
+	return o;
+}
+function drawWallSwitch(id, kind, cx, cy, face) {   /* a smart light switch on a piece of wall */
+	var o;
+	o = new Obj(id, cx, cy, 1.3);
+	o.box(cx - 0.4, cy - 0.2, 0, 0.8, 0.14, 1.25, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	o.box(cx - 0.21, cy - 0.06, 0.52, 0.42, 0.05, 0.42, M_WHITE);
+	o.face('L', 0.26, 0.16, 0.74, 0.84, 'fill:#dfe4e6;stroke:#8f9a9e;stroke-width:.7');   /* the rocker */
+	o.line('L', 0.3, 0.5, 0.7, 0.5, '#aab4b8', 0.8);
+	o.led('L', 0.5, 0.72, '#3ddc97', 0, 0, 0.8);
+	o.target = P(cx, cy, 1.3);
+	return o;
+}
+function drawContact(id, kind, cx, cy, face) {   /* a door or window sensor: the sensor and its magnet, either side of a door's edge */
+	var o;
+	o = new Obj(id, cx, cy, 1.3);
+	o.box(cx - 0.4, cy - 0.2, 0, 0.8, 0.14, 1.25, M_WALL, { shadow: true });
+	o.line('L', 0, 0.08, 1, 0.08, 'rgba(0,0,0,.3)', 1);
+	o.line('L', 0.56, 0.0, 0.56, 1, 'rgba(0,0,0,.45)', 1.4);                     /* the door's edge */
+	o.box(cx - 0.3, cy - 0.06, 0.6, 0.16, 0.06, 0.42, M_WHITE);                 /* the sensor */
+	o.led('L', 0.5, 0.82, DN, 2.8 + (hash(id) % 10) / 4, 0, 0.8);
+	o.box(cx + 0.02, cy - 0.06, 0.66, 0.12, 0.06, 0.3, M_WHITE);                /* its magnet */
+	o.target = P(cx, cy, 1.3);
 	return o;
 }
 function drawIot(id, kind, cx, cy, face) {
@@ -1424,8 +1498,8 @@ var DRAW = {
 	tv: drawTv, laptop: drawLaptop, phone: drawPhone, tablet: drawTablet, nas: drawNas, desktop: drawDesktop, mac: drawMac, light: drawLight,
 	air: drawAir, speaker: drawSpeaker, printer: drawPrinter, watch: drawWatch, camera: drawCamera, streamer: drawStreamer, soundbar: drawSoundbar,
 	doorbell: drawDoorbellLock, lock: drawDoorbellLock, sensor: drawSensorThermostat, thermostat: drawSensorThermostat, plug: drawPlug, hub: drawHub,
-	vacuum: drawVacuum, appliance: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
-	pi: drawPi, stick: drawStick, smartspeaker: drawSmartSpeaker
+	vacuum: drawVacuum, appliance: drawAppliance, washer: drawAppliance, dryer: drawAppliance, dishwasher: drawAppliance, iot: drawIot, switch: drawSwitch, console: drawConsole, generic: drawGeneric,
+	pi: drawPi, stick: drawStick, smartspeaker: drawSmartSpeaker, purifier: drawPurifier, wallswitch: drawWallSwitch, contact: drawContact
 };
 /* Devices on the map: one drawing per kind, at (cx, cy) on the floor, facing left (the default) or right.
    Kinds without a drawing of their own get the generic box. */
@@ -1752,7 +1826,7 @@ function buildMap(net, L) {
 		objs.map(function (o) { return '<g data-obj="' + o.id + '" class="ob">' + o.svg.join('') + '</g>'; }).join('') +
 		arcs.map(function (a) { return a.svg; }).join('') + hubs.join('') + marks.join('') + leaders.join('') + '</svg>';
 	var html = labels.map(function (lb) {
-		return '<button type="button" class="ar-lb' + (lb.x3 ? ' x3' : '') + '" data-id="' + esc(lb.id) + '" style="left:' + lb.x + 'px;top:' + lb.y + 'px;width:' + lb.w + 'px;height:' + G.hit + 'px;justify-content:' + lb.just + '" aria-pressed="false">' +
+		return '<button type="button" class="ar-lb' + (lb.x3 ? ' x3' : '') + '" data-id="' + esc(lb.id) + '"' + (lb.full && lb.full !== lb.name ? ' title="' + esc(lb.full) + '"' : '') + ' style="left:' + lb.x + 'px;top:' + lb.y + 'px;width:' + lb.w + 'px;height:' + G.hit + 'px;justify-content:' + lb.just + '" aria-pressed="false">' +
 			'<span><span class="n">' + esc(lb.name) + '</span><span class="v"></span>' + (lb.x3 ? '<span class="x">' + esc(lb.x3) + '</span>' : '') + '</span></button>';
 	}).join('');
 	return { svg: svg, labels: html };
@@ -1792,19 +1866,38 @@ function placeLabels(net, L, objs, arcs) {
 		});
 		cands.push({ x: bb[2] + 11, y: (bb[1] + bb[3]) / 2 - HIT / 2, px: bb[2] + 15, py: (bb[1] + bb[3]) / 2, ay: (bb[1] + bb[3]) / 2, axr: bb[2] + 1, just: 'flex-start' });
 		cands.push({ x: bb[0] - 11 - w, y: (bb[1] + bb[3]) / 2 - HIT / 2, px: bb[0] - 15, py: (bb[1] + bb[3]) / 2, ay: (bb[1] + bb[3]) / 2, axr: bb[0] - 1, just: 'flex-end' });
-		var best = null, bestCost = 1e9;
+		/* When all of those cover something, further out to either side, a little higher or lower: a longer line costs a
+		   little for every pixel, covering another device's drawing a lot more. */
+		var mid = (bb[1] + bb[3]) / 2, near = cands.length;
+		[0, 40, 80, 130, 190].forEach(function (sx) {
+			[0, -26, 26].forEach(function (dy) {
+				if (!sx && !dy) return;
+				var d = 20 + sx + Math.abs(dy);
+				cands.push({ x: bb[2] + 11 + sx, y: mid - HIT / 2 + dy, px: bb[2] + 15 + sx, py: mid + dy, ay: mid, axr: bb[2] + 1, just: 'flex-start', d: d });
+				cands.push({ x: bb[0] - 11 - w - sx, y: mid - HIT / 2 + dy, px: bb[0] - 15 - sx, py: mid + dy, ay: mid, axr: bb[0] - 1, just: 'flex-end', d: d });
+			});
+		});
+		(G.big ? [0, -34, 34, -68, 68, -102, 102] : [0, -34, 34, -68, 68]).forEach(function (dx) {
+			[24, 48].forEach(function (dy) {
+				var d = 20 + Math.abs(dx) + dy;
+				cands.push({ x: ax - w / 2 + dx, y: bb[3] + 7 + dy, px: ax + dx, py: bb[3] + 12 + dy, ay: bb[3] + 2, just: 'center', d: d });
+				cands.push({ x: ax - w / 2 + dx, y: bb[1] - 7 - HIT - dy, px: ax + dx, py: bb[1] - 12 - dy, ay: bb[1] - 2, just: 'center', d: d });
+			});
+		});
+		var best = null, bestCost = 1e9, OBJ = G.big ? 150 : 90;   /* covering another device: worse than a long line, still better than hiding a label */
 		cands.forEach(function (c, ci) {
-			var r = [c.x, c.y + 5, c.x + w, c.y + HIT - 5], cost = ci * 0.01;
+			if (ci >= near && bestCost < 30) return;   /* a near spot that covers nothing much: no need to look further */
+			var r = [c.x, c.y + 5, c.x + w, c.y + HIT - 5], cost = ci * 0.01 + (c.d || 0) * 0.12;
 			if (r[0] < 4 || r[1] < 4 || r[2] > SW - 4 || r[3] > SH - 4) cost += 1000;
 			rects.forEach(function (o) { if (ov(r, o)) cost += LBL; });
-			objs.forEach(function (o) { if (o !== it.o && ov(r, o.bbox())) cost += 40; });
+			objs.forEach(function (o) { if (o !== it.o && ov(r, o.bbox())) cost += OBJ; });
 			zones.forEach(function (z) { if (ov(r, z)) cost += 60; });
 			arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) cost += 0.6; });
 			if (cost < bestCost) { bestCost = cost; best = c; }
 		});
 		var x = Math.round(best.x), y = Math.round(best.y);
 		rects.push([x, y + 5, x + w, y + HIT - 5]);
-		out.push({ id: it.id, name: name, x3: it.x3 || '', x: x, y: y, w: w, just: best.just, px: best.px, py: best.py, ax: best.axr !== undefined ? best.axr : ax, ay: best.ay });
+		out.push({ id: it.id, name: name, full: it.name, x3: it.x3 || '', x: x, y: y, w: w, just: best.just, px: best.px, py: best.py, ax: best.axr !== undefined ? best.axr : ax, ay: best.ay });
 	});
 	return out;
 }
@@ -2068,8 +2161,8 @@ function buildFlow(gs) {
 		o.push(lbl('g:' + g.id, '<rect x="' + (FX0.link - 4) + '" y="-12.5" width="' + pw + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/>' +
 			'<text x="' + (FX0.link + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:' + (g.node ? '#cdc5fc' : '#f0efec') + '">' + esc(nm) + '<tspan data-t="gv:' + g.id + '" dx="6" style="font-weight:400;fill:#c3c2b7;font-variant-numeric:tabular-nums"></tspan></text>'));
 		if (g.node) {
-			var nn = g.label.length > 12 ? g.label.slice(0, 11) + '…' : g.label;
-			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + esc(nn) + '</text>'));
+			var nn = g.label.length > 12 ? g.label.slice(0, 11) + '…' : g.label, tip = nn !== g.label ? '<title>' + esc(g.label) + '</title>' : '';
+			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + tip + esc(nn) + '</text>'));
 		}
 	});
 	var hs = 'font-size:10px;font-weight:700;letter-spacing:.12em;fill:#93a9b1';
@@ -2613,6 +2706,13 @@ function boot() {
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
+	/* anything cut short with "…" shows in full on hover: names, makers, paths */
+	$('ar').addEventListener('mouseover', function (e) {
+		for (var el = e.target, i = 0; el && el.nodeType === 1 && el.id !== 'ar' && i < 4; el = el.parentNode, i++) {
+			if (el.clientWidth && el.scrollWidth > el.clientWidth + 1) { if (!el.title || el._tip) { el.title = el.textContent.trim(); el._tip = true; } return; }
+			if (el._tip) { el.removeAttribute('title'); el._tip = false; }
+		}
+	});
 	$('arDn').addEventListener('click', function () { setMode('dn'); });
 	$('arUp').addEventListener('click', function () { setMode('up'); });
 	A.rowHtml = $('arTop0').innerHTML;   /* the one row markup, for the busiest list and the "+N more" list */
@@ -2687,7 +2787,6 @@ window.Arteria = { _t: { objDevice: objDevice, objNode: objNode, objRouter: objR
 <tr>
 <td bgcolor="#4D595D" colspan="3" valign="top">
 <div>&nbsp;</div>
-<div class="formfontdesc">Live traffic between the internet, your router, its AiMesh nodes and every client. The router samples only while this page is open.</div>
 
 <div id="ar">
 	<div class="ar-bar">

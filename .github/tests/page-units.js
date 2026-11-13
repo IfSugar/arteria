@@ -42,10 +42,42 @@ const CASES = [
 	['Front doorbell', 0, 0, 0, 'wifi', '', '', 'doorbell'],
 	['Garden camera', 0, 0, 0, 'wifi', '', '', 'camera'],
 	['Roborock-S8', 0, 0, 0, 'wifi', '', '', 'vacuum'],
-	['Washing machine', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Washing machine', 0, 0, 0, 'wifi', '', '', 'washer'],
+	['BOSCH-WAX32EH0EU-00005E0053A1', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'washer'],
+	['BOSCH-WTX87EH0EU-00005E0053A2', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'dryer'],
+	['SIEMENS-SN85TX00CE-00005E0053A3', 0, 0, 0, 'wifi', 'BSH Hausgeraete GmbH', '', 'dishwasher'],
+	['BOSCH-SMV4HVX31E-00005E0053A4', 0, 0, 0, 'wifi', '', '', 'dishwasher'],
+	['BOSCH-KGN39AIAT-00005E0053A5', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Kitchen dishwasher', 0, 0, 0, 'wifi', '', '', 'dishwasher'],
+	['Tumble dryer', 0, 0, 0, 'wifi', '', '', 'dryer'],
+	['Electrolux_Appliance', 0, 0, 0, 'wifi', 'Electrolux Appliances AB', '', 'appliance'],
+	['Device …00:A6', 0, 0, 0, 'wifi', 'Electrolux Appliances AB', '', 'appliance'],
+	['ems-esp', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'thermostat'],
 	['Hall thermostat', 0, 0, 0, 'wifi', '', '', 'thermostat'],
 	['Smart plug', 0, 0, 0, 'wifi', '', '', 'plug'],
-	['Door sensor', 0, 0, 0, 'wifi', '', '', 'sensor'],
+	['Door sensor', 0, 0, 0, 'wifi', '', '', 'contact'],
+	['Philips Air', 0, 0, 0, 'wifi', 'Shanghai MXCHIP Information Technology Co., Ltd.', '', 'purifier'],
+	['mxchip', 0, 0, 0, 'wifi', 'Shanghai MXCHIP Information Technology Co., Ltd.', '', 'iot'],
+	['Bedroom humidifier', 0, 0, 0, 'wifi', '', '', 'purifier'],
+	['L630', 0, 0, 0, 'wifi', '', '', 'light'],
+	['L530E', 0, 0, 0, 'wifi', '', '', 'light'],
+	['KL130(EU)', 0, 0, 0, 'wifi', '', '', 'light'],
+	['P110', 0, 0, 0, 'wifi', '', '', 'plug'],
+	['C200', 0, 0, 0, 'wifi', '', '', 'camera'],
+	['S505', 0, 0, 0, 'wifi', '', '', 'wallswitch'],
+	['HS220(US)', 0, 0, 0, 'wifi', '', '', 'wallswitch'],
+	['H200', 0, 0, 0, 'wired', '', '', 'hub'],
+	['RV30_Max_Plus', 0, 0, 0, 'wifi', '', '', 'vacuum'],
+	['ihoment_H6159_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],
+	['ihoment_H7070_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'light'],
+	['ihoment_H7121_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'purifier'],
+	['ihoment_H5075_1A2B', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'sensor'],
+	['shelly1-A1B2C3', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'wallswitch'],
+	['Hall light switch', 0, 0, 0, 'wifi', '', '', 'wallswitch'],
+	['Patio window sensor', 0, 0, 0, 'wifi', '', '', 'contact'],
+	['shellydw2-A1B2C3', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'contact'],
+	['Nintendo Switch', 0, 0, 0, 'wifi', '', '', 'console'],
+	['Office switch', 0, 2, 0, 'wired', '', '', 'switch'],
 	['Front door lock', 0, 0, 0, 'wifi', '', '', 'lock'],
 	['Apple Watch', 0, 0, 5, 'wifi', '', '', 'watch'],
 	['Kindle', 0, 25, 0, 'wifi', '', '', 'tablet'],
@@ -282,5 +314,17 @@ const flbad = [];
 	T.useGeom(keepG);
 });
 ok(!flbad.length, 'Flow layout: rows apart and tap-sized, ribbons in their rows, internet + local = router, fits or scrolls', flbad.slice(0, 5).join('; '));
+
+// ---- 13. a nickname the router's client editor saved by itself (its DHCP software, the maker) isn't a name
+const NM = '00:00:5E:00:53:F2', nk = (nick, host, vendor) => { A.names = AR.parseNames({ custom: '<' + nick + '>' + NM + '>0>0>>', leases: '1999999999 ' + NM.toLowerCase() + ' 192.168.50.88 ' + host + ' *',
+	nmp: { [NM]: { name: '', vendor: vendor, vendorclass: '', type: 0, os_type: 0 } } }); return T.nameInfo(NM); };
+let ni = nk('dhcpcd-6 8 2 Linux-5 4 1', 'roborock-vacuum-s5e', 'Beijing Xiaomi Mobile Software Co.,Ltd');
+ok(ni.name === 'roborock-vacuum-s5e' && ni.src === 'device', 'a nickname that is only DHCP software gives way to the device\'s own name', JSON.stringify(ni));
+ni = nk('Beijing Xiaomi Mobile Software C', 'roborock-vacuum-s5e', 'Beijing Xiaomi Mobile Software Co.,Ltd');
+ok(ni.name === 'roborock-vacuum-s5e', 'so does a nickname that is only the maker (cut short or not)', JSON.stringify(ni));
+ni = nk('Vacuum', 'roborock-vacuum-s5e', 'Beijing Xiaomi Mobile Software Co.,Ltd');
+ok(ni.name === 'Vacuum' && ni.src === 'nick', 'a nickname you gave still wins', JSON.stringify(ni));
+A.names = AR.parseNames({ custom: '<dhcpcd-6 8 2 Linux-5 4 1>' + NM + '>0>61>>', nmp: { [NM]: { name: '', vendor: '', vendorclass: '', type: 0, os_type: 0 } } });
+ok(T.classify(NM, '', 'wifi').kind === 'vacuum', '... and the icon saved with it still counts');
 
 process.exit(fails ? 1 : 0);

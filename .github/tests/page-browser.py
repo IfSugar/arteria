@@ -6,7 +6,8 @@
   2. the expanded view: Escape closes the report, then the list, then the view; Tab never leaves it;
      closing puts the stage back where it was, 728 x 518, inside the router's page;
   3. the "hostile" scenario: names and AiMesh client-list keys that look like HTML stay text and run nothing;
-  4. two Arteria tabs: closing one doesn't tell the router to stop sampling while the other is open.
+  4. two Arteria tabs: closing one doesn't tell the router to stop sampling while the other is open;
+  5. in every scenario, labels keep off other devices' drawings, and what is cut short shows in full on hover.
 
 Needs Python 3 with Playwright (pip install playwright; the browser is the system's Chrome or Chromium).
 Usage: python3 .github/tests/page-browser.py [path to chrome]
@@ -105,6 +106,24 @@ async def scenario(b, scn, port):
         after = await pg.evaluate(STAGE)
         await pg.wait_for_timeout(2200)   # one more sample after all of it: errors in the next render show up too
         inj = await pg.evaluate(INJECTED)
+        # a device's label doesn't cover another device's drawing (on a crowded floor, one may have to)
+        cover = await pg.evaluate('''() => {
+            const objs = [...document.querySelectorAll('#ar g[data-obj]')].map(g => [g.getAttribute('data-obj'), g.getBoundingClientRect()]);
+            let n = 0;
+            document.querySelectorAll('#ar .ar-lb').forEach(b => {
+                const r = b.firstElementChild.getBoundingClientRect(), id = b.getAttribute('data-id');
+                objs.forEach(([oid, o]) => { if (oid !== id && o.width && r.left < o.right - 2 && o.left + 2 < r.right && r.top < o.bottom - 2 && o.top + 2 < r.bottom) n++; });
+            });
+            return n;
+        }''')
+        # anything cut short with "…" (a name, a maker, a path) shows in full on hover
+        tip = await pg.evaluate('''() => {
+            const cut = [...document.querySelectorAll('#ar *')].filter(e => e.clientWidth && e.scrollWidth > e.clientWidth + 1 && e.offsetParent && !e.children.length);
+            const btn = [...document.querySelectorAll('#ar .ar-lb[title]')];
+            if (!cut.length && !btn.length) return null;
+            const bad = cut.filter(e => { e.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); return e.title !== e.textContent.trim(); });
+            return { n: cut.length + btn.length, bad: bad.length, btn: btn.every(b => b.title.length > b.querySelector('.n').textContent.length - 1) };
+        }''')
         await ctx.close()
         check(not errs, tag + 'no page errors' + ('' if not errs else ': ' + ' / '.join(errs[:3])))
         check(small['w'] == 728 and small['h'] == 518 and small['td'] == 'TD', tag + 'the page\'s view is 728 x 518 inside the router\'s page')
@@ -112,6 +131,9 @@ async def scenario(b, scn, port):
         check(out == 0, tag + 'Tab stays inside the expanded view')
         check(after == small, tag + 'closing the expanded view puts the stage back as it was')
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
+        check(cover <= (1 if scn in ('bulbs', 'busy', 'hostile') else 0), tag + 'labels don\'t cover other devices (%d)' % cover)
+        if tip is not None:
+            check(tip['bad'] == 0 and tip['btn'], tag + 'what is cut short shows in full on hover (%d)' % tip['n'])
     finally:
         srv.terminate()
 

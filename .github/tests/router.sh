@@ -234,7 +234,7 @@ echo "\$1" >> "$t/dbclient.cmds"
 [ "\$1" = 'sh -s' ] && [ -f "$t/node-hostile" ] && exec "$bb" sh "$t/node-hostile"   # a node that sends anything but counters
 case "\$1" in 'sh -s') exec env PATH="$N:$B" "$bb" sh -s ;; *) exec env PATH="$N:$B" "$bb" sh -c "\$1" ;; esac
 EOF
-printf '#!%s sh\nf=""; while [ $# -gt 0 ]; do [ "$1" = -f ] && f=$2; shift; done\n[ -n "$f" ] && printf "key\\n" > "$f"\necho "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST admin@router"\n' "$bb" > "$B/dropbearkey"
+printf '#!%s sh\nf=""; while [ $# -gt 0 ]; do [ "$1" = -f ] && f=$2; shift; done\n[ -n "$f" ] && printf "key\\n" > "$f" && echo pub > "$f.pub"\necho "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST admin@router"\n' "$bb" > "$B/dropbearkey"
 for f in "$B"/* "$N"/*; do [ -L "$f" ] || chmod +x "$f"; done   # the stand-ins; never the symlinked system tools
 
 echo 'enable -n test [ printf echo' > "$t/no-builtins.sh"
@@ -446,6 +446,8 @@ if "$py" -c 'import pty' 2>/dev/null; then
 		&& ! grep -q "OLDKEY" "$R/jffs/addons/arteria/.ssh/known_hosts" && [ "$(grep -c . "$t/dbclient.pw")" = 1 ]; then
 		ok "nodekey: after a yes the new identity is pinned and the key is added with one password login"
 	else bad "nodekey with a changed identity, answer y:"; cat "$t/nk-y.out"; fi
+	[ -s "$R/jffs/addons/arteria/node_key" ] && ! ls "$R/jffs/addons/arteria/" | grep -q '\.new' \
+		&& ok "nodekey: a new key leaves no temporary files behind (newer dropbearkey writes a .pub next to it)" || { bad "files left by a new key:"; ls "$R/jffs/addons/arteria/"; }
 	# first contact: nothing pinned yet, so nodekey shows what answered and asks before any password is sent
 	rm -rf "$R/jffs/addons/arteria/.ssh" "$t/dbclient.pw" "$t/node-authkeys"; echo FIRSTKEY > "$t/node-identity"
 	nk n > "$t/nk-first-n.out"
@@ -523,7 +525,12 @@ rm -f "$R/tmp/arteria"
 printf '#!/bin/sh\n/some/other/script startup &\n' > "$R/jffs/scripts/services-start"
 cp "$R/jffs/scripts/services-start" "$t/ss.before"
 cp "$R/www/require/modules/menuTree.js" "$t/menu.before"
+# what an older version's key setup, or a development version's device recognition, may have left
+d="$R/jffs/addons/arteria"; mkdir -p "$d"; echo key > "$d/node_key"
+for f in node_key.new.pub discovered fingerbank fingerbank_key; do echo x > "$d/$f"; done
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$script" install < /dev/null > "$t/install.out" 2>&1 || { bad "install failed:"; cat "$t/install.out"; }
+[ -s "$d/node_key" ] && ! ls "$d" | grep -q '\.new\|discovered\|fingerbank' \
+	&& ok "install tidies files older or development versions left, and keeps the node key" || { bad "after install:"; ls "$d"; }
 page=$(cat "$R/jffs/addons/arteria/webui_page" 2>/dev/null || echo none)
 [ "$page" = user1.asp ] && [ -f "$R/www/user/user1.asp" ] && ok "install mounts the page in the first free slot" || bad "page slot: $page"
 grep -q 'arteria-version: ' "$R/www/user/user1.asp" && ok "mounted page is Arteria's" || bad "mounted page isn't arteria.asp"
