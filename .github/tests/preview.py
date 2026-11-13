@@ -196,7 +196,7 @@ def names():
     return {'custom': custom, 'leases': leases, 'nmp': nmp, 'cl': cl, 'fixed': fixed, 'arp': arp, 'n6': n6}
 
 
-SAVED = {'custom': None, 'posts': []}   # what the page saved, as the router would keep it
+SAVED = {'custom': None, 'posts': [], 'cltok': None, 'resumed': False, 'names_off': False}   # what the page saved, as the router would keep it
 
 
 class H(BaseHTTPRequestHandler):
@@ -221,7 +221,7 @@ class H(BaseHTTPRequestHandler):
             page = re.sub(r'<%.*?%>', '', page)
             return self.send(page)
         if path == '/ext/arteria/live.htm':
-            if SCN == 'overload':   # the router paused sampling to leave itself alone (arteria.sh's load guard)
+            if SCN == 'overload' and not SAVED['resumed']:   # the router paused sampling to leave itself alone (arteria.sh's load guard)
                 return self.send(json.dumps({'v': 1, 'paused': 'load', 'epoch': int(time.time()), 'load': '14.20', 'cpus': 4, 'mem': 180}), 'text/html')
             if SCN == 'dead':       # nothing ever comes back: the sampler never starts
                 return self.send('not found', code=404)
@@ -230,7 +230,19 @@ class H(BaseHTTPRequestHandler):
         if path == '/_posts':       # for the tests: how many times the page asked the router for something
             return self.send(json.dumps(len(SAVED['posts'])), 'application/json')
         if path == '/ext/arteria/names.htm':
+            if SAVED['names_off']:   # for the tests: names.htm missing (or broken)
+                return self.send('not found', code=404)
             return self.send(json.dumps(names()), 'text/html')
+        if path == '/ext/arteria/clist.htm':   # the router's client list as it is now, with the token the page asked with
+            if SAVED['cltok'] is None:
+                return self.send('not found', code=404)
+            return self.send(json.dumps({'tok': SAVED['cltok'], 'custom': names()['custom']}), 'text/html')
+        if path.startswith('/_set/'):   # for the tests: /_set/resumed/1 (a paused router samples again), /_set/names_off/1
+            k, v = path.split('/')[2:4]
+            SAVED[k] = v == '1'
+            return self.send('ok', 'text/plain')
+        if path == '/_custom':   # for the tests: the router's client list as it is now
+            return self.send(json.dumps(names()['custom']), 'application/json')
         if path.endswith('.js'):
             return self.send('', 'application/javascript')
         if path.endswith('.css'):
@@ -244,6 +256,9 @@ class H(BaseHTTPRequestHandler):
         # the router's settings handler: a known setting posted with action_mode=apply is saved; saveNvram commits it
         if 'custom_clientlist' in form and form.get('action_mode', [''])[0] == 'apply' and 'saveNvram' in acts:
             SAVED['custom'] = form['custom_clientlist'][0]
+        for a in acts:   # the page asks for the router's current client list before it renames a device
+            if re.fullmatch(r'start_arteriacl[0-9]{1,12}', a):
+                SAVED['cltok'] = a[len('start_arteriacl'):]
         SAVED['posts'].append(acts)
         return self.send('<html></html>')
 
