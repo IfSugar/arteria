@@ -104,15 +104,20 @@
 #ar .ar-ico { width: 36px; height: 36px; border-radius: 9px; background: #1c2427; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; flex: none; }
 #ar .ar-ro-name { font-size: 16px; line-height: 19px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ar .ar-ro-link { font-size: 12px; line-height: 15px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* renaming in place: a device's name is a button to its own text field, with a check and a cross beside it */
-#ar .ar-ro-name.ed { cursor: text; border-radius: 4px; outline-offset: 2px; }
-#ar .ar-ro-name.ed:hover, #ar .ar-ro-name.ed:focus-visible { text-decoration: underline dotted #8f9a9e; text-underline-offset: 4px; }
-/* one row: the field, then the check and the cross, rounded squares exactly as tall as the field */
-#ar .ar-ro-ed { display: flex; align-items: stretch; gap: 6px; height: 26px; margin: -4px 0 -1px; }
-#ar .ar-ro-in { flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0 7px; border: 1px solid #6b7b80; border-radius: 6px; background: #1f272a; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 24px; box-sizing: border-box; }
+/* The name and, for a device you can rename, a pencil after it: one thing to click, only as wide as the two, in a row as tall
+   as the field row it turns into and in the same place, so nothing moves when you start editing. */
+#ar .ar-ro-nrow { display: flex; align-items: center; gap: 2px; width: fit-content; max-width: 100%; height: 26px; margin: -4px 0 -1px; min-width: 0; }
+#ar .ar-ro-nrow .ar-ro-name { flex: 0 1 auto; min-width: 0; }
+#ar .ar-ro-nrow.ed { cursor: pointer; }
+#ar .ar-ro-ed { display: flex; align-items: stretch; gap: 6px; height: 26px; margin: -4px 0 -1px -6px; }   /* its text where the name's was */
+#ar .ar-ro-in { flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0 7px 0 5px; border: 1px solid #6b7b80; border-radius: 6px; background: #1f272a; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 24px; box-sizing: border-box; }
 #ar .ar-ro-in:focus { outline: none; border-color: #59c3ff; box-shadow: 0 0 0 2px rgba(89,195,255,.25); }
 #ar .ar-ro-ed button { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border-radius: 6px; border: 1px solid #6b7b80; background: #1f272a; display: flex; align-items: center; justify-content: center; cursor: pointer; box-sizing: border-box; }
 #ar .ar-ro-ed button:hover { background: #3a4549; }
+/* the edit button is just the pencil: dim, full while the name or the pencil is hovered; a ring only for the keyboard */
+#ar button.ar-ro-edit { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: .6; transition: opacity .15s ease; }
+#ar .ar-ro-nrow.ed:hover button.ar-ro-edit, #ar button.ar-ro-edit:focus-visible { opacity: 1; }
+#ar button.ar-ro-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #ar .ar-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 #ar .ar-metric { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 #ar .ar-metric .top { display: flex; align-items: baseline; gap: 5px; height: 28px; }
@@ -331,7 +336,7 @@ function rr(x, y, w, h, r) {
 }
 function ci(cx, cy, r) { return 'M' + (cx - r) + ' ' + cy + 'a' + r + ' ' + r + ' 0 1 0 ' + (2 * r) + ' 0a' + r + ' ' + r + ' 0 1 0 ' + (-2 * r) + ' 0z'; }
 var ICON = {
-	tick: 'M5 12.5l4.5 4.5L19 7.5', cross: 'M6.5 6.5l11 11M17.5 6.5l-11 11',
+	tick: 'M5 12.5l4.5 4.5L19 7.5', cross: 'M6.5 6.5l11 11M17.5 6.5l-11 11', pencil: 'M4.5 19.5h4L19 9l-4-4L4.5 15.5zM13 7l4 4',
 	globe: ci(12, 12, 9) + 'M3 12h18M12 3c3.2 3.4 3.2 14.6 0 18M12 3c-3.2 3.4-3.2 14.6 0 18',
 	router: rr(3, 13, 18, 6, 2) + 'M7 13V7M12 13V5M17 13V7M7 16h.01M10 16h.01',
 	mesh: rr(7, 3, 10, 18, 3) + 'M10 8a3 3 0 0 1 4 0M12 15h.01',
@@ -2909,10 +2914,10 @@ function renderReadout(net) {
 	var key = r.d.icon + r.d.name;
 	if (!A.ren && el._icon !== key) { $('arRoIcon').innerHTML = iconSvg(r.d.icon, 20, '#f0efec'); el._icon = key; }
 	$('arRoBadge').textContent = r.d.badge; nm.textContent = r.d.name;
-	/* a client's name is a button to its own text field (a node's or the whole network's isn't) */
+	/* a client's name gets a pencil after it, and the two are one button (a node's or the whole network's aren't) */
 	if (!A.ren) {
-		nm.className = tgt ? 'ar-ro-name ed' : 'ar-ro-name'; nm.tabIndex = tgt ? 0 : -1;
-		if (tgt) { nm.setAttribute('role', 'button'); nm.setAttribute('aria-label', 'Rename ' + r.d.name); } else { nm.removeAttribute('role'); nm.removeAttribute('aria-label'); }
+		$('arRoNrow').className = tgt ? 'ar-ro-nrow ed' : 'ar-ro-nrow';
+		$('arRoEdit').className = tgt ? 'ar-ro-edit' : 'ar-ro-edit hide'; $('arRoEdit').setAttribute('aria-label', 'Rename ' + r.d.name);
 		var msg = A.renMsg && A.renMsg.id === (tgt && tgt.id) && Date.now() < A.renMsg.until ? A.renMsg : null;
 		$('arRoLink').textContent = msg ? msg.text : r.d.link; $('arRoLink').style.color = msg ? msg.tone : '';
 	}
@@ -2936,7 +2941,7 @@ function renameStart() {
 	c = A.names && A.names.custom && A.names.custom[dv.mac];
 	A.ren = { id: dv.id, mac: dv.mac, kind: dv.kind, saving: false }; A.renMsg = null;
 	inp.value = c && c.name ? c.name : dv.name; inp.disabled = false;
-	$('arRoName').className = 'ar-ro-name hide'; $('arRoEd').className = 'ar-ro-ed';
+	$('arRoNrow').className = 'ar-ro-nrow hide'; $('arRoEd').className = 'ar-ro-ed';
 	renameHint(); inp.focus(); inp.select();
 }
 function renameHint(text, tone) {
@@ -2949,7 +2954,7 @@ function renameHint(text, tone) {
 function renameClose(msg, tone) {   /* back to the name; a message, if any, shows under it for a few seconds */
 	var id = A.ren && A.ren.id;
 	A.ren = null;
-	$('arRoEd').className = 'ar-ro-ed hide'; $('arRoName').className = 'ar-ro-name';
+	$('arRoEd').className = 'ar-ro-ed hide'; $('arRoNrow').className = 'ar-ro-nrow';
 	$('arReadout')._icon = '';
 	A.renMsg = msg ? { id: id, text: msg, tone: tone || '', until: Date.now() + 5000 } : null;
 }
@@ -2958,7 +2963,7 @@ function renameSave() {
 	if (!r || r.saving) return;
 	if (nameProblem(v)) { renameHint(); $('arRoIn').focus(); return; }
 	cur = N.custom && N.custom[r.mac];
-	if (v === (cur && cur.name || '') && (v || !cur)) { renameClose(); render(); $('arRoName').focus(); return; }   /* nothing changed */
+	if (v === (cur && cur.name || '') && (v || !cur)) { renameClose(); render(); $('arRoEdit').focus(); return; }   /* nothing changed */
 	k = v ? nameKind(v) : null;
 	/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
 	raw = renameList(N.raw, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (cur ? cur.type : 0));
@@ -2969,7 +2974,7 @@ function renameSave() {
 		if (A.ren !== r) return;
 		getJSON('names.htm').then(function (n) { A.names = parseNames(n); A.namesAt = Date.now(); }, function () {}).then(function () {
 			if (A.ren !== r) return;
-			if (took()) { renameClose(v ? 'Saved \u00b7 in the router\u2019s client list too' : 'Name removed \u00b7 the router\u2019s own is back', '#3ddc97'); render(); $('arRoName').focus(); return; }
+			if (took()) { renameClose(v ? 'Saved \u00b7 in the router\u2019s client list too' : 'Name removed \u00b7 the router\u2019s own is back', '#3ddc97'); render(); $('arRoEdit').focus(); return; }
 			if (tries.length) { setTimeout(check, tries.shift()); return; }
 			r.saving = false; $('arRoIn').disabled = false; $('arRoIn').focus();
 			renameHint('The router didn\u2019t save it \u00b7 try again', BAD);
@@ -2982,17 +2987,17 @@ function renameSave() {
 	} catch (e) { setTimeout(check, tries.shift()); }
 }
 function renameWire() {
-	var nm = $('arRoName'), inp = $('arRoIn');
-	$('arRoOk').innerHTML = iconSvg('tick', 15, '#3ddc97'); $('arRoNo').innerHTML = iconSvg('cross', 15, '#e3eaec');
-	nm.addEventListener('click', function () { if (nm.classList.contains('ed')) renameStart(); });
-	nm.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && nm.classList.contains('ed')) { e.preventDefault(); renameStart(); } });
+	var inp = $('arRoIn'), eb = $('arRoEdit');
+	$('arRoOk').innerHTML = iconSvg('tick', 15, '#3ddc97'); $('arRoNo').innerHTML = iconSvg('cross', 15, '#e3eaec'); eb.innerHTML = iconSvg('pencil', 15, '#e3eaec');
+	/* the name or the pencil: a click on either (or Enter/Space on the pencil) reaches the row */
+	$('arRoNrow').addEventListener('click', function () { if (this.classList.contains('ed')) renameStart(); });
 	inp.addEventListener('input', function () { if (A.ren && !A.ren.saving) renameHint(); });
 	inp.addEventListener('keydown', function (e) {
 		if (e.key === 'Enter') { e.preventDefault(); renameSave(); }
-		else if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); renameClose(); render(); nm.focus(); }   /* not the expanded view's Escape */
+		else if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); renameClose(); render(); eb.focus(); }   /* not the expanded view's Escape */
 	});
 	$('arRoOk').addEventListener('click', renameSave);
-	$('arRoNo').addEventListener('click', function () { renameClose(); render(); nm.focus(); });
+	$('arRoNo').addEventListener('click', function () { renameClose(); render(); eb.focus(); });
 }
 /* The readout's Details face (section 6): who the selected device is and how it's connected. Every value is
    set as text, never parsed as HTML: names and host names come from the network. */
@@ -3455,7 +3460,7 @@ window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKin
 	<div class="ar-cards">
 		<div class="ar-card ar-readout" id="arReadout">
 			<div class="ar-ro-head"><div class="eyebrow">Live readout</div><div class="ar-ro-tools"><button type="button" class="ar-det hide" id="arRoDet" aria-pressed="false" aria-controls="arRoDetails" title="Show the device's address, maker, system and connection">Details</button><div class="ar-badge" id="arRoBadge"></div></div></div>
-			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0;flex:1"><div class="ar-ro-name" id="arRoName">Whole network</div><div class="ar-ro-ed hide" id="arRoEd"><input type="text" class="ar-ro-in" id="arRoIn" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Device name" aria-describedby="arRoLink"/><button type="button" id="arRoOk" aria-label="Save the name"></button><button type="button" id="arRoNo" aria-label="Keep the old name"></button></div><div class="ar-ro-link" id="arRoLink"></div></div></div>
+			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0;flex:1"><div class="ar-ro-nrow" id="arRoNrow"><div class="ar-ro-name" id="arRoName">Whole network</div><button type="button" class="ar-ro-edit hide" id="arRoEdit" aria-label="Rename this device"></button></div><div class="ar-ro-ed hide" id="arRoEd"><input type="text" class="ar-ro-in" id="arRoIn" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Device name" aria-describedby="arRoLink"/><button type="button" id="arRoOk" aria-label="Save the name"></button><button type="button" id="arRoNo" aria-label="Keep the old name"></button></div><div class="ar-ro-link" id="arRoLink"></div></div></div>
 			<div id="arRoTraffic">
 			<div class="ar-metrics">
 				<div class="ar-metric"><div class="top"><span class="lbl">↓ Download</span><span class="num c-dn" id="arRoDnN">—</span><span class="unit" id="arRoDnU"></span></div>

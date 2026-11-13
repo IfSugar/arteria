@@ -4,6 +4,7 @@ What changed in each release of Arteria. The release workflow copies a version's
 
 ## Unreleased
 
+- **A pencil after a device's name** in the live readout shows it can be renamed: the name and the pencil light up together, and clicking either opens the name field.
 - **Dual WAN**: the second WAN counts as internet too, instead of as local traffic, and the Internet readout shows what each WAN carries.
 - **Guest Network Pro**: wired devices on a Guest Network Pro network (a LAN port in a VLAN profile) are placed on their port, from that network's bridge as well as the main LAN's.
 - **`check` no longer warns when the router has no Wi-Fi clients of its own** (all of them on a node, say): it's a note that the counters will be checked once one connects.
