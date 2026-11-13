@@ -104,15 +104,20 @@
 #ar .ar-ico { width: 36px; height: 36px; border-radius: 9px; background: #1c2427; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; flex: none; }
 #ar .ar-ro-name { font-size: 16px; line-height: 19px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ar .ar-ro-link { font-size: 12px; line-height: 15px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* renaming in place: a device's name is a button to its own text field, with a check and a cross beside it */
-#ar .ar-ro-name.ed { cursor: text; border-radius: 4px; outline-offset: 2px; }
-#ar .ar-ro-name.ed:hover, #ar .ar-ro-name.ed:focus-visible { text-decoration: underline dotted #8f9a9e; text-underline-offset: 4px; }
-/* one row: the field, then the check and the cross, rounded squares exactly as tall as the field */
-#ar .ar-ro-ed { display: flex; align-items: stretch; gap: 6px; height: 26px; margin: -4px 0 -1px; }
-#ar .ar-ro-in { flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0 7px; border: 1px solid #6b7b80; border-radius: 6px; background: #1f272a; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 24px; box-sizing: border-box; }
+/* The name and, for a device you can rename, a pencil after it: one thing to click, only as wide as the two, in a row as tall
+   as the field row it turns into and in the same place, so nothing moves when you start editing. */
+#ar .ar-ro-nrow { display: flex; align-items: center; gap: 2px; width: fit-content; max-width: 100%; height: 26px; margin: -4px 0 -1px; min-width: 0; }
+#ar .ar-ro-nrow .ar-ro-name { flex: 0 1 auto; min-width: 0; }
+#ar .ar-ro-nrow.ed { cursor: pointer; }
+#ar .ar-ro-ed { display: flex; align-items: stretch; gap: 6px; height: 26px; margin: -4px 0 -1px -6px; }   /* its text where the name's was */
+#ar .ar-ro-in { flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0 7px 0 5px; border: 1px solid #6b7b80; border-radius: 6px; background: #1f272a; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 24px; box-sizing: border-box; }
 #ar .ar-ro-in:focus { outline: none; border-color: #59c3ff; box-shadow: 0 0 0 2px rgba(89,195,255,.25); }
 #ar .ar-ro-ed button { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border-radius: 6px; border: 1px solid #6b7b80; background: #1f272a; display: flex; align-items: center; justify-content: center; cursor: pointer; box-sizing: border-box; }
 #ar .ar-ro-ed button:hover { background: #3a4549; }
+/* the edit button is just the pencil: dim, full while the name or the pencil is hovered; a ring only for the keyboard */
+#ar button.ar-ro-edit { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: .6; transition: opacity .15s ease; }
+#ar .ar-ro-nrow.ed:hover button.ar-ro-edit, #ar button.ar-ro-edit:focus-visible { opacity: 1; }
+#ar button.ar-ro-edit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 #ar .ar-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
 #ar .ar-metric { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 #ar .ar-metric .top { display: flex; align-items: baseline; gap: 5px; height: 28px; }
@@ -257,7 +262,7 @@ var SPEED = 40, SK_SPEED = 42;   /* px per second: map packets, flow streaks */
 
 var A = {
 	tab: 'map', mode: 'dn', unit: 'Mb', sel: null, paused: false,
-	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false,
+	interval: 2, seq: null, up: null, fresh: 0, started: Date.now(), useForm: false, gotAny: false, halt: null,
 	prev: {}, sm: {}, bk: {}, names: null, namesAt: 0,
 	net: null, mapSig: '', flowSig: '', slot: {}, slotAt: 0, flowPick: null, flowMem: {}, flowK: {}, pz: { s: 1, x: 0, y: 0 }, pzEat: 0, ren: null, renMsg: null,
 	hist: [], timers: {}, mapRefs: null, flowRefs: null, big: false, narrow: false, slotBy: {}
@@ -284,7 +289,8 @@ function fmt(x) {
 	return { n: (v / 1000).toFixed(2), u: B ? 'GB/s' : 'Gb/s' };
 }
 function full(x) { var f = fmt(x); return f.u ? f.n + ' ' + f.u : f.n; }
-function short(x) { var f = fmt(x), u = f.u.charAt(0); return f.n === '0' ? '0' : (u === 'k' ? f.n + 'k' : (u === 'G' ? f.n + 'G' : f.n)); }
+/* The short form for labels and lists: small letters for bits (47k, 2.1m, 1.25g), capitals for bytes (47K, 2.1M, 1.25G) */
+function short(x) { var f = fmt(x), u = f.u.charAt(0).toLowerCase(); return f.n === '0' ? '0' : f.n + (/[kmg]/.test(u) ? (A.unit === 'MB' ? u.toUpperCase() : u) : ''); }
 function store(k, v) {
 	try { if (v === undefined) return localStorage.getItem('arteria.' + k); localStorage.setItem('arteria.' + k, v); }
 	catch (e) { return null; }
@@ -330,7 +336,7 @@ function rr(x, y, w, h, r) {
 }
 function ci(cx, cy, r) { return 'M' + (cx - r) + ' ' + cy + 'a' + r + ' ' + r + ' 0 1 0 ' + (2 * r) + ' 0a' + r + ' ' + r + ' 0 1 0 ' + (-2 * r) + ' 0z'; }
 var ICON = {
-	tick: 'M5 12.5l4.5 4.5L19 7.5', cross: 'M6.5 6.5l11 11M17.5 6.5l-11 11',
+	tick: 'M5 12.5l4.5 4.5L19 7.5', cross: 'M6.5 6.5l11 11M17.5 6.5l-11 11', pencil: 'M4.5 19.5h4L19 9l-4-4L4.5 15.5zM13 7l4 4',
 	globe: ci(12, 12, 9) + 'M3 12h18M12 3c3.2 3.4 3.2 14.6 0 18M12 3c-3.2 3.4-3.2 14.6 0 18',
 	router: rr(3, 13, 18, 6, 2) + 'M7 13V7M12 13V5M17 13V7M7 16h.01M10 16h.01',
 	mesh: rr(7, 3, 10, 18, 3) + 'M10 8a3 3 0 0 1 4 0M12 15h.01',
@@ -436,10 +442,10 @@ function getJSON(name) {
 function running() { return !A.paused && !document.hidden; }
 function heartbeat() {
 	clearTimeout(A.timers.hb);
-	if (!running()) return;
+	if (!running() || (A.halt && A.halt.gaveup)) return;   /* gave up: no more requests until the Live button says try again */
 	poke('start_arteria');
 	store('open.' + TAB_ID, String(Date.now()));   /* "this tab is sampling", for the other Arteria tabs of this browser */
-	A.timers.hb = setTimeout(heartbeat, 8000);
+	A.timers.hb = setTimeout(heartbeat, A.halt ? 30000 : 8000);   /* the router paused itself: ask less often until it resumes */
 }
 /* Two Arteria tabs open: when one closes, it mustn't stop the sampling the other one is watching. Each tab notes
    its last heartbeat in this browser's storage; a tab that goes away only says "stop" if no other one is live. */
@@ -461,7 +467,7 @@ function poll() {
 	clearTimeout(A.timers.poll);
 	if (!running()) return;
 	getJSON('live.htm').then(onSample, function () { onSample(null); }).then(null, logErr).then(function () {
-		A.timers.poll = setTimeout(poll, Math.max(1, A.interval) * 1000);
+		A.timers.poll = setTimeout(poll, A.halt ? 10000 : Math.max(1, A.interval) * 1000);
 	});
 	if (Date.now() - A.namesAt > 30000) loadNames();
 }
@@ -470,7 +476,7 @@ function loadNames() {
 	getJSON('names.htm').then(function (n) { A.names = parseNames(n); A.namesAt = Date.now(); }, function () {});
 }
 function resume() {
-	A.fresh = 0; A.started = Date.now();
+	A.fresh = 0; A.started = Date.now(); if (A.halt && A.halt.gaveup) A.halt = null;
 	heartbeat(); poll();
 	setLive();
 }
@@ -870,7 +876,7 @@ function isMac(m) { return typeof m === 'string' && MAC_RE.test(m); }
 function isIf(i) { return typeof i === 'string' && IF_RE.test(i); }
 function cleanSample(d) {
 	var rows = function (a) { return (Array.isArray(a) ? a : []).filter(function (r) { return Array.isArray(r) && isMac(r[2]) && isIf(r[0]); }); };
-	return { router: d.router || {}, ms: d.ms, interval: d.interval, epoch: +d.epoch || 0, up: d.up, wan: isIf(d.wan) ? d.wan : '',
+	return { router: d.router || {}, ms: d.ms, interval: d.interval, epoch: +d.epoch || 0, up: d.up, wan: isIf(d.wan) ? d.wan : '', wan2: isIf(d.wan2) ? d.wan2 : '',
 		own: (Array.isArray(d.own) ? d.own : []).filter(isMac), ports: (Array.isArray(d.ports) ? d.ports : []).filter(isIf),
 		links: (Array.isArray(d.links) ? d.links : []).filter(function (l) { return Array.isArray(l) && isIf(l[0]); }),
 		ifs: (Array.isArray(d.ifs) ? d.ifs : []).filter(function (r) { return Array.isArray(r) && isIf(r[0]); }),
@@ -887,9 +893,15 @@ function buildNet(d) {
 	var ifs = {};
 	(d.ifs || []).forEach(function (r) { ifs[r[0]] = r; });
 	/* internet */
-	var w = ifs[d.wan];
+	var w = ifs[d.wan], w2 = d.wan2 && ifs[d.wan2];
 	net.wan = w ? measure('wan', t, w[1], w[2]) : zeroRate();
 	net.wanIf = d.wan; net.wanSpeed = linkOf(d, d.wan).speed;
+	/* Dual WAN: the internet is both WANs together (the second one isn't local traffic); each is kept for the readout */
+	if (w2) {
+		var r2 = measure('wan2', t, w2[1], w2[2]), r1 = net.wan;
+		net.wans = [{ ifn: d.wan, r: r1, speed: net.wanSpeed }, { ifn: d.wan2, r: r2, speed: linkOf(d, d.wan2).speed }];
+		net.wan = { dn: r1.dn + r2.dn, up: r1.up + r2.up, sdn: r1.sdn + r2.sdn, sup: r1.sup + r2.sup, ok: r1.ok || r2.ok };
+	}
 	/* AiMesh nodes and the addresses they use to reach the router */
 	(d.nodes || []).forEach(function (n, i) {
 		var node = { id: 'node:' + n.mac, mac: n.mac, ip: n.ip, model: n.model || 'AiMesh node', alias: n.alias || '', state: n.state, nup: n.up,
@@ -1008,18 +1020,28 @@ function busy(x) { return (x.sdn || 0) + (x.sup || 0); }
 /* ---------------------------------------------------------------- one sample arrived */
 function onSample(d) {
 	var nowMs = Date.now();
+	/* The router paused sampling to leave itself alone: it was busy or low on memory (arteria.sh's guard). The page says
+	   why and keeps asking, less often; the router starts again after 2 minutes if it's better. */
+	if (d && d.v === 1 && d.paused) {
+		if (!A.halt || !A.halt.paused) { A.halt = { paused: d.paused, load: d.load, cpus: d.cpus, mem: d.mem }; heartbeat(); }
+		setLive(); render(); return;
+	}
+	if (A.halt && A.halt.paused && d && d.v === 1) { A.halt = null; heartbeat(); }
 	if (d && d.v === 1 && (d.seq !== A.seq || d.up !== A.up)) {
 		var first = A.seq === null;
 		A.seq = d.seq; A.up = d.up;
 		if (d.interval > 0) A.interval = d.interval;
 		A.net = buildNet(d);
-		if (!first) { A.fresh = nowMs; A.gotAny = true; }
+		if (!first) { A.fresh = nowMs; A.gotAny = true; if (A.halt) { A.halt = null; heartbeat(); } }   /* samples again after giving up */
 		var w = A.net.wan;
 		A.hist.push({ dn: w.dn, up: w.up });
 		if (A.hist.length > Math.round(120 / A.interval)) A.hist.shift();
 	}
 	/* the router hasn't answered the first requests: try the classic form once */
 	if (!A.fresh && !A.useForm && nowMs - A.started > 12000) { A.useForm = true; poke('start_arteria'); }
+	/* No sample for a minute: stop asking the router (each request runs a script there) and say what to check. The Live
+	   button tries again. */
+	if (!A.halt && nowMs - (A.fresh || A.started) > 60000) { A.halt = { gaveup: true }; clearTimeout(A.timers.hb); }
 	setLive();
 	render();
 }
@@ -2229,12 +2251,12 @@ function buildMap(net, L) {
 /* Label placement: try spots around each object, keep the first that hits no other label, object,
    Wi-Fi arc or overlay. Widths come from the real text, measured once. */
 var ctx2d = null;
-function textW(s, bold) {
+function textW(s, bold, size) {
 	try {
 		ctx2d = ctx2d || document.createElement('canvas').getContext('2d');
-		ctx2d.font = (bold ? '700 ' : '') + '11px system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
+		ctx2d.font = (bold ? '700 ' : '') + (size || 11) + 'px system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
 		return ctx2d.measureText(s).width;
-	} catch (e) { return s.length * 6.6; }
+	} catch (e) { return s.length * 6.6 * (size || 11) / 11; }
 }
 function placeLabels(net, L, objs, arcs) {
 	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = 1000, rects = [], out = [];   /* a label on another label: only when there is nowhere else at all */
@@ -2252,7 +2274,9 @@ function placeLabels(net, L, objs, arcs) {
 		if (!it.o) return;
 		var name = it.name.length > 24 ? it.name.slice(0, 23) + '…' : it.name;
 		/* A node's second line can grow a " · weak" tag, so it gets room for that up front. */
-		var w = Math.round(Math.max(textW(name, true), it.x3 ? textW(it.x3) * 0.96 + 8 : 0, it.id.indexOf('node:') === 0 ? 112 : 76) + 22), bb = it.o.bbox(), ax = it.o.anchor[0];
+		/* room for the widest rates the second line can show ("↓ 99.9M ↑ 99.9M"), so a busy device's numbers never spill out */
+		var w = Math.round(Math.max(textW(name, true), it.x3 ? textW(it.x3) * 0.96 + 8 : 0, it.id === 'router' ? 0 : textW('↓ 99.9M↑ 99.9M', false, 10.5) + 8,
+			it.id.indexOf('node:') === 0 ? 112 : 76) + 22), bb = it.o.bbox(), ax = it.o.anchor[0];
 		var cands = [];
 		(G.big ? [0, -34, 34, -68, 68, -102, 102, -136, 136] : [0, -34, 34, -68, 68]).forEach(function (dx) {
 			cands.push({ x: ax - w / 2 + dx, y: bb[1] - 7 - HIT, px: ax + dx, py: bb[1] - 12, ay: bb[1] - 2, just: 'center' });
@@ -2347,7 +2371,7 @@ function render() {
 	var root = $('ar');
 	if (!root) return;
 	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : '', A.pz.s > 1 ? 'zoomed' : '', A.moving ? 'moving' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
-	if (!net) { setNotice('Starting the sampler on the router…', MUTED); return; }
+	if (!net) { var h = haltNotice(); setNotice(h ? h[0] : 'Starting the sampler on the router…', h ? h[1] : MUTED); return; }
 	try { renderSummary(net); } catch (e) { logErr(e); }
 	if (A.tab === 'map') { try { renderMap(net); } catch (e) { logErr(e); } }
 	else { try { renderFlow(net); } catch (e) { logErr(e); } }
@@ -2360,6 +2384,8 @@ function setLive() {
 	var cls = 'ar-live', txt;
 	if (A.paused) txt = 'Paused';
 	else if (document.hidden) txt = 'Hidden';
+	else if (A.halt && A.halt.gaveup) { txt = 'Stopped · try again'; cls += ' warn'; }
+	else if (A.halt) { txt = 'Router busy · paused'; cls += ' warn'; }
 	else if (!A.fresh) { txt = 'Connecting…'; cls += ' warn'; }
 	else if (stale()) { txt = 'Waiting for the router'; cls += ' warn'; }
 	else { txt = 'Live · every ' + A.interval + ' s'; cls += ' live'; }
@@ -2371,8 +2397,17 @@ function renderSummary(net) {
 	s.innerHTML = '<span class="v" aria-label="Internet download ' + esc(full(net.wan.dn)) + '"><span class="dn" aria-hidden="true">↓</span> <b>' + esc(full(net.wan.dn)) + '</b></span>' +
 		'<span class="v" aria-label="Internet upload ' + esc(full(net.wan.up)) + '"><span class="up" aria-hidden="true">↑</span> <b>' + esc(full(net.wan.up)) + '</b></span><span class="k n">' + net.clients + ' clients</span>';
 }
+function haltNotice() {
+	var h = A.halt;
+	if (!h) return null;
+	if (h.gaveup) return ['No samples from the router for a minute, so Arteria stopped asking for them. Run arteria.sh status on the router, then tap Stopped to try again.', ACC];
+	var why = h.paused === 'memory' ? 'is low on memory (' + h.mem + ' MB available)' : h.paused === 'slow' ? 'took over 15 s for each sample' :
+		'is busy (load ' + h.load + ' on ' + h.cpus + ' cores)';
+	return ['The router ' + why + ', so Arteria paused to leave it alone. It tries again in about 2 minutes.', ACC];
+}
 function noticeFor(net) {
 	if (A.paused) return ['Paused. The router stops sampling about 20 s after you pause.', MUTED];
+	var h = haltNotice(); if (h) return h;
 	if (!A.fresh) return [Date.now() - A.started > 20000 ? 'No samples from the router. Is Arteria installed? Run arteria.sh status on the router.' : 'Starting the sampler on the router…', Date.now() - A.started > 20000 ? ACC : MUTED];
 	if (stale()) return ['The router stopped sending samples. Retrying…', ACC];
 	for (var i = 0; i < net.nodes.length; i++) {
@@ -2831,6 +2866,12 @@ function readoutFor(net) {
 		sdn = pct(dn, net.total.dn) + '% of all download comes from the internet'; sup = pct(up, net.total.up) + '% of all upload goes to the internet';
 		k1 = 'Interface'; v1 = net.wanIf || '—'; k2 = 'Link rate'; v2 = net.wanSpeed ? net.wanSpeed + ' Mb/s' : '—';
 		path = 'Internet → ' + rname; note = 'Measured on the WAN interface counters.';
+		if (net.wans) {   /* dual WAN: both, and what each carries */
+			d.link = 'Two WANs · ' + net.wans.map(function (x) { return x.ifn; }).join(' + ');
+			k1 = net.wans[0].ifn; v1 = '↓ ' + short(net.wans[0].r.dn) + ' ↑ ' + short(net.wans[0].r.up);
+			k2 = net.wans[1].ifn; v2 = '↓ ' + short(net.wans[1].r.dn) + ' ↑ ' + short(net.wans[1].r.up);
+			note = 'Both WANs together, measured on their interface counters.';
+		}
 	} else if (isMore(id) && hiddenSet(net)) {
 		var t = hiddenSet(net).devs, sd = 0, su = 0;
 		t.forEach(function (dv) { sd += dv.dn; su += dv.up; });
@@ -2873,10 +2914,10 @@ function renderReadout(net) {
 	var key = r.d.icon + r.d.name;
 	if (!A.ren && el._icon !== key) { $('arRoIcon').innerHTML = iconSvg(r.d.icon, 20, '#f0efec'); el._icon = key; }
 	$('arRoBadge').textContent = r.d.badge; nm.textContent = r.d.name;
-	/* a client's name is a button to its own text field (a node's or the whole network's isn't) */
+	/* a client's name gets a pencil after it, and the two are one button (a node's or the whole network's aren't) */
 	if (!A.ren) {
-		nm.className = tgt ? 'ar-ro-name ed' : 'ar-ro-name'; nm.tabIndex = tgt ? 0 : -1;
-		if (tgt) { nm.setAttribute('role', 'button'); nm.setAttribute('aria-label', 'Rename ' + r.d.name); } else { nm.removeAttribute('role'); nm.removeAttribute('aria-label'); }
+		$('arRoNrow').className = tgt ? 'ar-ro-nrow ed' : 'ar-ro-nrow';
+		$('arRoEdit').className = tgt ? 'ar-ro-edit' : 'ar-ro-edit hide'; $('arRoEdit').setAttribute('aria-label', 'Rename ' + r.d.name);
 		var msg = A.renMsg && A.renMsg.id === (tgt && tgt.id) && Date.now() < A.renMsg.until ? A.renMsg : null;
 		$('arRoLink').textContent = msg ? msg.text : r.d.link; $('arRoLink').style.color = msg ? msg.tone : '';
 	}
@@ -2900,7 +2941,7 @@ function renameStart() {
 	c = A.names && A.names.custom && A.names.custom[dv.mac];
 	A.ren = { id: dv.id, mac: dv.mac, kind: dv.kind, saving: false }; A.renMsg = null;
 	inp.value = c && c.name ? c.name : dv.name; inp.disabled = false;
-	$('arRoName').className = 'ar-ro-name hide'; $('arRoEd').className = 'ar-ro-ed';
+	$('arRoNrow').className = 'ar-ro-nrow hide'; $('arRoEd').className = 'ar-ro-ed';
 	renameHint(); inp.focus(); inp.select();
 }
 function renameHint(text, tone) {
@@ -2913,7 +2954,7 @@ function renameHint(text, tone) {
 function renameClose(msg, tone) {   /* back to the name; a message, if any, shows under it for a few seconds */
 	var id = A.ren && A.ren.id;
 	A.ren = null;
-	$('arRoEd').className = 'ar-ro-ed hide'; $('arRoName').className = 'ar-ro-name';
+	$('arRoEd').className = 'ar-ro-ed hide'; $('arRoNrow').className = 'ar-ro-nrow';
 	$('arReadout')._icon = '';
 	A.renMsg = msg ? { id: id, text: msg, tone: tone || '', until: Date.now() + 5000 } : null;
 }
@@ -2922,7 +2963,7 @@ function renameSave() {
 	if (!r || r.saving) return;
 	if (nameProblem(v)) { renameHint(); $('arRoIn').focus(); return; }
 	cur = N.custom && N.custom[r.mac];
-	if (v === (cur && cur.name || '') && (v || !cur)) { renameClose(); render(); $('arRoName').focus(); return; }   /* nothing changed */
+	if (v === (cur && cur.name || '') && (v || !cur)) { renameClose(); render(); $('arRoEdit').focus(); return; }   /* nothing changed */
 	k = v ? nameKind(v) : null;
 	/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
 	raw = renameList(N.raw, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (cur ? cur.type : 0));
@@ -2933,7 +2974,7 @@ function renameSave() {
 		if (A.ren !== r) return;
 		getJSON('names.htm').then(function (n) { A.names = parseNames(n); A.namesAt = Date.now(); }, function () {}).then(function () {
 			if (A.ren !== r) return;
-			if (took()) { renameClose(v ? 'Saved \u00b7 in the router\u2019s client list too' : 'Name removed \u00b7 the router\u2019s own is back', '#3ddc97'); render(); $('arRoName').focus(); return; }
+			if (took()) { renameClose(v ? 'Saved \u00b7 in the router\u2019s client list too' : 'Name removed \u00b7 the router\u2019s own is back', '#3ddc97'); render(); $('arRoEdit').focus(); return; }
 			if (tries.length) { setTimeout(check, tries.shift()); return; }
 			r.saving = false; $('arRoIn').disabled = false; $('arRoIn').focus();
 			renameHint('The router didn\u2019t save it \u00b7 try again', BAD);
@@ -2946,17 +2987,17 @@ function renameSave() {
 	} catch (e) { setTimeout(check, tries.shift()); }
 }
 function renameWire() {
-	var nm = $('arRoName'), inp = $('arRoIn');
-	$('arRoOk').innerHTML = iconSvg('tick', 15, '#3ddc97'); $('arRoNo').innerHTML = iconSvg('cross', 15, '#e3eaec');
-	nm.addEventListener('click', function () { if (nm.classList.contains('ed')) renameStart(); });
-	nm.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && nm.classList.contains('ed')) { e.preventDefault(); renameStart(); } });
+	var inp = $('arRoIn'), eb = $('arRoEdit');
+	$('arRoOk').innerHTML = iconSvg('tick', 15, '#3ddc97'); $('arRoNo').innerHTML = iconSvg('cross', 15, '#e3eaec'); eb.innerHTML = iconSvg('pencil', 15, '#e3eaec');
+	/* the name or the pencil: a click on either (or Enter/Space on the pencil) reaches the row */
+	$('arRoNrow').addEventListener('click', function () { if (this.classList.contains('ed')) renameStart(); });
 	inp.addEventListener('input', function () { if (A.ren && !A.ren.saving) renameHint(); });
 	inp.addEventListener('keydown', function (e) {
 		if (e.key === 'Enter') { e.preventDefault(); renameSave(); }
-		else if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); renameClose(); render(); nm.focus(); }   /* not the expanded view's Escape */
+		else if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); renameClose(); render(); eb.focus(); }   /* not the expanded view's Escape */
 	});
 	$('arRoOk').addEventListener('click', renameSave);
-	$('arRoNo').addEventListener('click', function () { renameClose(); render(); nm.focus(); });
+	$('arRoNo').addEventListener('click', function () { renameClose(); render(); eb.focus(); });
 }
 /* The readout's Details face (section 6): who the selected device is and how it's connected. Every value is
    set as text, never parsed as HTML: names and host names come from the network. */
@@ -3272,6 +3313,7 @@ function bigKeys(e) {
 	if (e.shiftKey ? i <= 0 : (i < 0 || i === f.length - 1)) { e.preventDefault(); f[e.shiftKey ? f.length - 1 : 0].focus(); }
 }
 function togglePause() {
+	if (A.halt && A.halt.gaveup && !A.paused) { A.halt = null; resume(); render(); return; }   /* Stopped: try again */
 	A.paused = !A.paused;
 	if (A.paused) { suspend(); stopBeacon(); } else resume();
 	render();
@@ -3337,7 +3379,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
@@ -3418,7 +3460,7 @@ window.Arteria = { _t: { renameList: renameList, nameKind: nameKind, ASUS_TYPE: 
 	<div class="ar-cards">
 		<div class="ar-card ar-readout" id="arReadout">
 			<div class="ar-ro-head"><div class="eyebrow">Live readout</div><div class="ar-ro-tools"><button type="button" class="ar-det hide" id="arRoDet" aria-pressed="false" aria-controls="arRoDetails" title="Show the device's address, maker, system and connection">Details</button><div class="ar-badge" id="arRoBadge"></div></div></div>
-			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0;flex:1"><div class="ar-ro-name" id="arRoName">Whole network</div><div class="ar-ro-ed hide" id="arRoEd"><input type="text" class="ar-ro-in" id="arRoIn" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Device name" aria-describedby="arRoLink"/><button type="button" id="arRoOk" aria-label="Save the name"></button><button type="button" id="arRoNo" aria-label="Keep the old name"></button></div><div class="ar-ro-link" id="arRoLink"></div></div></div>
+			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0;flex:1"><div class="ar-ro-nrow" id="arRoNrow"><div class="ar-ro-name" id="arRoName">Whole network</div><button type="button" class="ar-ro-edit hide" id="arRoEdit" aria-label="Rename this device"></button></div><div class="ar-ro-ed hide" id="arRoEd"><input type="text" class="ar-ro-in" id="arRoIn" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Device name" aria-describedby="arRoLink"/><button type="button" id="arRoOk" aria-label="Save the name"></button><button type="button" id="arRoNo" aria-label="Keep the old name"></button></div><div class="ar-ro-link" id="arRoLink"></div></div></div>
 			<div id="arRoTraffic">
 			<div class="ar-metrics">
 				<div class="ar-metric"><div class="top"><span class="lbl">↓ Download</span><span class="num c-dn" id="arRoDnN">—</span><span class="unit" id="arRoDnU"></span></div>

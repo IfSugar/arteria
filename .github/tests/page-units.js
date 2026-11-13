@@ -480,4 +480,28 @@ eq(RL('', M1, 'Ünïcode lamp ✓', 60), '<Ünïcode lamp ✓>' + M1 + '>0>60>>'
 Object.keys(T.ASUS_TYPE).forEach(k => { const b = T.TYPE_KIND[T.ASUS_TYPE[k]]; if (b !== k && T.SUB[k] !== b) rlbad.push('icon ' + T.ASUS_TYPE[k] + ' for ' + k + ' reads back as ' + b); });
 ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s client list, as the router writes it', rlbad.join('; '));
 
+// ---- 15. the short rates on labels and lists carry their unit's letter: small for bits (k, m, g), capital for bytes (K, M, G)
+{
+	const u0 = A.unit, got = [];
+	A.unit = 'Mb'; [[0, '0'], [0.047, '47k'], [2.1, '2.1m'], [131, '131m'], [1250, '1.25g']].forEach(([x, e]) => got.push([x, T.short(x), e]));
+	A.unit = 'MB'; [[0.376, '47K'], [16.8, '2.1M'], [10000, '1.25G']].forEach(([x, e]) => got.push([x + ' (MB)', T.short(x), e]));
+	A.unit = u0;
+	const bad = got.filter(g => g[1] !== g[2]);
+	ok(!bad.length, 'Short rates: k m g for bits, K M G for bytes: ' + got.map(g => g[1]).join(' '), bad.map(g => g[0] + ' -> ' + g[1] + ', expected ' + g[2]).join('; '));
+}
+
+// ---- 16. dual WAN: the internet is both WANs together, each kept for the readout; with one WAN, nothing changes
+{
+	const d1 = { ok: false }, keep = Object.assign({}, A.prev || {}), keepSm = Object.assign({}, A.sm || {});
+	['wan', 'wan2'].forEach(k => { if (A.prev) delete A.prev[k]; if (A.sm) delete A.sm[k]; });
+	AR.buildNet(smp({ up: '5000.0', wan2: 'usb0', ifs: [['eth0', '0', '0'], ['usb0', '0', '0']], links: [['eth0', 1, 1000], ['usb0', 1, 0]] }));
+	const dw = AR.buildNet(smp({ up: '5002.0', wan2: 'usb0', ifs: [['eth0', '2500000', '250000'], ['usb0', '1250000', '125000']], links: [['eth0', 1, 1000], ['usb0', 1, 0]] }));
+	const sum = dw.wans ? dw.wans[0].r.dn + dw.wans[1].r.dn : -1;
+	d1.ok = !!dw.wans && dw.wans.map(w => w.ifn).join(' ') === 'eth0 usb0' && Math.abs(dw.wan.dn - sum) < 1e-9 && dw.wans[1].r.dn > 0 && dw.wans[0].r.dn > dw.wans[1].r.dn;
+	['wan', 'wan2'].forEach(k => { if (A.prev) delete A.prev[k]; if (A.sm) delete A.sm[k]; });
+	const one = AR.buildNet(smp({ up: '6000.0' }));
+	ok(d1.ok && !one.wans, 'dual WAN: the internet is both WANs together (' + (dw.wans ? dw.wans.map(w => w.ifn + ' ' + w.r.dn.toFixed(1)).join(' + ') + ' = ' + dw.wan.dn.toFixed(1) : 'none') + ' Mb/s); one WAN as before');
+	if (A.prev) Object.assign(A.prev, keep); if (A.sm) Object.assign(A.sm, keepSm);
+}
+
 process.exit(fails ? 1 : 0);

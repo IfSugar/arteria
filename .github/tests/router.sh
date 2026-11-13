@@ -57,6 +57,7 @@ case "\$2" in
 	productid) echo RT-AX86U ;; buildno) echo 388.13 ;; extendno) echo 0 ;; firmver) echo 3.0.0.4 ;;
 	wl0_ifname) echo eth6 ;; wl1_ifname) echo eth7 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
 	lan_ifnames) echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7" ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
+	wans_dualwan) cat "$t/dualwan" 2>/dev/null || echo "wan none" ;; wan1_ifname) echo usb0 ;; wan1_proto) echo dhcp ;; wans_mode) echo lb ;;   # a test turns dual WAN on
 	lan_ipaddr) echo 192.168.50.1 ;; http_username) echo admin ;; sshd_port) echo 2222 ;; sshd_enable) echo 1 ;;
 	jffs2_scripts) echo 1 ;; rc_support) echo "mssid 2.4G 5G usbX1 bwdpi wl6 amas" ;;
 	# AiMesh's list of the nodes it's in touch with: saving a setting empties it for minutes (a test sets no-device-list)
@@ -91,11 +92,14 @@ case "\$1" in
 	*) exit 1 ;;
 esac
 EOF
+# br0, and a Guest Network Pro bridge (br52) that reaches LAN port eth3 through its VLAN interface eth3.52
 cat > "$B/brctl" <<EOF
 #!$bb sh
-case "\$1" in
-	showstp) printf 'br0\n bridge id\neth1 (4)\n port id\neth5 (5)\neth6 (6)\neth7 (7)\nwds1.0.1 (9)\n' ;;
-	showmacs) printf 'port no\tmac addr\t\tis local?\tageing timer\n  5\t02:cc:00:00:00:09\tno\t\t   0.11\n  9\t02:cc:00:00:00:11\tno\t\t   0.20\n  6\t00:00:5e:00:53:fc\tyes\t\t   0.00\n' ;;
+case "\$1 \$2" in
+	'showstp br0') printf 'br0\n bridge id\neth1 (4)\n port id\neth5 (5)\neth6 (6)\neth7 (7)\nwds1.0.1 (9)\n' ;;
+	'showmacs br0') printf 'port no\tmac addr\t\tis local?\tageing timer\n  5\t02:cc:00:00:00:09\tno\t\t   0.11\n  9\t02:cc:00:00:00:11\tno\t\t   0.20\n  6\t00:00:5e:00:53:fc\tyes\t\t   0.00\n' ;;
+	'showstp br52') printf 'br52\n bridge id\neth3.52 (1)\n port id\nwl0.2 (2)\n' ;;
+	'showmacs br52') printf 'port no\tmac addr\t\tis local?\tageing timer\n  1\t02:cc:00:00:00:52\tno\t\t   1.10\n  1\t02:cc:00:00:00:09\tno\t\t   1.10\n' ;;
 esac
 EOF
 cat > "$t/proc/net/dev" <<'EOF'
@@ -108,11 +112,13 @@ Inter-|   Receive                                                |  Transmit
   eth7: 3774351766 4653250 0 21 0 0 0 27194 14871487368 12052532 0 3262 0 0 0 0
 wds1.0.1: 962647865 2228803 0 5159 0 0 0 45379 9796037641 8283991 0 0 0 0 0 0
     br0: 4630432670 7044139 0 0 0 0 0 0 24640308964 20233741 0 0 0 0 0 0
+  usb0: 1234567890 900000 0 0 0 0 0 0 98765432 400000 0 0 0 0 0 0
 EOF
 printf 'IP address       HW type     Flags       HW address            Mask     Device\n192.168.50.30    0x1         0x2         02:cc:00:00:00:01     *        br0\n192.168.50.31    0x1         0x0         00:00:00:00:00:00     *        br0\n' > "$t/proc/net/arp"
 printf '#!%s sh\n[ "$1 $2 $3" = "-6 neigh show" ] && printf "2001:db8::12 lladdr 02:cc:00:00:00:12 REACHABLE\\nfe80::12 lladdr 02:cc:00:00:00:12 STALE\\n2001:db8::99 FAILED\\n"\n' "$bb" > "$B/ip"
 echo "25588.76 90000.00" > "$t/proc/uptime"; echo "1.39 1.28 1.27 3/216 4894" > "$t/proc/loadavg"
 for i in eth0 eth1 eth2 eth3 eth4 eth5 eth6 eth7 br0; do mkdir -p "$t/sys/class/net/$i"; done
+mkdir -p "$t/sys/class/net/br0/bridge" "$t/sys/class/net/br52/bridge"   # the LAN bridges
 echo 00:00:5e:00:53:fc > "$t/sys/class/net/br0/address"; echo 00:00:5e:00:53:fd > "$t/sys/class/net/eth7/address"
 echo 00:00:5e:00:53:fc > "$t/sys/class/net/eth6/address"
 for i in eth0 eth5; do echo 1 > "$t/sys/class/net/$i/carrier"; done
@@ -215,7 +221,9 @@ cat > "$B/dbclient" <<EOF
 [ "\$1 \$2" = "-o help" ] && { printf 'Available options:\\n\\tBatchMode\\n\\tPort\\n' >&2; exit 0; }
 echo "\$*" >> "$t/dbclient.args"
 y=0; for a in "\$@"; do [ "\$a" = -y ] && y=1; done
-key=""; while [ \$# -gt 1 ]; do [ "\$1" = -i ] && key=\$2; shift; done
+keys=""; while [ \$# -gt 1 ]; do [ "\$1" = -i ] && keys="\$keys \$2"; shift; done
+# root's own key (it says "userkey") opens the node only when a test says so; Arteria's key ("key") as below
+own=0; user=0; for k in \$keys; do [ -s "\$k" ] || continue; if [ "\$(cat "\$k")" = userkey ]; then [ -f "$t/node-accepts-user" ] && user=1; else own=1; fi; done
 # the node's identity (host key), only when a test sets one. Like Dropbear's dbclient: a host seen for the first
 # time is pinned only with -y; without it, it prints the fingerprint and refuses (no terminal, or BatchMode).
 if [ -f "$t/node-identity" ]; then
@@ -225,11 +233,11 @@ if [ -f "$t/node-identity" ]; then
 	elif [ \$y = 1 ]; then mkdir -p "\$HOME/.ssh"; echo "192.168.50.10 ssh-ed25519 \$id" >> "\$kh"
 	else printf "\\nHost '192.168.50.10' is not in the trusted hosts file.\\n(ssh-ed25519 fingerprint SHA256:%s)\\n\\ndbclient: Connection to admin@192.168.50.10:2222 exited: Didn't validate host key\\n" "\$id" >&2; exit 1; fi
 	# a password typed at a terminal (nodekey): the right one, always
-	if [ -z "\$key" ] && [ -t 0 ]; then echo "password login to \$id" >> "$t/dbclient.pw"; exec env PATH="$N:$B" "$bb" sh -c "\$1"; fi
-	# the key works only once the node lists it
-	grep -q AAAAC3NzaC1lZDI1NTE5AAAAITEST "$t/node-authkeys" 2>/dev/null || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
+	if [ -z "\$keys" ] && [ -t 0 ]; then echo "password login to \$id" >> "$t/dbclient.pw"; exec env PATH="$N:$B" "$bb" sh -c "\$1"; fi
+	# Arteria's key works only once the node lists it
+	grep -q AAAAC3NzaC1lZDI1NTE5AAAAITEST "$t/node-authkeys" 2>/dev/null || own=0
 fi
-[ -n "\$key" ] && [ -s "\$key" ] || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
+[ \$own = 1 ] || [ \$user = 1 ] || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
 echo "\$1" >> "$t/dbclient.cmds"
 [ "\$1" = 'sh -s' ] && [ -f "$t/node-hostile" ] && exec "$bb" sh "$t/node-hostile"   # a node that sends anything but counters
 case "\$1" in 'sh -s') exec env PATH="$N:$B" "$bb" sh -s ;; *) exec env PATH="$N:$B" "$bb" sh -c "\$1" ;; esac
@@ -267,13 +275,22 @@ assert r[0] == 'eth7' and r[1] == '5' and r[5] == -58 and r[6] == 864 and r[7] =
 assert r[3].isdigit() and int(r[3]) > 9000000000, r   # big counters stay exact strings
 links = {l[0]: l for l in s['links']}
 assert links['eth5'] == ['eth5', 1, 2500] and links['eth1'] == ['eth1', 0, -1] and links['eth0'][2] == 1000, links
-assert s['macs'] == [['eth5', '02:CC:00:00:00:09']], s['macs']
+assert s['macs'] == [['eth5', '02:CC:00:00:00:09'], ['eth3', '02:CC:00:00:00:52']], s['macs']   # Guest Network Pro's br52 too, each address once
 n = s['nodes'][0]
 assert n['mac'] == '02:10:00:00:00:80' and n['ip'] == '192.168.50.10' and n['model'] == 'RP-AX56' and n['alias'] == 'Hall', n
 assert n['sta'].split() == ['02:10:00:00:00:81', '02:10:00:00:00:84'], n['sta']
 assert n['state'] == 'nokey' and n['c'] == [], n
 assert '00:00:5E:00:53:FC' in s['own']
 assert s['router']['model'] == 'RT-AX86U' and s['router']['fw'] == '3004.388.13_0', s['router']
+EOF
+# dual WAN: the second WAN (a USB modem here) is sampled too, and named in the sample
+echo "wan usb" > "$t/dualwan"; runa sample > "$t/sample-dw.json" 2>/dev/null || true; rm -f "$t/dualwan"
+python3 - "$t/sample-dw.json" "$t/sample.json" <<'EOF' && ok "dual WAN: the second WAN's interface is sampled and named; without it, nothing changes" || fail=1
+import json, sys
+s, one = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
+ifs = {r[0]: r for r in s['ifs']}
+assert s['wan'] == 'eth0' and s['wan2'] == 'usb0' and ifs['usb0'][1:] == ['1234567890', '98765432'], (s['wan2'], s['ifs'])
+assert one['wan2'] == '' and 'usb0' not in [r[0] for r in one['ifs']], one['wan2']
 EOF
 cmp -s "$t/sample.json" "$t/sample2.json" || python3 -c "
 import json,sys; a=json.load(open('$t/sample.json')); b=json.load(open('$t/sample2.json'))
@@ -304,7 +321,7 @@ n = s['nodes'][0]
 assert n['state'] == 'nokey' and n['c'] == [], n
 assert s['seq'] >= 2, s['seq']
 EOF
-tries=$(grep -c 'No auth' "$R/tmp/arteria/"node.*.err 2>/dev/null || echo 0)
+tries=$(cat "$R/tmp/arteria/"node.*.err 2>/dev/null | grep -c 'No auth')   # with no key at all, none is tried
 [ "$tries" -le 1 ] && ok "a refused key is tried once, not in a loop ($tries)" || bad "the node was asked $tries times"
 runi service_event start arteriastop
 waitfor 6 sampler_gone
@@ -385,12 +402,12 @@ rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 # nodes test: key login, then one round of the page's own node script: how many devices, how long. A node where that
 # round fails (the session drops) says so, with addresses and user names taken out of the message.
 run nodes test > "$t/nt.out" 2>&1 || true
-grep -q 'key login OK, reads [0-9][0-9]* device(s), one round takes about [0-9][0-9]* s$' "$t/nt.out" \
+grep -q "key login OK (Arteria's key), reads [0-9][0-9]* device(s), one round takes about [0-9][0-9]* s$" "$t/nt.out" \
 	&& ok "nodes test: key login, then the node's devices read by the page's own script, with the time it takes" \
 	|| { bad "nodes test:"; cat "$t/nt.out"; }
 printf 'echo "dbclient: Connection to admin@192.168.50.10:2222 exited: Remote closed the connection" >&2\nexit 1\n' > "$t/node-hostile"
 run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
-grep -q 'key login OK, reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection' "$t/nt.out" \
+grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection" "$t/nt.out" \
 	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
 run debug > "$t/debug2.out" 2>&1 || true
@@ -482,11 +499,39 @@ if "$py" -c 'import pty' 2>/dev/null; then
 	# list for the next AiMesh sync, and nodekey says how to start one
 	rm -rf "$R/jffs/addons/arteria/.ssh" "$t/dbclient.pw"; echo PASSKEY > "$t/node-identity"; : > "$t/node-authkeys"; echo 0 > "$t/sshd-pass"
 	nk y > "$t/nk-nopass.out"; rm -f "$t/sshd-pass"
-	if grep -q "Password login over SSH is off on the router" "$t/nk-nopass.out" && grep -q "saving a setting" "$t/nk-nopass.out" && grep -q "nodes test" "$t/nk-nopass.out" \
+	if grep -q "Password login over SSH is off on the router" "$t/nk-nopass.out" && grep -q "reboot it" "$t/nk-nopass.out" && grep -q "nodes test" "$t/nk-nopass.out" \
 		&& [ ! -f "$t/dbclient.pw" ] && grep -q 'AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' "$t/router-authkeys"; then
-		ok "nodekey with password login off: no password asked, the key waits in the router's list for the AiMesh sync"
+		ok "nodekey with password login off: no password asked, the key waits in the router's list, and it says to reboot the node"
 	else bad "nodekey with password login off:"; cat "$t/nk-nopass.out"; fi
+	# A router already set up for passwordless logins to its nodes (the forum's guide, the Wireless Report addon): root's
+	# own key (~/.ssh/id_dropbear) opens the node, and root's known_hosts pins it. nodekey finds that, adds nothing, asks nothing.
+	rm -rf "$R/jffs/addons/arteria/.ssh" "$t/dbclient.pw"; : > "$t/node-authkeys"; cp "$t/router-authkeys" "$t/rk.before"
+	mkdir -p "$R/tmp/home/root/.ssh"; echo userkey > "$R/tmp/home/root/.ssh/id_dropbear"; echo USERPIN > "$t/node-identity"; touch "$t/node-accepts-user"
+	echo "192.168.50.10 ssh-ed25519 USERPIN" > "$R/tmp/home/root/.ssh/known_hosts"
+	nk y > "$t/nk-user.out"
+	if grep -q "Key login works with /tmp/home/root/.ssh/id_dropbear, the key root on this router already uses for the nodes: nothing to add" "$t/nk-user.out" \
+		&& grep -q "Trusted its SSH identity as root on this router already does" "$t/nk-user.out" && ! grep -q "(y/n)" "$t/nk-user.out" \
+		&& [ ! -f "$t/dbclient.pw" ] && cmp -s "$t/router-authkeys" "$t/rk.before" && [ ! -s "$t/node-authkeys" ]; then
+		ok "nodekey on a router with passwordless logins to its nodes: uses root's key and pin, adds and asks nothing"
+	else bad "nodekey with root's own key:"; cat "$t/nk-user.out"; fi
 else echo "skip  nodekey at a terminal (python3 has no pty module here)"; fi
+# The page's sessions with root's own key: no Arteria key at all, the node pinned only in root's known_hosts
+if [ -f "$t/node-accepts-user" ]; then
+	rm -rf "$R/jffs/addons/arteria/.ssh" "$R/tmp/arteria"; rm -f "$R/jffs/addons/arteria/node_key"; : > "$t/syslog"
+	runi service_event start arteria
+	waitfor 12 node_read
+	if grep -q '"state":"ok"' "$W/live.htm" && grep -q USERPIN "$R/jffs/addons/arteria/.ssh/known_hosts" && grep -q "trusted node 192.168.50.10's SSH identity as root's own known_hosts does" "$t/syslog"; then
+		ok "a router with passwordless logins to its nodes: the page reads them with root's key, nothing to set up"
+	else bad "sampler with root's own key:"; head -c 400 "$W/live.htm"; cat "$R"/tmp/arteria/node.*.err; fi
+	run nodes test > "$t/nt-user.out" 2>&1 || true
+	grep -q 'key login OK (/tmp/home/root/.ssh/id_dropbear), reads' "$t/nt-user.out" && ok "nodes test names the key that works" || { bad "nodes test with root's key:"; cat "$t/nt-user.out"; }
+	run debug > "$t/debug-user.out" 2>&1 || true
+	grep -q '^Node keys:   /tmp/home/root/.ssh/id_dropbear$' "$t/debug-user.out" && grep -q 'state=ok, a round every [0-9]* s, last output [0-9]* s ago, 5 station(s)' "$t/debug-user.out" \
+		&& ok "debug: the node keys, and each node's pace, freshness and devices while the page is open" || { bad "debug, nodes:"; grep -A3 '^Node' "$t/debug-user.out"; }
+	runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
+	no_sampler() { ! pgrep -f "$inst sampler" > /dev/null 2>&1; }; waitfor 10 no_sampler   # gone, not only its pid file
+	rm -rf "$R/tmp/home" "$t/node-accepts-user" "$R/tmp/arteria" "$W"
+fi
 # The sampler never pins a node itself: one seen for the first time is "nokey" (run nodekey) and stays unpinned
 rm -rf "$R/jffs/addons/arteria/.ssh" "$R/tmp/arteria"; echo FIRSTKEY > "$t/node-identity"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
 runi service_event start arteria
@@ -494,7 +539,7 @@ node_tried() { grep -q "trusted hosts" "$R"/tmp/arteria/node.*.err 2>/dev/null &
 waitfor 10 node_tried
 if grep -q '"state":"nokey"' "$W/live.htm" 2>/dev/null && ! grep -q FIRSTKEY "$R/jffs/addons/arteria/.ssh/known_hosts" 2>/dev/null; then
 	ok "the sampler doesn't pin a node it has never seen: it says to run nodekey"
-else bad "sampler and an unknown node:"; head -c 400 "$W/live.htm"; cat "$R"/tmp/arteria/node.*.err; fi
+else bad "sampler and an unknown node:"; grep -o '"nodes":.*' "$W/live.htm" | head -c 300; echo; cat "$R"/tmp/arteria/node.*.err; cat "$R/jffs/addons/arteria/.ssh/known_hosts" 2>/dev/null; ls -la "$R/tmp/home/root/.ssh" 2>&1; fi
 runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
 rm -f "$t/node-identity" "$t/dbclient.pw" "$t/node-authkeys"; rm -rf "$R/jffs/addons/arteria/.ssh"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
 rm -rf "$R/tmp/arteria"
@@ -525,9 +570,51 @@ if [ -z "$(ls -A "$t/planted")" ] && ! pgrep -f "$script sampler" > /dev/null; t
 else bad "planted /tmp/arteria:"; ls -la "$t/planted"; cat "$t/planted.out"; fi
 rm -f "$R/tmp/arteria"
 
+# ---- 3b: the guard: Arteria leaves a busy or overloaded router alone -------------------------------
+# Busy (load at least 2 per core, or under 48 MB available): it samples a third as often and starts no node sessions.
+# Overloaded (4 per core, or under 24 MB) when the page opens, or three rounds in a row: it pauses for 2 minutes,
+# says why on the page and in the system log, and the page's requests don't start it again meanwhile.
+lav() { echo "$1 1.00 1.00 3/216 4894" > "$t/proc/loadavg"; }
+printf 'processor\t: 0\nprocessor\t: 1\n' > "$t/proc/cpuinfo"
+paused_by() { grep -q "\"paused\":\"$1\"" "$W/live.htm" 2>/dev/null; }
+paused_load() { paused_by load; }; paused_mem() { paused_by memory; }
+lav 9.50; : > "$t/syslog"
+runi service_event start arteria
+waitfor 8 paused_load
+if paused_load && [ -f "$R/tmp/arteria/paused" ] && grep -q 'paused for 2 minutes: the router is busy (load 9.50 on 2 cores)' "$t/syslog"; then
+	ok "guard: an overloaded router (load 4 per core) isn't sampled: the page and the log say why"
+else bad "guard, overloaded at the start:"; head -c 300 "$W/live.htm"; cat "$t/syslog"; fi
+waitfor 4 sampler_gone; runi service_event start arteria; sleep 1
+sampler_gone && ok "guard: for 2 minutes after a pause the page's requests don't start it again" || bad "guard: the sampler started again during the pause"
+run status > "$t/status.out" 2>&1 || true
+grep -q '^Last pause: .*the router is busy (load 9.50 on 2 cores) (resumes within 2 minutes)' "$t/status.out" && grep -q '^Router:  *load 9.50 on 2 cores' "$t/status.out" \
+	&& ok "status: the router's load, its memory and the last pause" || { bad "status, after a pause:"; cat "$t/status.out"; }
+lav 0.50; printf 'MemTotal: 500000 kB\nMemFree: 9000 kB\nMemAvailable: 20000 kB\n' > "$t/proc/meminfo"; rm -f "$R/tmp/arteria/paused"
+runi service_event start arteria
+waitfor 8 paused_mem
+paused_mem && grep -q 'low on memory (19 MB available)' "$t/syslog" && ok "guard: a router low on memory (under 24 MB available) isn't sampled" || { bad "guard, memory:"; head -c 300 "$W/live.htm"; cat "$t/syslog"; }
+waitfor 4 sampler_gone
+# busy: sampled a third as often, never paused; then overloaded for three rounds while sampling: it pauses
+printf 'MemTotal: 500000 kB\nMemAvailable: 300000 kB\n' > "$t/proc/meminfo"; lav 4.50; rm -f "$R/tmp/arteria/paused"
+runi service_event start arteria
+waitfor 10 seq_at_least 1
+python3 - "$W/live.htm" <<'EOF' && ok "guard: a busy router (load 2 per core) is sampled a third as often, and the sample says so" || fail=1
+import json, sys
+s = json.load(open(sys.argv[1]))
+assert s['interval'] == 3 and s['router']['busy'] == 1 and s['router']['cpus'] == 2 and s['router']['mem'] == 292, (s['interval'], s['router'])
+EOF
+lav 9.50
+waitfor 20 paused_load
+paused_load && ! grep -q '"seq"' "$W/live.htm" && ok "guard: overloaded three rounds in a row while sampling, it pauses" || { bad "guard, overloaded while sampling:"; head -c 300 "$W/live.htm"; }
+waitfor 4 sampler_gone
+runi service_event start arteriastop
+lav 1.39; rm -f "$t/proc/cpuinfo" "$t/proc/meminfo"; rm -rf "$R/tmp/arteria" "$W"
+
 # ---- 4: install and uninstall ----------------------------------------------------------------
 printf '#!/bin/sh\n/some/other/script startup &\n' > "$R/jffs/scripts/services-start"
 cp "$R/jffs/scripts/services-start" "$t/ss.before"
+# 1.0.0's hook line, which started the script for every service event on the router: install replaces it
+printf '#!/bin/sh\n/some/other/script event "$@" &\n%s/jffs/addons/arteria/arteria.sh service_event "$@" & # arteria\n' "$R" > "$R/jffs/scripts/service-event"
 cp "$R/www/require/modules/menuTree.js" "$t/menu.before"
 # what an older version's key setup, or a development version's device recognition, may have left
 d="$R/jffs/addons/arteria"; mkdir -p "$d"; echo key > "$d/node_key"
@@ -555,7 +642,17 @@ if [ "$r" = "Network Tools|1" ] && [ "$(wc -l < "$t/nt.js")" -eq $(( $(wc -l < "
 	&& [ "$(grep -B1 'tabName: "Arteria"' "$t/nt.js" | head -n 1 | grep -c 'Advanced_Wireless_Survey.asp')" = 1 ]; then
 	ok "menu without Traffic Analyzer: last in Network Tools"
 else bad "Network Tools menu ($r):"; grep -n -B2 -A2 Arteria "$t/nt.js"; fi
-grep -q "arteria.sh startup & # arteria" "$R/jffs/scripts/services-start" && grep -q 'service_event "$@" & # arteria' "$R/jffs/scripts/service-event" && ok "hooks added" || bad "hooks missing"
+grep -q "arteria.sh startup & # arteria" "$R/jffs/scripts/services-start" && grep -q 'service_event "$@" & ;; esac # arteria' "$R/jffs/scripts/service-event" && ok "hooks added" || bad "hooks missing"
+se="$R/jffs/scripts/service-event"
+if [ "$(grep -c '# arteria$' "$se")" = 1 ] && grep -q '^case "\$2" in arteria\*) .*arteria\.sh service_event "\$@" & ;; esac # arteria$' "$se" && grep -q '^/some/other/script event' "$se"; then
+	ok "the service-event hook replaces 1.0.0's line, and other scripts' lines stay"
+else bad "service-event hook:"; cat "$se"; fi
+hook() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" sh "$se" "$@" 2>/dev/null; }   # the other script's line isn't there to run
+rm -f "$R/tmp/arteria/heartbeat"; hook restart wan; sleep 1
+[ ! -f "$R/tmp/arteria/heartbeat" ] && ok "the hook starts Arteria for its own events only, not for the router's others" || bad "the hook ran Arteria for 'restart wan'"
+hook start arteria; hb_made() { [ -f "$R/tmp/arteria/heartbeat" ]; }; waitfor 5 hb_made
+hb_made && ok "the hook passes the page's request on" || bad "the hook didn't pass 'start arteria' on"
+hook start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
 grep -qi "key login works\|Node(s) without the key" "$t/install.out" && ok "install checks node access" || { bad "install didn't check the nodes:"; cat "$t/install.out"; }
 
 # ---- 5: update and update dev install only a whole download of the right version --------------

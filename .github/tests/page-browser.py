@@ -142,6 +142,9 @@ async def scenario(b, scn, port):
         }''')
         # labels never sit on one another
         lbov = await pg.evaluate(LABEL_OVERLAPS)
+        # a label's rates (2.1M, 47k, 1.25G) fit inside it
+        spill = await pg.evaluate('''() => [...document.querySelectorAll('#arMapLabels .ar-lb')].filter(b => { const s = b.firstElementChild, v = s.querySelector('.v');
+            return v && v.getBoundingClientRect().right > s.getBoundingClientRect().right - 8; }).map(b => b.querySelector('.n').textContent)''')
         # anything cut short with "…" outside the map's labels (a name, a maker, a path) shows in full on hover; pointing at a
         # map label shows no tooltip at all, on it or on anything around it
         tip = await pg.evaluate('''() => {
@@ -167,6 +170,7 @@ async def scenario(b, scn, port):
         check(after == small, tag + 'closing the expanded view puts the stage back as it was')
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
         check(cover <= (1 if scn in ('bulbs', 'busy', 'hostile', 'newer') else 0), tag + 'labels don\'t cover other devices (%d)' % cover)
+        check(not spill, tag + 'every label\'s rates fit inside it' + ('' if not spill else ' (%s)' % ', '.join(spill[:4])))
         check(still is not None and still < 0.5, tag + 'the totals keep their place as the numbers change (%s px)' % still)
         check(lbov == 0 and lbov_big == 0, tag + 'labels don\'t sit on one another (%d in the page\'s view, %d expanded)' % (lbov, lbov_big))
         check(tip['bad'] == 0 and tip['labels'] == 0, tag + 'what is cut short shows in full on hover (%d), the map\'s labels show no tooltip' % tip['n'])
@@ -251,9 +255,9 @@ async def zoom(b, port):
         if lb:
             d0 = await z()
             await pg.mouse.move(lb[0], lb[1]); await pg.mouse.down(); await pg.mouse.move(lb[0] + 60, lb[1] + 40, steps=6)
-            await pg.evaluate("Arteria.render()")   # a sample landing mid-drag keeps the map moving and zoomed as it was
-            mid = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState]")
-            rings = await pg.evaluate("[...document.querySelectorAll('#arMapScene .df-ripple, #arMapScene .df-led')].map(e => getComputedStyle(e).animationName)")
+            # a sample landing mid-drag keeps the map moving and zoomed as it was: one more step of the drag, then a render and the reading at once
+            await pg.mouse.move(lb[0] + 64, lb[1] + 42)
+            mid, rings = await pg.evaluate("(() => { Arteria.render(); return [[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState], [...document.querySelectorAll('#arMapScene .df-ripple, #arMapScene .df-led')].map(e => getComputedStyle(e).animationName)]; })()")
             await pg.mouse.up()
             await pg.wait_for_timeout(100)
             d1 = await z()
@@ -298,22 +302,36 @@ async def rename(b, port):
         ctx = await b.new_context(viewport={'width': 1440, 'height': 900})
         pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(pg)
         mac = await pg.evaluate("(() => [...document.querySelectorAll('#arMapLabels .ar-lb')].map(l => l.getAttribute('data-id')).find(i => /^[0-9A-F]{2}:/.test(i)))()")
+        check(await pg.evaluate("document.getElementById('arRoEdit').classList.contains('hide') && !document.getElementById('arRoNrow').classList.contains('ed')"), 'rename: the whole network has no pencil, its name isn\'t a button')
         await pg.dispatch_event('#arMapLabels .ar-lb[data-id="%s"]' % mac, 'click'); await pg.wait_for_timeout(200)
-        st = lambda: pg.evaluate("(() => ({ name: document.getElementById('arRoName').textContent, ed: document.getElementById('arRoName').classList.contains('ed'), editing: !document.getElementById('arRoEd').classList.contains('hide'), btns: !document.getElementById('arRoEd').classList.contains('hide'), line: document.getElementById('arRoLink').textContent, icon: document.getElementById('arRoIcon').innerHTML }))()")
+        st = lambda: pg.evaluate("(() => ({ name: document.getElementById('arRoName').textContent, ed: document.getElementById('arRoNrow').classList.contains('ed'), editing: !document.getElementById('arRoEd').classList.contains('hide'), btns: !document.getElementById('arRoEd').classList.contains('hide'), line: document.getElementById('arRoLink').textContent, icon: document.getElementById('arRoIcon').innerHTML }))()")
         s0 = await st()
         check(s0['ed'] and not s0['editing'], 'rename: a device\'s name in the readout can be clicked to rename it')
+        # an edit button after the name: just the pencil, no border or background; no outline on the name
+        eb = await pg.evaluate("(() => { const e = document.getElementById('arRoEdit'), n = document.getElementById('arRoName'), b = e.getBoundingClientRect(), r = n.getBoundingClientRect(), rw = document.getElementById('arRoNrow').getBoundingClientRect(), cs = getComputedStyle(e); return { shown: !e.classList.contains('hide') && b.width > 0 && !!e.querySelector('svg'), size: [b.width, b.height], bare: cs.borderTopStyle === 'none' && cs.backgroundColor === 'rgba(0, 0, 0, 0)', after: b.left >= r.right, row: [rw.top, rw.height], mid: Math.abs((b.top + b.bottom) / 2 - (r.top + r.bottom) / 2), nb: getComputedStyle(n).borderTopStyle }; })()")
+        check(eb['shown'] and eb['size'] == [26, 26] and eb['bare'] and eb['after'] and eb['mid'] < 1.5 and eb['nb'] == 'none',
+              'rename: an edit button after the name, just the pencil (%s)' % eb)
+        # the name and the pencil are one: hovering the name lights the pencil, the row ends at the pencil (nothing to click beyond it)
+        await pg.evaluate("document.getElementById('arRoEdit').style.transition = 'none'")   # the fade's end, not its timing (a busy test browser may not step it)
+        await pg.mouse.move(5, 5); await pg.wait_for_timeout(100); o0 = await pg.evaluate("getComputedStyle(document.getElementById('arRoEdit')).opacity")
+        await pg.hover('#arRoName'); await pg.wait_for_timeout(100)
+        hv = await pg.evaluate("(() => { const e = document.getElementById('arRoEdit'), rw = document.getElementById('arRoNrow').getBoundingClientRect(); return { o: getComputedStyle(e).opacity, cur: getComputedStyle(document.getElementById('arRoName')).cursor, end: rw.right - e.getBoundingClientRect().right }; })()")
+        check(float(o0) < 0.7 and hv['o'] == '1' and hv['cur'] == 'pointer' and abs(hv['end']) < 0.5, 'rename: hovering the name lights the pencil, the two are one button (%s, %s)' % (o0, hv))
+        await pg.evaluate("document.getElementById('arRoEdit').style.transition = ''")
         # the cross: nothing changes
-        await pg.click('#arRoName'); s1 = await st()
-        check(s1['editing'] and s1['btns'] and await pg.evaluate("document.getElementById('arRoIn').value") == s0['name'], 'rename: clicking the name turns it into a text field with a check and a cross')
+        await pg.click('#arRoEdit'); s1 = await st()
+        fld = await pg.evaluate("(() => { const b = document.getElementById('arRoEd').getBoundingClientRect(); return [b.top, b.height]; })()")
+        check(abs(fld[0] - eb['row'][0]) < 0.5 and abs(fld[1] - eb['row'][1]) < 0.5, 'rename: the edit button opens the text field in the name\'s row, nothing moves (%s vs %s)' % (fld, eb['row']))
+        check(s1['editing'] and s1['btns'] and await pg.evaluate("document.getElementById('arRoIn').value") == s0['name'], 'rename: the edit button turns the name into a text field with a check and a cross')
         row = await pg.evaluate("(() => ['arRoIn', 'arRoOk', 'arRoNo'].map(i => { const r = document.getElementById(i).getBoundingClientRect(); return [r.top, r.height, r.width]; }))()")
         check(all(abs(r[0] - row[0][0]) < 0.5 and abs(r[1] - row[0][1]) < 0.5 for r in row) and abs(row[1][2] - row[1][1]) < 0.5, 'rename: the check and the cross sit in the field\'s row, squares exactly as tall as it (%s)' % row)
         await pg.fill('#arRoIn', 'Lounge purifier'); s2 = await st()
         want = await pg.evaluate("(() => { const d = document.createElement('div'); d.innerHTML = Arteria._t.iconSvg('purifier', 20, '#f0efec'); return d.innerHTML; })()")
         check(s2['icon'] == want and 'Air purifier' in s2['line'], 'rename: while typing, the icon and the line under the name say what it will show as (%s)' % s2['line'])
         await pg.click('#arRoNo'); s3 = await st()
-        check(not s3['editing'] and s3['name'] == s0['name'], 'rename: the cross keeps the old name')
+        check(not s3['editing'] and s3['name'] == s0['name'] and await pg.evaluate("document.activeElement.id") == 'arRoEdit', 'rename: the cross keeps the old name, and the edit button has the focus again')
         # a name with < or > isn't sent
-        await pg.click('#arRoName'); await pg.fill('#arRoIn', 'Hall <lamp>'); await pg.click('#arRoOk'); await pg.wait_for_timeout(300)
+        await pg.click('#arRoEdit'); await pg.fill('#arRoIn', 'Hall <lamp>'); await pg.click('#arRoOk'); await pg.wait_for_timeout(300)
         s4 = await st()
         saved = await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
         check(s4['editing'] and '<' in s4['line'] and 'Hall <lamp>' not in saved, 'rename: a name with < or > is refused, nothing is sent')
@@ -330,10 +348,48 @@ async def rename(b, port):
         s5 = await st()
         check(not s5['editing'] and await pg.evaluate('Arteria.state.big'), 'rename: Escape leaves the name, not the expanded view')
         # no name: the router's own name and icon come back
-        await pg.click('#arRoName'); await pg.fill('#arRoIn', ''); await pg.click('#arRoOk')
+        await pg.click('#arRoName'); await pg.fill('#arRoIn', ''); await pg.click('#arRoOk')   # clicking the name works too
         await pg.wait_for_function("document.getElementById('arRoEd').classList.contains('hide')", timeout=15000)
         saved = await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
         check(mac not in saved and 'removed' in (await st())['line'], 'rename: an empty name removes the nickname')
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
+async def guard(b, port_busy, port_dead):
+    # the router paused sampling because it was overloaded: the page says why, and asks less often
+    srv = await serve('overload', port_busy)
+    try:
+        ctx = await b.new_context(viewport={'width': 1600, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port_busy)
+        await pg.wait_for_timeout(3500)
+        live = await pg.evaluate("document.getElementById('arLiveTxt').textContent")
+        note = await pg.evaluate("(document.querySelector('#ar .ar-notice .tx') || {}).textContent || ''")
+        check(live == 'Router busy · paused' and 'busy (load 14.20 on 4 cores)' in note and 'about 2 minutes' in note,
+              'guard: when the router pauses itself, the page says why (%r, %r)' % (live, note[:70]))
+        await ctx.close()
+    finally:
+        srv.terminate()
+    # nothing ever comes back: after a minute the page stops asking, says what to check, and the Live button tries again
+    srv = await serve('dead', port_dead)
+    try:
+        ctx = await b.new_context(viewport={'width': 1600, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port_dead)
+        await pg.wait_for_timeout(1500)
+        await pg.evaluate("Arteria.state.started = Date.now() - 61000")
+        await pg.wait_for_timeout(2600)
+        live = await pg.evaluate("document.getElementById('arLiveTxt').textContent")
+        note = await pg.evaluate("(document.querySelector('#ar .ar-notice .tx') || {}).textContent || ''")
+        n0 = await pg.evaluate("fetch('/_posts').then(r => r.json())")
+        await pg.wait_for_timeout(9000)
+        n1 = await pg.evaluate("fetch('/_posts').then(r => r.json())")
+        check(live == 'Stopped · try again' and 'No samples from the router for a minute' in note and n1 == n0,
+              'guard: with no samples for a minute the page stops asking the router (%r, %d -> %d requests)' % (live, n0, n1))
+        await pg.click('#arLive'); await pg.wait_for_timeout(600)
+        n2 = await pg.evaluate("fetch('/_posts').then(r => r.json())")
+        live2 = await pg.evaluate("document.getElementById('arLiveTxt').textContent")
+        check(n2 > n1 and live2 == 'Connecting…', 'guard: the Live button asks again (%r, %d requests)' % (live2, n2 - n1))
         await ctx.close()
     finally:
         srv.terminate()
@@ -367,7 +423,7 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796))
         await b.close()
 
 
