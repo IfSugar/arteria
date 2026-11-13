@@ -251,14 +251,16 @@ async def zoom(b, port):
         if lb:
             d0 = await z()
             await pg.mouse.move(lb[0], lb[1]); await pg.mouse.down(); await pg.mouse.move(lb[0] + 60, lb[1] + 40, steps=6)
-            mid = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .df-a')).animationPlayState]")
+            mid = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState]")
+            rings = await pg.evaluate("[...document.querySelectorAll('#arMapScene .df-ripple, #arMapScene .df-led')].map(e => getComputedStyle(e).animationName)")
             await pg.mouse.up()
             await pg.wait_for_timeout(100)
             d1 = await z()
             check((d1['x'], d1['y']) != (d0['x'], d0['y']) and await pg.evaluate('Arteria.state.sel') is None, 'zoom: dragging pans, and doesn\'t trace the device it started on')
             await pg.wait_for_timeout(300)
-            aft = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .df-a')).animationPlayState]")
+            aft = await pg.evaluate("[document.getElementById('ar').classList.contains('moving'), getComputedStyle(document.querySelector('#arMapScene .pk')).animationPlayState]")
             check(mid == [True, 'paused'] and aft == [False, 'running'], 'zoom: the animations wait while the map is dragged, and go on when it stops (%s, %s)' % (mid, aft))
+            check(rings and all(n == 'none' for n in rings), 'zoom: while it moves, the rings and LEDs don\'t animate at all, so the browser draws the map as one picture (%d)' % len(rings))
         check(await pg.evaluate("!document.querySelector('#arMapScene [filter], #arMapScene filter')"), 'zoom: the map has no blur filter, which would be redrawn for every frame it moves')
         # no scrollbars, and nothing scrolls, not even when the keyboard reaches a label that is off screen
         for _ in range(12): await pg.keyboard.press('Tab')

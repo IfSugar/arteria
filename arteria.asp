@@ -208,6 +208,10 @@
 #ar .df-ripple { transform-box: fill-box; transform-origin: center; animation-name: arripple; animation-duration: 2.6s; animation-timing-function: ease-out; }
 #ar.paused .df-a, #ar.paused .ar-live .dot { animation-play-state: paused !important; }
 #ar.moving .df-a { animation-play-state: paused !important; }   /* while the map is dragged or zoomed: it only has to move */
+/* The pulsing rings, the LEDs and a boiler's flame animate a scale or an opacity, which the browser draws as layers of their
+   own, even paused; zooming has to redraw and move each in step with the map, and one a frame late flickers. While the map
+   moves they don't animate at all, so it is drawn as one picture. */
+#ar.moving .df-ripple, #ar.moving .df-led, #ar.moving .df-flame { animation: none !important; }
 #ar .lk, #ar .ob, #ar .rb { transition: opacity .3s ease; }
 #ar .ob { cursor: pointer; }
 #ar .lk.dim { opacity: .14; } #ar .ob.dim { opacity: .38; } #ar .ob.off { opacity: .3; }
@@ -3214,9 +3218,9 @@ function pzWire() {
 	};
 	window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
 	el.addEventListener('click', function (e) { if (A.pzEat && Date.now() - A.pzEat < 400) { A.pzEat = 0; e.stopPropagation(); e.preventDefault(); } }, true);
-	$('arZoomIn').addEventListener('click', function () { pzSet(A.pz.s * 1.4); });
-	$('arZoomOut').addEventListener('click', function () { pzSet(A.pz.s / 1.4); });
-	$('arZoomFit').addEventListener('click', pzReset);
+	$('arZoomIn').addEventListener('click', function () { moving(); pzSet(A.pz.s * 1.4); });
+	$('arZoomOut').addEventListener('click', function () { moving(); pzSet(A.pz.s / 1.4); });
+	$('arZoomFit').addEventListener('click', function () { moving(); pzReset(); });
 	pzApply();
 }
 function setBig(on) {
