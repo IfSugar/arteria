@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile']
+SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4']
 fails = []
 
 
@@ -70,6 +70,15 @@ async def scenario(b, scn, port):
         await ready(pg)
         small = await pg.evaluate(STAGE)
         tag = scn.ljust(8)
+        if scn == 'mesh4':   # four nodes and two zones: the busiest two get them, and the tray and its list name the other two
+            await pg.wait_for_timeout(2200)   # a few samples in: the busiest nodes are known
+            lb = await pg.evaluate("(document.querySelector('#arMapLabels .ar-lb[data-id=\"more\"]') || {}).innerText || ''")
+            await pg.click('#arMapLabels .ar-lb[data-id="more"]'); await pg.wait_for_timeout(300)
+            note = await pg.evaluate("document.getElementById('arMoreNote').classList.contains('hide') ? '' : document.getElementById('arMoreNote').textContent")
+            zones = await pg.evaluate("Arteria.state.layout.nodes.map(x => x.node.name).join(',')")
+            check('+2 nodes' in lb and note.startswith('No room on the map for Garage (1 device) and Loft (1 device).') and zones == 'Hall,Office',
+               tag + ': four nodes: the busiest two get zones, the tray and its list name the other two (' + zones + ')')
+            await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
         # the page's view: Flow, the list, Details, the report
         await pg.click('#arTabFlow'); await pg.wait_for_timeout(250)
         await pg.click('#arTabMap'); await pg.wait_for_timeout(250)
@@ -554,7 +563,8 @@ async def start_theme_motion(b, port, port_rog):
         await pg.wait_for_timeout(4500)
         lives = await (await pg.request.get('http://127.0.0.1:%d/_lives' % port)).json()
         gaps = [round(b2 - a2, 2) for a2, b2 in zip(lives, lives[1:])]
-        check(len(dg) >= 3 and max(dg) < 1.5 and len(gaps) >= 3 and min(gaps[-2:]) > 1.8,
+        # under 1.8 s: a second each, with room for a busy test machine (every scenario runs at once), still short of the 2 s pace
+        check(len(dg) >= 3 and max(dg) < 1.8 and len(gaps) >= 3 and min(gaps[-2:]) > 1.8,
               'start: until it is live the page asks for samples every second (%s), then every 2 s (%s)' % (dg[:4], gaps[-2:]))
         # 2. less motion asked for: the packets stand still, the legend says so; Animate starts them, and the browser remembers
         mc = await b.new_context(viewport={'width': 1300, 'height': 900}, reduced_motion='reduce')

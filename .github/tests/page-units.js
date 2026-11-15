@@ -559,4 +559,46 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	ok(n.bhOwn && Math.abs(n.bh.dn - 16) < 0.01 && Math.abs(dv.dn - 16) < 0.01, 'a node\'s backhaul from its own uplink count, in step with its devices (backhaul ' + n.bh.dn.toFixed(1) + ', device ' + (dv ? dv.dn.toFixed(1) : '-') + ' Mb/s)');
 }
 
+// ---- 21. more AiMesh nodes than the map has zones (two, three in the expanded view): the busiest get them, a node keeps its
+// zone and its place unless one without is 3x busier (and over 1 Mb/s), at most one swap every 20 s, and the tray names the rest
+{
+	const mk = (k, sdn) => ({ mac: '02:10:00:00:00:C' + k, id: 'node:02:10:00:00:00:C' + k, name: 'Node ' + k, online: sdn >= 0, bh: { dn: sdn, up: 0, sdn: Math.max(sdn, 0), sup: 0 } });
+	const ns = [mk(1, 2), mk(2, 40), mk(3, 0.5), mk(4, 80)], names = z => z.map(n => n.name).join(',');
+	A.gotAny = true; A.nodeZones = null; A.nodeSwapAt = 0;
+	let z = T.pickNodes(ns, 3);
+	ok(names(z) === 'Node 4,Node 2,Node 1', 'with four nodes and three zones, the three busiest get them', names(z));
+	ns[2].bh.sdn = 5; z = T.pickNodes(ns, 3);   /* 2.5x the quietest shown: not enough */
+	const kept = names(z) === 'Node 4,Node 2,Node 1';
+	ns[2].bh.sdn = 30; z = T.pickNodes(ns, 3);  /* 15x: it takes the quietest one's zone, in its place; the others stay put */
+	const swapped = names(z) === 'Node 4,Node 2,Node 3';
+	ns[0].bh.sdn = 200; z = T.pickNodes(ns, 3);  /* another swap right away (over 3x the quietest shown): held for 20 s */
+	const held = names(z) === 'Node 4,Node 2,Node 3';
+	A.nodeSwapAt = Date.now() - 21000; z = T.pickNodes(ns, 3);
+	ok(kept && swapped && held && names(z) === 'Node 4,Node 2,Node 1', 'a node keeps its zone unless one without is 3x busier, takes its place, and swaps wait 20 s', names(z));
+	A.nodeZones = null; ok(names(T.pickNodes(ns.slice(0, 2), 3)) === 'Node 1,Node 2' && A.nodeZones === null, 'with no more nodes than zones, they keep their order');
+	const dv = { id: 'D1', node: ns[1], name: 'TV' };
+	const hs = { nodes: [ns[1]], devs: [dv, { id: 'D2', node: null, name: 'Phone' }] };
+	ok(T.trayName(hs.devs, hs.nodes) === '+2 more · +1 node' && T.trayName([], [ns[1], ns[2]]) === '+2 nodes', 'the tray counts the nodes without a zone', T.trayName(hs.devs, hs.nodes));
+	ok(T.noZoneText(hs) === 'No room on the map for Node 2 (1 device). Its devices are in this list, and Flow shows every node.'
+		&& T.noZoneText({ nodes: [ns[1], ns[2]], devs: [] }) === 'No room on the map for Node 2 (0 devices) and Node 3 (0 devices). Flow shows every node.',
+		'the tray\'s list names the nodes without a zone', T.noZoneText(hs));
+	// on the map itself: four nodes from a sample, in the expanded view (three zones) and the page's (two)
+	const s4 = (up, m) => smp({ up: up, sta: [1, 2, 3, 4].map(k => ['eth7', '5', '02:10:00:00:00:D' + k, String(1e6 + m * k * 1e6), '1000', -55, 864, 864, 100, 0, 'ax', 2, 80]),
+		nodes: [1, 2, 3, 4].map(k => ({ mac: '02:10:00:00:00:E' + k, ip: '192.168.50.1' + k, model: 'RP-AX56', alias: 'Node ' + k, sta: '02:10:00:00:00:D' + k, state: 'ok', up: up,
+			c: [['wl1.1', '5', '00:00:5E:00:53:E' + k, '1000', '1000', -50, 600, 600, 100, 0, 'ax', 2, 80]] })) });
+	AR.buildNet(s4('8000.0', 0)); const n4 = AR.buildNet(s4('8002.0', 2));
+	const out = [];
+	[[T.geomBig(1184, 790, 4), 1], [T.geomSmall(), 2]].forEach(([g, hidden]) => {
+		const keepG = T.G(); T.useGeom(g); A.nodeZones = null; A.nodeSwapAt = 0;
+		try {
+			const L = T.mapLayout(n4), m = T.buildMap(n4, L);
+			const onTray = L.tray.filter(d => L.hidden.indexOf(d.node) >= 0).length;
+			out.push(L.nodes.length + '+' + L.hidden.length + (L.hidden.length === hidden && onTray === hidden && L.hidden.every(n => n.name === 'Node 1' || n.name === 'Node 2') && m.labels.indexOf('+' + hidden + ' node') >= 0 ? '' : ' bad'));
+		} catch (e) { out.push('ERROR ' + e.message); }
+		T.useGeom(keepG);
+	});
+	ok(out.join(' ') === '3+1 2+2', 'on the map: the quietest nodes without a zone, their devices on the tray, and the tray says how many nodes', out.join(' '));
+	A.nodeZones = null; A.nodeSwapAt = 0;
+}
+
 process.exit(fails ? 1 : 0);
