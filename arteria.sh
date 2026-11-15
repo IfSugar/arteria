@@ -331,6 +331,8 @@ sta_json() {
 # client of the router (a client mode, or named in sta_phy_ifnames/sta_ifnames), and the node's devices are on wl0.1-style
 # interfaces. A node on an Ethernet backhaul still names its radios in those lists, but they are access points with the node's
 # devices on them (an RT-AC86U, a ZenWiFi XD6): so a named interface counts as the uplink only while it isn't an access point.
+# A node that joins its radios' uplinks into one interface, dpsta (sta_phy_ifnames=dpsta, sta_ifnames=its radios: an RP-AX56),
+# counts each packet on dpsta and on the radio it came in on: its uplink is dpsta alone, or the backhaul reads double.
 # Each round also reports the uplink's own byte counters ("U ifname rx tx"), read in the same round as its devices': the page
 # shows the node's part of Flow from those, so the node's backhaul and its devices always add up, even while a download that
 # just started is reaching the router's figures a round before the node's (a node with a wired backhaul sends none).
@@ -371,6 +373,14 @@ done
 U=" "
 for x in $S; do case " $L " in *" $x:"*) ;; *) U="$U$x " ;; esac; done
 U="$U${Z# }"
+case "$U" in *" dpsta "*)
+	t nvram get dpsta_ifnames
+	M=" $(nvram get dpsta_ifnames) "
+	[ "$M" != "  " ] || M="$U"   # its members not named: dpsta stands for every uplink
+	V=" dpsta "
+	for x in $U; do case "$M" in *" $x "*) ;; *) [ "$x" = dpsta ] || V="$V$x " ;; esac; done
+	U="$V" ;;
+esac
 t "reads:$L, uplink:$U"
 if [ -n "$W" ]; then
 	for p in $L; do echo "W read ${p%%:*} - $(wl -i "${p%%:*}" assoclist 2>/dev/null | wc -l)"; done
