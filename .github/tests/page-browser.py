@@ -573,8 +573,9 @@ async def start_theme_motion(b, port, port_rog):
         await pg.wait_for_timeout(4500)
         lives = await (await pg.request.get('http://127.0.0.1:%d/_lives' % port)).json()
         gaps = [round(b2 - a2, 2) for a2, b2 in zip(lives, lives[1:])]
-        # under 1.8 s: a second each, with room for a busy test machine (every scenario runs at once), still short of the 2 s pace
-        check(len(dg) >= 3 and max(dg) < 1.8 and len(gaps) >= 3 and min(gaps[-2:]) > 1.8,
+        # a second each until live: the gaps after the first under 1.5 s; the first includes the page's first full drawing, so it
+        # only has to be well short of the 2 s pace's two gaps
+        check(len(dg) >= 3 and max(dg[1:]) < 1.5 and dg[0] < 2.6 and len(gaps) >= 3 and min(gaps[-2:]) > 1.8,
               'start: until it is live the page asks for samples every second (%s), then every 2 s (%s)' % (dg[:4], gaps[-2:]))
         # 2. less motion asked for: the packets stand still, the legend says so; Animate starts them, and the browser remembers
         mc = await b.new_context(viewport={'width': 1300, 'height': 900}, reduced_motion='reduce')
@@ -617,7 +618,8 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798), start_theme_motion(b, 8780, 8781))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798))
+        await start_theme_motion(b, 8780, 8781)   # on its own: it times the page's first requests, which every other check would slow
         await b.close()
 
 
