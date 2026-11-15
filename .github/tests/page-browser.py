@@ -34,8 +34,9 @@ STAGE = """() => { const s = document.querySelector('#ar .ar-stage').getBounding
     return { w: Math.round(s.width), h: Math.round(s.height), x: Math.round(s.left), td: ar.parentNode.tagName, big: Arteria.state.big }; }"""
 
 
-async def serve(scn, port):
-    srv = subprocess.Popen([sys.executable, os.path.join(HERE, 'preview.py'), scn, str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+async def serve(scn, port, env=None):
+    srv = subprocess.Popen([sys.executable, os.path.join(HERE, 'preview.py'), scn, str(port)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           env=dict(os.environ, **(env or {})))
     for _ in range(50):   # until it answers
         try:
             r, w = await asyncio.open_connection('127.0.0.1', port); w.close(); break
@@ -530,13 +531,73 @@ async def outlines(b, port):
         srv.terminate()
 
 
+async def start_theme_motion(b, port, port_rog):
+    # 1. until the page is live it asks for samples every second (the router's second sample comes a second after its first:
+    #    a router that hasn't answered yet, here), then at the interval the samples state (2 s); gaps include the server's answer
+    dead = await serve('dead', port + 20)
+    try:
+        dc = await b.new_context(viewport={'width': 1300, 'height': 900})
+        dp = await dc.new_page()
+        await dp.goto('http://127.0.0.1:%d/user1.asp' % (port + 20))
+        await dp.wait_for_timeout(4500)
+        lv = await (await dp.request.get('http://127.0.0.1:%d/_lives' % (port + 20))).json()
+        dg = [round(b2 - a2, 2) for a2, b2 in zip(lv, lv[1:])]
+        await dc.close()
+    finally:
+        dead.terminate()
+    srv = await serve('home', port)
+    try:
+        ctx = await b.new_context(viewport={'width': 1300, 'height': 900})
+        pg = await ctx.new_page()
+        await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
+        await ready(pg)
+        await pg.wait_for_timeout(4500)
+        lives = await (await pg.request.get('http://127.0.0.1:%d/_lives' % port)).json()
+        gaps = [round(b2 - a2, 2) for a2, b2 in zip(lives, lives[1:])]
+        check(len(dg) >= 3 and max(dg) < 1.5 and len(gaps) >= 3 and min(gaps[-2:]) > 1.8,
+              'start: until it is live the page asks for samples every second (%s), then every 2 s (%s)' % (dg[:4], gaps[-2:]))
+        # 2. less motion asked for: the packets stand still, the legend says so; Animate starts them, and the browser remembers
+        mc = await b.new_context(viewport={'width': 1300, 'height': 900}, reduced_motion='reduce')
+        mp = await mc.new_page()
+        await mp.goto('http://127.0.0.1:%d/user1.asp' % port)
+        await ready(mp)
+        anim = "() => getComputedStyle(document.querySelector('#arMapScene .df-a')).animationName"
+        still = await mp.evaluate("() => !document.getElementById('arMotion').classList.contains('hide')"), await mp.evaluate(anim)
+        await mp.click('#arMotionOn'); await mp.wait_for_timeout(200)
+        moving = await mp.evaluate("() => document.getElementById('arMotion').classList.contains('hide')"), await mp.evaluate(anim)
+        await mp.reload(); await ready(mp)
+        kept = await mp.evaluate("() => document.getElementById('ar').classList.contains('anim') && document.getElementById('arMotion').classList.contains('hide')")
+        check(still[0] and still[1] == 'none' and moving[0] and moving[1] != 'none' and kept,
+              'less motion: the packets stand still and the legend says so; Animate starts them, and is remembered (%s %s %s)' % (still, moving, kept))
+        await mc.close(); await ctx.close()
+    finally:
+        srv.terminate()
+    # 3. a ROG router's page: black, with red highlights (the router's ring and light strip too); the traffic's colours stay
+    srv = await serve('home', port_rog, {'AR_THEME': 'rog'})
+    try:
+        ctx = await b.new_context(viewport={'width': 1300, 'height': 900})
+        pg = await ctx.new_page()
+        await pg.goto('http://127.0.0.1:%d/user1.asp' % port_rog)
+        await ready(pg)
+        th = await pg.evaluate('''() => { const ar = document.getElementById('ar'), cs = getComputedStyle(ar);
+            return { cls: ar.className, acc: cs.getPropertyValue('--accent').trim(), dn: cs.getPropertyValue('--dn').trim(),
+                tab: getComputedStyle(document.querySelector('#ar .ar-tabs button.on')).borderBottomColor,
+                stage: getComputedStyle(document.querySelector('#ar .ar-stage')).backgroundColor,
+                ring: document.getElementById('arMapScene').innerHTML.indexOf('#ff3349') >= 0 }; }''')
+        check('th-rog' in th['cls'] and th['acc'] == '#ff3349' and th['tab'] == 'rgb(255, 51, 73)' and th['stage'] == 'rgb(23, 24, 26)' and th['dn'] == '#59c3ff' and th['ring'],
+              'theme: a ROG router\'s page is black with red highlights, the traffic\'s colours unchanged (%s)' % th)
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def main():
     if not CHROME:
         sys.exit('page-browser.py needs Chrome or Chromium (or its path as the argument)')
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798), start_theme_motion(b, 8780, 8781))
         await b.close()
 
 

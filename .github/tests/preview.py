@@ -115,6 +115,8 @@ NODE_ON = SCN not in ('nonode',)
 NODE_STATE = {'nokey': 'nokey', 'offline': 'down', 'hostile': 'nokey'}.get(SCN, 'ok')   # hostile: the page lists the node's clients from the AiMesh client list
 NODE_ONLINE = SCN != 'offline'
 WEAK = SCN == 'weak'
+LIVES = []
+THEME = os.environ.get('AR_THEME', '') if os.environ.get('AR_THEME', '') in ('rog', 'tuf') else ''
 
 
 def wobble(k, t):
@@ -220,7 +222,10 @@ class H(BaseHTTPRequestHandler):
             page = page.replace('<% nvram_get("productid"); %>', 'RT-AX86U')   # what the router fills in
             page = re.sub(r'<%.*?%>', '', page)
             return self.send(page)
+        if path == '/_lives':       # for the tests: when the page fetched its samples (seconds since the server started)
+            return self.send(json.dumps(LIVES), 'application/json')
         if path == '/ext/arteria/live.htm':
+            LIVES.append(round(time.time() - T0, 3))
             if SCN == 'overload' and not SAVED['resumed']:   # the router paused sampling to leave itself alone (arteria.sh's load guard)
                 return self.send(json.dumps({'v': 1, 'paused': 'load', 'epoch': int(time.time()), 'load': '14.20', 'cpus': 4, 'mem': 180}), 'text/html')
             if SCN == 'dead' or SAVED.get('live_off'):   # nothing comes back: the sampler never started, or stopped (/_set/live_off/1)
@@ -243,6 +248,8 @@ class H(BaseHTTPRequestHandler):
             return self.send('ok', 'text/plain')
         if path == '/_custom':   # for the tests: the router's client list as it is now
             return self.send(json.dumps(names()['custom']), 'application/json')
+        if path == '/state.js' and THEME:   # the firmware's theme on ROG and TUF models (AR_THEME=rog or tuf)
+            return self.send('var %s_support = true;' % THEME, 'application/javascript')
         if path.endswith('.js'):
             return self.send('', 'application/javascript')
         if path.endswith('.css'):

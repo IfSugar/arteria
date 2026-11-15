@@ -32,6 +32,16 @@
 	--upt: #ffb27a;
 	--mesh: #a99cf5;
 	--bad: #ff9c8a;
+	--warn: #ffcc00;       /* warnings: the same on every theme */
+	--ctl: #6b7b80;        /* the controls' borders, their "on" fill, the fields, tracks and icon tiles: the firmware's slate */
+	--ctl-on: #3a4549;
+	--field: #1f272a;
+	--track: #1a2225;
+	--tile: #1c2427;
+	--scroll: #4a585d;
+	--bar-line: #7d8c90;
+	--big: #4d595d;        /* the expanded view's background */
+	--floor1: #43535b; --floor2: #2e3b41; --wall1: #28343a; --wall2: #1b2428;   /* the room on the map */
 	width: 728px;
 	margin: 0 auto;
 	font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
@@ -42,7 +52,7 @@
 #ar button { font-family: inherit; cursor: pointer; }
 #ar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* The tab bar: its controls 6px clear of its line, and 6px below the panel's top (the panel's own 5px, plus 1px) */
-#ar .ar-bar { display: flex; align-items: center; gap: 10px; height: 41px; padding-bottom: 6px; border-bottom: 1px solid #7d8c90; margin: 1px 0 12px; }
+#ar .ar-bar { display: flex; align-items: center; gap: 10px; height: 41px; padding-bottom: 6px; border-bottom: 1px solid var(--bar-line); margin: 1px 0 12px; }
 #ar .ar-tabs { display: flex; gap: 10px; align-self: stretch; margin-bottom: -6px; }   /* the tabs reach down to the line, their text level with the controls' */
 #ar .ar-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; color: #e3eaec; font-size: 13px; padding: 0 6px 5px; min-width: 44px; margin-bottom: -1px; }
 #ar .ar-tabs button:hover { color: #fff; }
@@ -55,16 +65,16 @@
 #ar .ar-sum .dn { color: var(--dnt); font-weight: 700; }
 #ar .ar-sum .up { color: var(--upt); font-weight: 700; }
 /* Every pill-shaped control is the same: 34px tall overall, a dark fill, the same border, 12px text, 14px sides */
-#ar .ar-unit { display: flex; flex: none; height: 34px; border: 1px solid #6b7b80; border-radius: 17px; overflow: hidden; background: var(--surface); }
+#ar .ar-unit { display: flex; flex: none; height: 34px; border: 1px solid var(--ctl); border-radius: 17px; overflow: hidden; background: var(--surface); }
 #ar .ar-unit button { background: none; border: 0; margin: 0; padding: 0 14px; min-width: 34px; color: #c3c2b7; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 #ar .ar-unit button:hover { color: #fff; }
-#ar .ar-unit button.on { background: #3a4549; color: #fff; cursor: default; }
-#ar .ar-live { height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-radius: 17px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
+#ar .ar-unit button.on { background: var(--ctl-on); color: #fff; cursor: default; }
+#ar .ar-live { height: 34px; padding: 0 14px; display: flex; align-items: center; gap: 8px; border-radius: 17px; border: 1px solid var(--ctl); background: var(--surface); color: var(--ink); font-size: 12px; font-weight: 600; white-space: nowrap; flex: none; }
 #ar .ar-live .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); flex: none; }
 #ar .ar-live.live .dot { background: #3ddc97; animation: arblink 1.6s ease-in-out infinite; }
-#ar .ar-live.warn .dot { background: var(--accent); }
-#ar .ar-ibtn { width: 34px; height: 34px; flex: none; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 17px; border: 1px solid #6b7b80; background: var(--surface); color: var(--ink); }
-#ar .ar-ibtn:hover { background: #3a4549; }
+#ar .ar-live.warn .dot { background: var(--warn); }
+#ar .ar-ibtn { width: 34px; height: 34px; flex: none; margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 17px; border: 1px solid var(--ctl); background: var(--surface); color: var(--ink); }
+#ar .ar-ibtn:hover { background: var(--ctl-on); }
 #ar .ar-stage { position: relative; width: 728px; height: 518px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; overflow: clip; }   /* clip: never scrolled, not even to show a focused label */
 #ar .ar-view { display: none; position: absolute; left: 0; top: 0; width: 726px; height: 516px; }
 #ar .ar-view.on { display: block; }
@@ -76,11 +86,11 @@
 #ar #arMapLabels { pointer-events: none; } #ar #arMapLabels .ar-lb { pointer-events: auto; }
 #ar #arMap { overflow: hidden; overflow: clip; }
 #ar.big #arMap { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; } #ar.big #arMap.grabbing { cursor: grabbing; }
-#ar .ar-zoom { display: none; position: absolute; right: 16px; bottom: 12px; height: 34px; border: 1px solid #6b7b80; border-radius: 17px; overflow: hidden; background: var(--surface); }
+#ar .ar-zoom { display: none; position: absolute; right: 16px; bottom: 12px; height: 34px; border: 1px solid var(--ctl); border-radius: 17px; overflow: hidden; background: var(--surface); }
 #ar.big .ar-zoom { display: flex; }
 #ar .ar-zoom button { background: none; border: 0; margin: 0; padding: 0 12px; min-width: 34px; color: #e3eaec; font-size: 15px; font-weight: 600; cursor: pointer; }
-#ar .ar-zoom #arZoomFit { font-size: 12px; min-width: 58px; color: #c3c2b7; font-variant-numeric: tabular-nums; border-left: 1px solid #4a585d; border-right: 1px solid #4a585d; }
-#ar .ar-zoom button:hover { background: #3a4549; } #ar .ar-zoom button:disabled { color: #6b7b80; cursor: default; background: none; }
+#ar .ar-zoom #arZoomFit { font-size: 12px; min-width: 58px; color: #c3c2b7; font-variant-numeric: tabular-nums; border-left: 1px solid var(--scroll); border-right: 1px solid var(--scroll); }
+#ar .ar-zoom button:hover { background: var(--ctl-on); } #ar .ar-zoom button:disabled { color: var(--ctl); cursor: default; background: none; }
 #ar .ar-legend { display: flex; flex-direction: column; gap: 5px; }
 #ar .ar-legend span.sw { display: inline-block; width: 8px; height: 8px; border-radius: 4px; margin-right: 6px; vertical-align: 0; }
 #ar .ar-notice { display: flex; align-items: center; gap: 7px; max-width: 420px; font-size: 11.5px; color: var(--ink); }
@@ -94,14 +104,14 @@
 #ar .ar-lb .v { font-size: 10.5px; line-height: 13px; font-variant-numeric: tabular-nums; }
 #ar .ar-lb .x { font-size: 10px; line-height: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 #ar .ar-lb.x3 > span { height: 46px; }
-#ar .c-dn { color: var(--dnt); } #ar .c-up { color: var(--upt); } #ar .c-mut { color: var(--ink-2); } #ar .c-bad { color: var(--bad); } #ar .c-warn { color: var(--accent); }
+#ar .c-dn { color: var(--dnt); } #ar .c-up { color: var(--upt); } #ar .c-mut { color: var(--ink-2); } #ar .c-bad { color: var(--bad); } #ar .c-warn { color: var(--warn); }
 #ar .ar-cards { display: flex; gap: 12px; margin-top: 12px; height: 224px; }
 #ar .ar-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
 #ar .ar-readout { width: 440px; flex: none; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 #ar .ar-ro-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 16px; }
 #ar .ar-badge { font-size: 10.5px; line-height: 14px; padding: 0 7px; border-radius: 8px; border: 1px solid var(--axis); color: var(--ink-2); white-space: nowrap; }
 #ar .ar-ro-id { display: flex; align-items: center; gap: 10px; height: 36px; }
-#ar .ar-ico { width: 36px; height: 36px; border-radius: 9px; background: #1c2427; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; flex: none; }
+#ar .ar-ico { width: 36px; height: 36px; border-radius: 9px; background: var(--tile); border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; flex: none; }
 #ar .ar-ro-name { font-size: 16px; line-height: 19px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ar .ar-ro-link { font-size: 12px; line-height: 15px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The name and, for a device you can rename, a pencil after it: one thing to click, only as wide as the two, in a row as tall
@@ -110,10 +120,10 @@
 #ar .ar-ro-nrow .ar-ro-name { flex: 0 1 auto; min-width: 0; }
 #ar .ar-ro-nrow.ed { cursor: pointer; }
 #ar .ar-ro-ed { display: flex; align-items: stretch; gap: 6px; height: 26px; margin: -4px 0 -1px -6px; }   /* its text where the name's was */
-#ar .ar-ro-in { flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0 7px 0 5px; border: 1px solid #6b7b80; border-radius: 6px; background: #1f272a; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 24px; box-sizing: border-box; }
+#ar .ar-ro-in { flex: 1; min-width: 0; height: 26px; margin: 0; padding: 0 7px 0 5px; border: 1px solid var(--ctl); border-radius: 6px; background: var(--field); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 700; line-height: 24px; box-sizing: border-box; }
 #ar .ar-ro-in:focus { outline: none; border-color: #59c3ff; box-shadow: 0 0 0 2px rgba(89,195,255,.25); }
-#ar .ar-ro-ed button { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border-radius: 6px; border: 1px solid #6b7b80; background: #1f272a; display: flex; align-items: center; justify-content: center; cursor: pointer; box-sizing: border-box; }
-#ar .ar-ro-ed button:hover { background: #3a4549; }
+#ar .ar-ro-ed button { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border-radius: 6px; border: 1px solid var(--ctl); background: var(--field); display: flex; align-items: center; justify-content: center; cursor: pointer; box-sizing: border-box; }
+#ar .ar-ro-ed button:hover { background: var(--ctl-on); }
 /* the edit button is just the pencil: dim, full while the name or the pencil is hovered; a ring only for the keyboard */
 #ar button.ar-ro-edit { flex: none; width: 26px; height: 26px; margin: 0; padding: 0; border: 0; border-radius: 6px; background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: .6; transition: opacity .15s ease; }
 #ar .ar-ro-nrow.ed:hover button.ar-ro-edit, #ar button.ar-ro-edit:focus-visible { opacity: 1; }
@@ -124,7 +134,7 @@
 #ar .ar-metric .lbl { font-size: 11px; color: var(--muted); width: 68px; flex: none; }
 #ar .ar-metric .num { font-size: 24px; line-height: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
 #ar .ar-metric .unit { font-size: 12px; color: var(--muted); }
-#ar .ar-track { height: 4px; border-radius: 2px; background: #1a2225; overflow: hidden; }
+#ar .ar-track { height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
 #ar .ar-track > div { height: 4px; border-radius: 2px; width: 0; transition: width .4s ease; }
 #ar .ar-metric .share { font-size: 10.5px; line-height: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ar .ar-stats { display: flex; gap: 16px; height: 29px; }
@@ -143,31 +153,31 @@
 #ar .ar-side { flex: 1 1 0; padding: 12px 8px 6px; display: flex; flex-direction: column; gap: 6px; }
 #ar .ar-top button { height: 44px; width: 100%; margin: 0; padding: 0 8px; display: flex; align-items: center; gap: 9px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--ink); text-align: left; min-width: 0; }
 #ar .ar-top button:hover { background: rgba(255,255,255,.04); }
-#ar .ar-top button.on { border-color: var(--accent); background: #3a4549; }
+#ar .ar-top button.on { border-color: var(--accent); background: var(--ctl-on); }
 #ar .ar-top .nm { font-size: 12px; line-height: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-#ar .ar-top .bar { display: block; height: 3px; border-radius: 2px; background: #1a2225; margin-top: 5px; }
+#ar .ar-top .bar { display: block; height: 3px; border-radius: 2px; background: var(--track); margin-top: 5px; }
 #ar .ar-top .bar > span { display: block; height: 3px; border-radius: 2px; background: var(--dn); width: 0; transition: width .4s ease; }
 #ar .ar-top .rt { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: 11px; line-height: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; }
 #ar .ar-more-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 16px; padding: 0 0 0 8px; }
 #ar .ar-x { width: 44px; height: 44px; margin: -14px -8px -14px 0; border: 0; background: transparent; color: var(--ink-2); font-size: 18px; line-height: 1; border-radius: 8px; }
 #ar .ar-x:hover { color: #fff; }
 #ar .ar-more-list button { height: 40px; }
-#ar .ar-more-list { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #4a585d transparent; }
-#ar .ar-more-list::-webkit-scrollbar { width: 6px; } #ar .ar-more-list::-webkit-scrollbar-thumb { background: #4a585d; border-radius: 3px; }
+#ar .ar-more-list { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
+#ar .ar-more-list::-webkit-scrollbar { width: 6px; } #ar .ar-more-list::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 3px; }
 #ar .ar-empty { padding: 8px; color: var(--muted); font-size: 11.5px; }
 #ar .ar-hist { flex: 1 1 0; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 #ar .ar-hist .vals { display: flex; gap: 16px; height: 22px; }
 #ar .ar-hist .vals span.n { font-size: 18px; line-height: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
 #ar .ar-hist .vals span.u, #ar .ar-hist .vals span.l { font-size: 11px; color: var(--muted); }
 #ar .ar-flowbar { position: absolute; left: 12px; top: 10px; right: 16px; height: 44px; display: flex; align-items: center; gap: 14px; }
-#ar .ar-seg { display: flex; height: 34px; border-radius: 17px; border: 1px solid #6b7b80; overflow: hidden; flex: none; background: var(--surface); }
+#ar .ar-seg { display: flex; height: 34px; border-radius: 17px; border: 1px solid var(--ctl); overflow: hidden; flex: none; background: var(--surface); }
 #ar .ar-seg button { height: 32px; margin: 0; padding: 0 14px; border: 0; background: transparent; color: var(--ink-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
 #ar .ar-seg button.on-dn { background: #1f4a63; color: var(--dnt); }
 #ar .ar-seg button.on-up { background: #5a3520; color: var(--upt); }
 #ar .ar-scale { display: flex; align-items: center; gap: 7px; flex: none; font-size: 11px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 #ar .ar-scale .sw { width: 4px; height: 24px; border-radius: 2px; background: var(--dn); }
 #ar .ar-row { position: absolute; margin: 0; padding: 0 6px; display: flex; align-items: center; gap: 6px; border-radius: 8px; border: 1px solid transparent; background: rgba(255,255,255,.035); color: var(--ink); text-align: left; overflow: hidden; }
-#ar .ar-row.on { border-color: var(--accent); background: #3a4549; }
+#ar .ar-row.on { border-color: var(--accent); background: var(--ctl-on); }
 #ar .ar-row.off { opacity: .6; }
 #ar .ar-row .tx { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 #ar .ar-row .nm { font-size: 12px; line-height: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -184,21 +194,21 @@
 #ar .ar-link { border: 0; background: none; padding: 0; color: var(--muted); font: inherit; text-decoration: underline; cursor: pointer; }
 #ar .ar-link:hover, #ar .ar-foot a:hover { color: var(--ink-2); }
 #ar .ar-side.ar-report { flex: 1 1 0; width: auto; }
-#ar .ar-report textarea { flex: 1 1 0; min-height: 0; margin: 0 4px; resize: none; border: 1px solid var(--line); border-radius: 8px; background: #1f272a; color: var(--ink-2);
+#ar .ar-report textarea { flex: 1 1 0; min-height: 0; margin: 0 4px; resize: none; border: 1px solid var(--line); border-radius: 8px; background: var(--field); color: var(--ink-2);
 	font: 10px/14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 6px 8px; white-space: pre; overflow: auto; }
 #ar .hide { display: none !important; }
 /* The expanded view: the same page, over the router's own, filling the window. Cards move to a column on
    the right (below the stage under 1180 px). */
-#ar.big { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 9000; width: auto; margin: 0; padding: 8px 16px 10px; background: #4d595d; overflow: auto;
+#ar.big { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 9000; width: auto; margin: 0; padding: 8px 16px 10px; background: var(--big); overflow: auto;
 	display: grid; grid-template-areas: "bar bar" "stage cards" "foot foot"; grid-template-rows: auto 1fr auto; grid-template-columns: minmax(0, 1fr) 372px; column-gap: 12px; }
 #ar.big .ar-bar { grid-area: bar; } #ar.big .ar-stage { grid-area: stage; align-self: start; } #ar.big .ar-foot { grid-area: foot; }
 #ar.big .ar-cards { grid-area: cards; flex-direction: column; height: auto; margin-top: 0; min-height: 0; overflow: hidden; }
 #ar.big .ar-readout { width: auto; flex: none; }
 #ar.big .ar-details { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); flex: none; }
 #ar.big .ar-side, #ar.big .ar-hist { flex: 1 1 0; min-height: 0; }
-#ar.big #arTop .ar-top { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #4a585d transparent; }
+#ar.big #arTop .ar-top { flex: 1 1 0; min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 #ar.big:not(.narrow) #arHist svg { width: 100%; height: auto; }
-#ar.big .ar-fscroll { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #4a585d transparent; }
+#ar.big .ar-fscroll { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 #ar.big .ar-scale { margin-left: auto; }
 #ar.big .ar-flowbar { left: 0; right: 10px; top: 0; height: 54px; padding: 10px 6px 0 12px; background: var(--surface); z-index: 1; }
 #ar.big.narrow { grid-template-areas: "bar" "stage" "cards" "foot"; grid-template-rows: auto auto auto auto; grid-template-columns: minmax(0, 1fr); }
@@ -224,7 +234,7 @@
 #ar .ob { cursor: pointer; }
 #ar .lk.dim { opacity: .14; } #ar .ob.dim { opacity: .38; } #ar .ob.off { opacity: .3; }
 #ar .rb.dim { opacity: .2; } #ar .rb.mid { opacity: .55; }
-#ar .alt-off { stroke: #ff9c8a; } #ar .alt-nd { stroke: #c3c2b7; } #ar .alt-warn { stroke: #ffcc00; }
+#ar .alt-off { stroke: #ff9c8a; } #ar .alt-nd { stroke: #c3c2b7; } #ar .alt-warn { stroke: var(--warn); }
 #ar .rf { fill-opacity: .34; stroke-opacity: .55; stroke-width: 1px; }
 #ar .m-dn .rf, #ar .m-dn .bf { fill: #59c3ff; stroke: #59c3ff; }
 #ar .m-up .rf, #ar .m-up .bf { fill: #ff8a3d; stroke: #ff8a3d; }
@@ -241,7 +251,16 @@
 @keyframes arrgb { 0%, 100% { fill: #ff5e7a; } 17% { fill: #ffb03d; } 33% { fill: #ffe45c; } 50% { fill: #3ddc97; } 67% { fill: #59c3ff; } 83% { fill: #a99cf5; } }
 @keyframes arflame { 0%, 100% { opacity: 1; } 22% { opacity: .62; } 47% { opacity: .92; } 71% { opacity: .55; } }
 @keyframes arripple { from { transform: scale(1); opacity: .75; } to { transform: scale(2.3); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { #ar .df-a, #ar .ar-live .dot { animation: none !important; } #ar .lk, #ar .ob, #ar .rb, #ar .ar-lb { transition: none; } }
+/* A device that asks for less motion gets still packets (the legend says so, with a button to animate them anyway: .anim) */
+@media (prefers-reduced-motion: reduce) { #ar:not(.anim) .df-a, #ar:not(.anim) .ar-live .dot { animation: none !important; } #ar:not(.anim) .lk, #ar:not(.anim) .ob, #ar:not(.anim) .rb, #ar:not(.anim) .ar-lb { transition: none; } }
+#ar #arMotion { pointer-events: auto; color: var(--ink-2); }
+/* The router's own theme: ROG and TUF models' pages are black, with red or amber. Arteria follows: the controls, the room on the
+   map and the highlights (the traffic's colours stay: they mean download, upload and backhaul everywhere). */
+#ar.th-rog, #ar.th-tuf { --surface: #17181a; --line: #2d2f32; --axis: #3d4043; --muted: #a2a6a9; --ctl: #4c5054; --ctl-on: #2b2d30; --field: #101112;
+	--track: #0e0f10; --tile: #101112; --scroll: #3d4043; --bar-line: #5c6064; --big: #0b0b0c;
+	--floor1: #36393c; --floor2: #242629; --wall1: #232528; --wall2: #17181a; }
+#ar.th-rog { --accent: #ff3349; }
+#ar.th-tuf { --accent: #ffbb28; }
 </style>
 <style id="arPackets"></style>
 <script type="text/javascript">
@@ -251,7 +270,7 @@
 'use strict';
 var VERSION = '2.0.0';
 var BASE = '/ext/arteria/';
-var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';
+var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', WARN = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';   /* ACC follows the router's theme (theme()) */
 /* Packets: one CSS class per bucket (b0 = busiest). As throughput rises on a log scale, packets grow
    (wider and longer) and sit closer together. They all move at the same slow, steady speed, so nothing
    speeds up or flickers when traffic changes: watching the map for minutes should be calm. */
@@ -367,7 +386,7 @@ var ICON = {
 	sensor: ci(12, 12, 3) + 'M5.6 7.5a8 8 0 0 0 0 9M18.4 7.5a8 8 0 0 1 0 9',
 	thermostat: ci(12, 12, 8.5) + 'M12 12l3-3.5M8 16.5h8',
 	boiler: rr(6, 2.5, 12, 15, 2) + 'M12 6.3c.5 1.6 3 3 3 5.6a3 3 0 0 1-6 0c0-1.3.6-2.3 1.4-3 .1 1 .6 1.7 1.3 1.8-.2-1.7.1-3.2.3-4.4zM9.5 17.5v4M12 17.5v4M14.5 17.5v4',
-	plug: 'M9 3v5M15 3v5' + rr(6, 8, 12, 7, 2) + 'M12 15v6',
+	plug: 'M9 2.5V7M15 2.5V7M6.5 7h11v4a5.5 5.5 0 0 1-11 0zM12 16.5V21',
 	hub: rr(4, 13, 16, 6, 2) + 'M8 16h.01M12 16h.01M16 16h.01M8.5 9.5a5 5 0 0 1 7 0M10.6 11.4a2 2 0 0 1 2.8 0',
 	vacuum: ci(12, 12, 8.5) + ci(12, 9, 2) + 'M9.5 16.5h5',
 	appliance: rr(5, 3, 14, 18, 2) + ci(12, 13.5, 3.5) + 'M8 6.5h.01M11 6.5h5',
@@ -382,10 +401,10 @@ var ICON = {
 	wallswitch: rr(4, 4, 16, 16, 2.5) + rr(9, 7, 6, 10, 1.5) + 'M12 9v2',
 	contact: rr(3.5, 5, 6, 14, 1.5) + rr(12, 8, 3.5, 8, 1) + 'M6.5 8.5h.01M19.5 3v18',
 	charger: rr(4, 3, 10, 13, 2) + 'M9.6 6l-2 3.5h3l-2 3.5M9 16v2a3 3 0 0 0 3 3h4a3 3 0 0 0 3-3v-6' + rr(17.2, 8, 3.6, 4, .8),
-	car: 'M5 17H3.5v-4l2.2-4.5a1.5 1.5 0 0 1 1.3-.8h10a1.5 1.5 0 0 1 1.3.8l2.2 4.5v4H19M3.5 13h17M9.5 17h5' + ci(7.5, 17, 2) + ci(16.5, 17, 2),
+	car: 'M4.8 16H3.3A1.3 1.3 0 0 1 2 14.7v-1.5c0-.9.6-1.6 1.5-1.8l1.3-.3C7.2 9.3 9.7 8 12.8 8c2.3 0 3.9 1.2 5.4 3.3l2.3.5c1 .2 1.6 1 1.6 2v.9a1.3 1.3 0 0 1-1.3 1.3h-1M9.2 16h6.2M7 11.4h11' + ci(7, 16, 2.2) + ci(17.6, 16, 2.2),
 	solar: 'M3 15l2.5-9h13l2.5 9zM4.3 10.5h15.4M9.5 6l-1.3 9M14.5 6l1.3 9M12 15v5M8.5 20h7',
 	mower: 'M3.5 16c0-4.1 3.8-7.5 8.5-7.5s8.5 3.4 8.5 7.5zM12 8.5V6.5M10.5 5.2h3' + ci(7, 18, 2) + ci(17, 18, 2),
-	vr: 'M3 10.5A2.5 2.5 0 0 1 5.5 8h13a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-2.5 2.5h-3.6l-1.4-2.2h-3l-1.4 2.2H5.5A2.5 2.5 0 0 1 3 14.5zM1.5 12H3M21 12h1.5',
+	vr: 'M2.5 11.5c0-1.9 1.5-3 3.5-3h12c2 0 3.5 1.1 3.5 3v1.6c0 2.1-1.5 3.4-3.6 3.4-1.5 0-2.3-.6-3-1.5-.6-.8-1.3-1.2-2.9-1.2s-2.3.4-2.9 1.2c-.7.9-1.5 1.5-3 1.5-2.1 0-3.6-1.3-3.6-3.4zM5.2 8.6C6.3 5.8 8.9 4.5 12 4.5s5.7 1.3 6.8 4.1M6 11.3c.5-.4 1.1-.6 1.8-.6',
 	projector: rr(2.5, 8.5, 19, 8.5, 2) + ci(15.5, 12.75, 2.5) + 'M6 11.5h4M6 14h2.5M5 17v2M19 17v2M15.5 6V4M19 6.5l1.4-1.4M12 6.5l-1.4-1.4',
 	garage: 'M3 21V9.5l9-5.5 9 5.5V21M7 21v-8.5h10V21M7 15.3h10M7 18.1h10',
 	printer3d: 'M3 21h18M5 21V3.5h14V21M5 8.5h14' + rr(10, 8.5, 4, 3.2, .6) + 'M12 11.7v1.3' + rr(9.5, 15, 5, 6, 1),
@@ -470,8 +489,9 @@ function poll() {
 	clearTimeout(A.timers.poll);
 	if (!running()) return;
 	getJSON('live.htm').then(onSample, function () { onSample(null); }).then(null, logErr).then(function () {
-		/* paused or gave up: only a look every 10 s (30 s after giving up) whether samples come again, from another tab, say */
-		A.timers.poll = setTimeout(poll, A.halt ? (A.halt.gaveup ? 30000 : 10000) : Math.max(1, A.interval) * 1000);
+		/* paused or gave up: only a look every 10 s (30 s after giving up) whether samples come again, from another tab, say;
+		   until the page is live, every second (the router's second sample comes a second after its first) */
+		A.timers.poll = setTimeout(poll, A.halt ? (A.halt.gaveup ? 30000 : 10000) : (A.fresh ? Math.max(1, A.interval) * 1000 : 1000));
 		/* samples stopped while the page is watched (the router rebooted, say): ask again now, not at the next 45 s heartbeat */
 		if (A.fresh && stale() && !A.halt && running() && Date.now() - (A.hbAt || 0) > 8000) heartbeat();
 	});
@@ -860,26 +880,52 @@ function smooth(key, r) {
 	return s;
 }
 function measure(key, t, d, u) { return smooth(key, rate(key, t, d, u)); }
+/* A backhaul link: the faster of the rates its last packets went at each way (Mb/s). A link is weak with a weak signal (a 6 GHz
+   one reads lower for the same link: it gets until -78 dBm), or when it carries traffic (over 1 Mb/s) at under 200 Mb/s. An idle
+   link's last packets are mostly control frames, sent slowly on purpose: that rate says nothing about the link. */
+function linkRate(x) { return Math.max(+x.r[6] || 0, +x.r[7] || 0); }
+function linkWeak(x) {
+	var r = x.r[5], p = linkRate(x), busy = x.s.sdn + x.s.sup > 1;
+	return (r !== null && r !== undefined && r !== '' && +r < (x.r[1] === '6' ? -78 : -72)) || (busy && p > 0 && p < 200);
+}
 
 /* ---------------------------------------------------------------- the network, from one sample */
 function zeroRate() { return { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }; }   /* a rate that hasn't been measured yet */
 function speedTxt(mbps) { return mbps >= 1000 ? mbps / 1000 + ' GbE' : mbps + ' Mb/s'; }   /* a port's link speed */
 function dbm(v, none) { return v !== null && v !== undefined && v !== '' ? v + ' dBm' : (none === undefined ? '—' : none); }
+/* The network a device on the router's Wi-Fi is on, by name, when it isn't one of the main networks (a guest network, or another
+   of Guest Network Pro's): the router's radios' own interfaces carry the main ones, and a network with a main one's name is one
+   too, wherever it is served (some setups serve a main network on wl0.1 and the like). */
+function netName(d, ifn) {
+	var nets = d.nets || [], main = {}, n = null;
+	nets.forEach(function (x) { if (x[2] === 1) main[x[1]] = 1; if (x[0] === ifn) n = x; });
+	return n && n[1] && !main[n[1]] ? String(n[1]) : '';
+}
 function bandName(b) { return b === '2.4' ? '2.4 GHz' : (b === '6' ? '6 GHz' : (b === '5' ? '5 GHz' : 'Wi-Fi')); }
+/* A port's name as printed on the router: from the firmware's own map when it has one (plab), else by its place in the router's
+   list. Ports that share one interface (the RT-AX88U's LAN 5-8) are named by the one that is up, or as a range. */
 function portLabel(d, ifn) {
-	var i = (d.ports || []).indexOf(ifn), sp = linkOf(d, ifn).speed;
+	var lk = linkOf(d, ifn), sp = lk.speed, pl = d.plab || {}, n = pl[ifn];
 	if (sp >= 2500) return (sp >= 10000 ? '10G' : (sp / 1000) + 'G') + ' port';
-	return 'LAN ' + (i + 1);
+	if (lk.upl && lk.upl.indexOf(',') < 0) return 'LAN ' + lk.upl;
+	if (n) return 'LAN ' + n.replace('-', '–');
+	return 'LAN ' + ((d.ports || []).indexOf(ifn) + 1);
 }
 function linkOf(d, ifn) {
 	var l = (d.links || []).filter(function (x) { return x[0] === ifn; })[0];
-	return { up: l ? l[1] === 1 : false, speed: l && l[2] > 0 ? l[2] : 0 };
+	return { up: l ? l[1] === 1 : false, speed: l && l[2] > 0 ? l[2] : 0, upl: l && /^[0-9]{1,2}(,[0-9]{1,2}){0,7}$/.test(String(l[3])) ? String(l[3]) : '' };
 }
 /* Addresses and interface names become ids, and ids go into the scene's markup as attributes: anything
    that is not exactly a MAC address or an interface name is dropped here, wherever it came from. */
 var MAC_RE = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/, IF_RE = /^[A-Za-z0-9_.-]{1,16}$/;
 function isMac(m) { return typeof m === 'string' && MAC_RE.test(m); }
 function isIf(i) { return typeof i === 'string' && IF_RE.test(i); }
+/* the firmware's port numbers: "1", or "5-8" for an interface several ports share */
+function plab(o) {
+	var r = Object.create(null);
+	if (o && typeof o === 'object') Object.keys(o).forEach(function (k) { if (isIf(k) && /^[0-9]{1,2}(-[0-9]{1,2})?$/.test(String(o[k]))) r[k] = String(o[k]); });
+	return r;
+}
 function cleanSample(d) {
 	var rows = function (a) { return (Array.isArray(a) ? a : []).filter(function (r) { return Array.isArray(r) && isMac(r[2]) && isIf(r[0]); }); };
 	return { router: d.router || {}, ms: d.ms, interval: d.interval, epoch: +d.epoch || 0, up: d.up, wan: isIf(d.wan) ? d.wan : '', wan2: isIf(d.wan2) ? d.wan2 : '',
@@ -887,9 +933,13 @@ function cleanSample(d) {
 		links: (Array.isArray(d.links) ? d.links : []).filter(function (l) { return Array.isArray(l) && isIf(l[0]); }),
 		ifs: (Array.isArray(d.ifs) ? d.ifs : []).filter(function (r) { return Array.isArray(r) && isIf(r[0]); }),
 		macs: (Array.isArray(d.macs) ? d.macs : []).filter(function (pm) { return Array.isArray(pm) && isIf(pm[0]) && isMac(pm[1]); }),
-		sta: rows(d.sta),
+		sta: rows(d.sta), plab: plab(d.plab),
+		/* the Wi-Fi networks' names: plain text (escaped wherever shown), at most 64 characters, as a router's SSID is */
+		nets: (Array.isArray(d.nets) ? d.nets : []).filter(function (x) { return Array.isArray(x) && isIf(x[0]) && typeof x[1] === 'string'; })
+			.map(function (x) { return [x[0], x[1].slice(0, 64), x[2] === 1 ? 1 : 0]; }),
 		nodes: (Array.isArray(d.nodes) ? d.nodes : []).filter(function (n) { return n && isMac(n.mac); }).map(function (n) {
-			return { mac: n.mac, ip: n.ip, model: String(n.model || ''), alias: String(n.alias || ''), state: n.state, up: n.up, c: rows(n.c), sta: String(n.sta || '').split(/\s+/).filter(isMac).join(' ') };
+			return { mac: n.mac, ip: n.ip, model: String(n.model || ''), alias: String(n.alias || ''), state: n.state, up: n.up, c: rows(n.c), sta: String(n.sta || '').split(/\s+/).filter(isMac).join(' '),
+				u: (Array.isArray(n.u) ? n.u : []).filter(function (r) { return Array.isArray(r) && isIf(r[0]) && /^[0-9]{1,20}$/.test(r[1]) && /^[0-9]{1,20}$/.test(r[2]); }).slice(0, 8) };
 		}) };
 }
 function buildNet(d) {
@@ -911,7 +961,7 @@ function buildNet(d) {
 	/* AiMesh nodes and the addresses they use to reach the router */
 	(d.nodes || []).forEach(function (n, i) {
 		var node = { id: 'node:' + n.mac, mac: n.mac, ip: n.ip, model: n.model || 'AiMesh node', alias: n.alias || '', state: n.state, nup: n.up,
-			rows: n.c || [], sta: String(n.sta || '').split(/\s+/).filter(Boolean), bh: zeroRate(), bhRows: [], devs: [], idx: i };
+			rows: n.c || [], up: n.u || [], sta: String(n.sta || '').split(/\s+/).filter(Boolean), bh: zeroRate(), bhRows: [], devs: [], idx: i };
 		node.name = node.alias || node.model;
 		node.sta.forEach(function (m) { bh[m] = node; });
 		net.nodes.push(node);
@@ -927,12 +977,18 @@ function buildNet(d) {
 	});
 	net.nodes.forEach(function (node) {
 		var b = zeroRate(), best = null;
+		var busiest = null;
 		node.bhRows.forEach(function (x) {
 			b.dn += x.s.dn; b.up += x.s.up; b.sdn += x.s.sdn; b.sup += x.s.sup; b.ok = b.ok || x.s.ok;
-			if (!best || x.s.sdn + x.s.sup > best.s.sdn + best.s.sup || (x.r[1] !== '2.4' && best.r[1] === '2.4' && x.s.sdn + x.s.sup >= best.s.sdn + best.s.sup)) best = x;
+			if (!busiest || x.s.sdn + x.s.sup > busiest.s.sdn + busiest.s.sup) busiest = x;
+			if (x.r[1] !== '2.4' && (!best || linkRate(x) > linkRate(best))) best = x;   /* the fastest link that isn't 2.4 GHz */
 		});
 		node.bh = b; node.online = node.bhRows.length > 0;
-		if (best) { node.bhBand = best.r[1]; node.bhRssi = best.r[5]; node.bhPhy = best.r[6]; }
+		/* A node has a link on each band it can use; the one that counts is the one carrying its traffic, or, while the node is
+		   quiet, its fastest one that isn't 2.4 GHz (the band AiMesh keeps for when the others fail). */
+		best = busiest && busiest.s.sdn + busiest.s.sup > 1 ? busiest : (best || busiest);
+		if (best) { node.bhBand = best.r[1]; node.bhRssi = best.r[5]; node.bhPhy = linkRate(best) || null; }
+		node.bhWeak = !!best && linkWeak(best);
 		/* a node on a wired backhaul: its address on a LAN port */
 		(d.macs || []).forEach(function (pm) {
 			if (pm[1] === node.mac || node.sta.indexOf(pm[1]) >= 0) {
@@ -943,6 +999,16 @@ function buildNet(d) {
 		if (!node.online && node.state === 'ok') node.online = true;
 		/* its clients, counted on the node itself */
 		var nt = parseFloat(node.nup);
+		/* and its backhaul, counted on the node too, in the same round as its clients (its uplink's own counters: bytes in are
+		   what the router sent it). The router counts the backhaul every sample and the node its clients once a round, which
+		   reaches the page a round later: a download that just started showed in the backhaul seconds before in its devices.
+		   Counted together, the node's backhaul and its devices add up. A node with a wired backhaul sends none: the router's. */
+		if (node.state === 'ok' && node.up.length && node.bhRows.length && !node.wiredPort) {   /* on a Wi-Fi backhaul (an unused uplink radio reads 0) */
+			var ud = 0, uu = 0;
+			node.up.forEach(function (r) { ud += +r[1]; uu += +r[2]; });
+			var nb = measure('nu:' + node.mac, nt, ud, uu);
+			if (nb.ok) { node.bh = nb; node.bhOwn = true; }
+		}
 		if (node.state === 'ok') {
 			node.rows.forEach(function (r) {
 				var mac = r[2];
@@ -981,7 +1047,7 @@ function buildNet(d) {
 	});
 	Object.keys(seen).forEach(function (mac) {
 		var x = seen[mac];
-		net.devs.push({ id: mac, mac: mac, link: 'wifi', ap: x.ap, node: x.node || null, ifn: x.ifn, band: x.band, guest: !!(x.ifn && x.ifn.indexOf('.') > 0 && x.ap === 'router'),
+		net.devs.push({ id: mac, mac: mac, link: 'wifi', ap: x.ap, node: x.node || null, ifn: x.ifn, band: x.band, net: x.ap === 'router' ? netName(d, x.ifn) : '',
 			rssi: x.rssi, phy: x.phy, phyUp: x.phyUp, conn: x.conn, idle: x.idle, std: x.std, nss: x.nss, bw: x.bw, s: x.s, st: x.st });
 	});
 	/* private addresses that took over a named device's host name (section 7): worked out again only when
@@ -1005,8 +1071,7 @@ function buildNet(d) {
 	net.devs.forEach(function (dv) { if (!dv.node && dv.st === 'ok') { tot.dn += dv.dn; tot.up += dv.up; tot.sdn += dv.sdn; tot.sup += dv.sup; } });
 	net.nodes.forEach(function (n) {
 		tot.dn += n.bh.dn; tot.up += n.bh.up; tot.sdn += n.bh.sdn; tot.sup += n.bh.sup;
-		var r = n.bhRssi, p = n.bhPhy;
-		n.weak = n.online && !n.wiredPort && ((r !== null && r !== undefined && r < -72) || (p > 0 && p < 200));
+		n.weak = n.online && !n.wiredPort && !!n.bhWeak;
 		n.devs.sort(byName);
 		if (n.state === 'ok') {   /* what the node's clients add up to, vs the backhaul */
 			n.sum = n.devs.reduce(function (a, dv) { return a + dv.dn + dv.up; }, 0);
@@ -1041,7 +1106,10 @@ function onSample(d) {
 		A.seq = d.seq; A.up = d.up;
 		if (d.interval > 0) A.interval = d.interval;
 		A.net = buildNet(d);
-		if (!first) { A.fresh = nowMs; A.gotAny = true; if (A.halt) { A.halt = null; heartbeat(); } }   /* samples again after giving up */
+		if (!first) {
+			if (!A.fresh) loadNames();   /* live now: the router wrote the names with its first sample */
+			A.fresh = nowMs; A.gotAny = true; if (A.halt) { A.halt = null; heartbeat(); }   /* samples again after giving up */
+		}
 		var w = A.net.wan;
 		A.hist.push({ dn: w.dn, up: w.up });
 		if (A.hist.length > Math.round(120 / A.interval)) A.hist.shift();
@@ -1595,14 +1663,33 @@ function drawSensorThermostat(id, kind, cx, cy, face) {   /* a small puck: motio
 	o.target = P(cx, cy, 0.3);
 	return o;
 }
-function drawPlug(id, kind, cx, cy, face) {   /* a smart plug: a white block with a socket on top */
-	var o;
-	o = new Obj(id, cx, cy, 0.42);
-	o.box(cx - 0.21, cy - 0.21, 0, 0.42, 0.42, 0.38, M_WHITE, { shadow: true });
-	o.face('T', 0.2, 0.2, 0.8, 0.8, 'fill:#aeb8bb');
-	o.face('T', 0.34, 0.3, 0.42, 0.7, 'fill:#20282b'); o.face('T', 0.58, 0.3, 0.66, 0.7, 'fill:#20282b');
-	o.led('L', 0.5, 0.5, '#3ddc97', 0, 0, 1.1);
-	o.target = P(cx, cy, 0.46);
+function drawPlug(id, kind, cx, cy, face) {   /* a smart plug: a round white plug in a wall socket, its own socket and a green light on its face */
+	var o, r = 0.2, z = 0.31, y0 = cy - 0.1, y1 = cy + 0.15, c, g;
+	var arc = function (y, rad, a0, a1, dx) {   /* points of a circle that stands upright across the plug's axis, a0 to a1 in degrees (0 = right, 90 = up) */
+		var ps = [], n = Math.max(2, Math.round(Math.abs(a1 - a0) / 15)), i, a;
+		for (i = 0; i <= n; i++) { a = (a0 + (a1 - a0) * i / n) * Math.PI / 180; ps.push(P(cx + (dx || 0) + rad * Math.cos(a), y, z + rad * Math.sin(a))); }
+		return ps;
+	};
+	o = new Obj(id, cx, cy, 0.6);
+	o.box(cx - 0.37, cy - 0.27, 0, 0.74, 0.12, 0.6, M_WALL, { shadow: true });        /* a piece of wall */
+	o.line('L', 0, 0.1, 1, 0.1, 'rgba(0,0,0,.3)', 1);
+	o.box(cx - 0.28, cy - 0.15, 0.04, 0.56, 0.04, 0.52, M_WHITE);                    /* the socket's plate */
+	o.shadow.push([cx - 0.16, y0, 0.32, y1 - y0, 0.24, -0.1]);
+	/* the plug's body: a short cylinder lying on its side, lit on top and shaded on the right */
+	[135, 105, 75, 45, 15, -15].forEach(function (a) {
+		var col = mix(M_WHITE.t, Math.min(1, Math.max(0, (90 - a) / 90)), M_WHITE.r);
+		o.svg.push(poly(arc(y0, r, a, a - 30).concat(arc(y1, r, a - 30, a)), 'fill:' + col + ';stroke:' + col + ';stroke-width:.5;stroke-linejoin:round'));
+	});
+	o.svg.push(pline(arc(y1, r, 135, 135).slice(0, 1).concat(arc(y0, r, 135, -45), arc(y1, r, -45, -45).slice(0, 1)), 'fill:none;stroke:' + M_WHITE.e + ';stroke-width:.7;stroke-linejoin:round'));
+	o.svg.push(poly(arc(y1, r, 0, 360), 'fill:' + M_WHITE.l + ';stroke:' + M_WHITE.e + ';stroke-width:.7;stroke-linejoin:round'));   /* its round face */
+	o.svg.push(pline(arc(y1, r, 60, 200), 'fill:none;stroke:' + M_WHITE.hi + ';stroke-width:1;stroke-linecap:round'));
+	o.svg.push(poly(arc(y1, 0.135, 0, 360), 'fill:#aeb8bb;stroke:#8f9a9e;stroke-width:.6'));                                   /* the socket in it */
+	o.svg.push(pline(arc(y1, 0.135, 20, 200), 'fill:none;stroke:#7f8a8e;stroke-width:.9;stroke-linecap:round'));
+	[-0.058, 0.058].forEach(function (dx) { o.svg.push(poly(arc(y1, 0.026, 0, 360, dx), 'fill:#20282b')); });                    /* its two holes */
+	c = P(cx, y1, z - 0.165); g = px(0.9);
+	o.svg.push('<circle cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" r="' + n1(g * 2.1) + '" style="fill:#3ddc97;opacity:.28"/>', '<circle cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" r="' + g + '" style="fill:#3ddc97"/>');
+	o.pts = o.pts.concat(arc(y0, r, 0, 360), arc(y1, r, 0, 360));
+	o.target = P(cx, cy, 0.62);
 	return o;
 }
 function drawHub(id, kind, cx, cy, face) {   /* a smart-home hub or bridge */
@@ -1625,7 +1712,7 @@ function drawVacuum(id, kind, cx, cy, face) {   /* a robot vacuum */
 	return o;
 }
 function drawAppliance(id, kind, cx, cy, face) {   /* white goods: a washing machine, a dryer, a dishwasher, or another appliance */
-	var o;
+	var o, ring;
 	o = new Obj(id, cx, cy, 1.2);
 	o.box(cx - 0.5, cy - 0.5, 0, 1.0, 1.0, 1.15, M_WHITE, { ao: true, shadow: true });
 	[0.3, 0.45, 0.6].forEach(function (v) { o.line('R', 0.2, v, 0.8, v, '#7f8a8e', 1.1); });
@@ -1635,15 +1722,35 @@ function drawAppliance(id, kind, cx, cy, face) {   /* white goods: a washing mac
 		o.face('L', 0.14, 0.88, 0.5, 0.92, 'fill:url(#ar-scr4);opacity:.7');
 		o.face('L', 0.3, 0.7, 0.7, 0.75, 'fill:#8f9a9e');
 		o.line('L', 0.04, 0.06, 0.96, 0.06, '#aab4b8', 1);
+	} else if (kind === 'washer' || kind === 'dryer') {   /* a round porthole door under the control strip */
+		ring = function (r, a0, a1, u, v) {   /* a circle on the front, r in floor squares, a0 to a1 in degrees (0 = right, 90 = up) */
+			var ps = [], n = Math.max(2, Math.round(Math.abs(a1 - a0) / 15)), i, a;
+			for (i = 0; i <= n; i++) { a = (a0 + (a1 - a0) * i / n) * Math.PI / 180; ps.push(o.fp('L', (u || 0.5) + r * Math.cos(a), (v || 0.42) + r * Math.sin(a) / 1.15)); }
+			return ps;
+		};
+		o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
+		o.svg.push(poly(ring(0.04, 0, 360, 0.2, 0.88), 'fill:#dfe4e6;stroke:#7f8a8e;stroke-width:.6'));           /* the programme dial */
+		o.face('L', 0.34, 0.855, 0.62, 0.905, 'fill:#20282b');
+		o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
+		o.svg.push(poly(ring(0.33, 0, 360), 'fill:#c3cbce;stroke:#8f9a9e;stroke-width:.8'));                       /* the door's ring */
+		o.svg.push(pline(ring(0.33, 70, 200), 'fill:none;stroke:rgba(255,255,255,.8);stroke-width:.9;stroke-linecap:round'));
+		o.svg.push(poly(ring(0.255, 0, 360), 'fill:#20282b;stroke:#7f8a8e;stroke-width:.8'));                      /* its glass */
+		if (kind === 'dryer') {   /* an empty drum: its back wall and three paddles, a lint filter under the door */
+			o.svg.push(poly(ring(0.225, 0, 360), 'fill:#3a4448'));
+			o.svg.push(poly(ring(0.11, 0, 360), 'fill:#2c363a;stroke:#56646a;stroke-width:.7'));
+			[90, 210, 330].forEach(function (a) { o.svg.push(pline([ring(0.11, a, a)[0], ring(0.225, a, a)[0]], 'fill:none;stroke:#56646a;stroke-width:1.1;stroke-linecap:round')); });
+			o.face('L', 0.36, 0.035, 0.64, 0.075, 'fill:#8f9a9e');
+		} else {                  /* water behind the glass, to a little under halfway */
+			o.svg.push(poly(ring(0.225, 192, 348), 'fill:url(#ar-scr4);opacity:.8'));
+			o.svg.push(pline(ring(0.225, 192, 192).slice(0, 1).concat(ring(0.225, 348, 348).slice(0, 1)), 'fill:none;stroke:#9fd6ff;stroke-width:.8;opacity:.7'));
+		}
+		o.svg.push(pline(ring(0.19, 105, 165), 'fill:none;stroke:rgba(255,255,255,.4);stroke-width:1;stroke-linecap:round'));   /* a glint on the glass */
+		o.svg.push(pline([ring(0.3, 0, 0)[0], ring(0.36, 0, 0)[0]], 'fill:none;stroke:#7f8a8e;stroke-width:1.6;stroke-linecap:round'));   /* the door's catch */
 	} else {
 		o.face('L', 0.08, 0.82, 0.92, 0.94, 'fill:#aab4b8;stroke:#8f9a9e;stroke-width:.6');
 		o.led('L', 0.82, 0.88, '#3ddc97', 0, 0, 0.9);
 		o.face('L', 0.22, 0.14, 0.78, 0.7, 'fill:#20282b;stroke:#8f9a9e;stroke-width:1');
-		if (kind === 'dryer') {   /* an empty drum: no water, a lint filter under the door */
-			o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:#3a4448');
-			[0.36, 0.48].forEach(function (v) { o.line('L', 0.38, v, 0.62, v, '#56646a', 1); });
-			o.face('L', 0.36, 0.04, 0.64, 0.09, 'fill:#8f9a9e');
-		} else o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');   /* water behind the glass */
+		o.face('L', 0.3, 0.2, 0.7, 0.64, 'fill:url(#ar-scr4);opacity:.55');
 	}
 	o.target = P(cx, cy, 1.2);
 	return o;
@@ -1687,7 +1794,7 @@ function drawContact(id, kind, cx, cy, face) {   /* a door or window sensor: the
 }
 /* ---- the newer kinds: an EV charger, a car, solar, a robot mower, a VR headset, a projector, a garage door, a 3D printer,
    a smart display, smart blinds, a sprinkler, a pet feeder, a treadmill ---- */
-var M_CAR = MAT('#b5473f'), M_GRASS = MAT('#4f8a3c'), M_PRINT = MAT('#e0a33a'), M_RED = MAT('#c0392b');
+var M_CAR = MAT('#3d9fdd'), M_GRASS = MAT('#4f8a3c'), M_PRINT = MAT('#e0a33a'), M_RED = MAT('#c0392b');
 function curve(a, c1, c2, b, st) { return '<path d="M' + n1(a[0]) + ' ' + n1(a[1]) + ' C' + [c1, c2, b].map(function (p) { return n1(p[0]) + ' ' + n1(p[1]); }).join(' ') + '" style="' + st + '"/>'; }
 function drawCharger(id, kind, cx, cy, face) {   /* an EV charger: a wallbox with its light strip, its cable looped down to the holster */
 	var o;
@@ -1704,22 +1811,79 @@ function drawCharger(id, kind, cx, cy, face) {   /* an EV charger: a wallbox wit
 	o.target = P(cx, cy, 1.35);
 	return o;
 }
-function drawCar(id, kind, cx, cy, face) {   /* an electric car: a red body, its cabin and windows, headlights, the charge light */
-	var o;
-	o = new Obj(id, cx, cy, 0.72);
-	[cx - 0.55, cx + 0.3].forEach(function (x) { o.box(x, cy - 0.4, 0, 0.26, 0.08, 0.26, M_BLACK, { rim: false }); });   /* the far wheels, mostly hidden */
-	o.box(cx - 0.75, cy - 0.36, 0.1, 1.5, 0.72, 0.3, M_CAR, { ao: true, shadow: true });
-	o.face('R', 0.1, 0.5, 0.3, 0.75, 'fill:#ffe9a8'); o.face('R', 0.7, 0.5, 0.9, 0.75, 'fill:#ffe9a8');
-	o.led('L', 0.08, 0.72, '#3ddc97', 1.6, 0, 0.9);
-	o.box(cx - 0.45, cy - 0.3, 0.4, 0.82, 0.6, 0.26, M_CAR);
-	o.face('L', 0.06, 0.14, 0.47, 0.86, 'fill:#1b2a33;stroke:#0d1214;stroke-width:.5'); o.face('L', 0.53, 0.14, 0.94, 0.86, 'fill:#1b2a33;stroke:#0d1214;stroke-width:.5');
-	o.face('R', 0.08, 0.14, 0.92, 0.86, 'fill:#22343f;stroke:#0d1214;stroke-width:.5');
-	o.face('T', 0.06, 0.08, 0.94, 0.92, 'fill:#2a3d48;opacity:.85');   /* a glass roof */
-	[cx - 0.42, cx + 0.43].forEach(function (x) {   /* the near wheels: round, in the car's side */
-		var ring = function (r) { var ps = []; for (var t = 0; t < 16; t++) ps.push(P(x + r * Math.cos(t * Math.PI / 8), cy + 0.37, 0.14 + r * Math.sin(t * Math.PI / 8))); return ps; };
-		o.svg.push(poly(ring(0.14), 'fill:#1d2427;stroke:#0b1012;stroke-width:.7'), poly(ring(0.065), 'fill:#8f9a9e'));
+function drawCar(id, kind, cx, cy, face) {   /* an electric saloon: a low, rounded blue body with a fastback roof of glass, thin headlights and no grille, flat wheel covers, the charge light */
+	var o, m = M_CAR, W = 0.36, RD = 0.055, ZS = 0.14, i, j, k, a, b, nx, nz, len, col, c, g, pr = [], q;
+	/* its side view, tail to nose, as [along, height]: a smooth curve through these points */
+	var ctl = [[-0.735, 0.14], [-0.78, 0.2], [-0.79, 0.3], [-0.765, 0.385], [-0.69, 0.425], [-0.57, 0.447], [-0.38, 0.532], [-0.2, 0.585], [-0.02, 0.6], [0.13, 0.582],
+		[0.29, 0.512], [0.43, 0.432], [0.6, 0.392], [0.715, 0.35], [0.775, 0.29], [0.795, 0.215], [0.765, 0.14]];
+	var XW = [-0.47, 0.48], ZW = 0.14, GX0 = -0.57, GX1 = 0.43;
+	for (i = 0; i < ctl.length - 1; i++) for (j = 0; j < 4; j++) {   /* Catmull-Rom, four steps between each pair */
+		var p0 = ctl[Math.max(0, i - 1)], p1 = ctl[i], p2 = ctl[i + 1], p3 = ctl[Math.min(ctl.length - 1, i + 2)], t = j / 4;
+		pr.push([0, 1].map(function (d) { return 0.5 * (2 * p1[d] + (p2[d] - p0[d]) * t + (2 * p0[d] - 5 * p1[d] + 4 * p2[d] - p3[d]) * t * t + (3 * p1[d] - p0[d] - 3 * p2[d] + p3[d]) * t * t * t); }));
+	}
+	pr.push(ctl[ctl.length - 1]);
+	var wy = function (x) { var f = Math.max(0, (x - 0.52) / 0.275), r = Math.max(0, (-0.56 - x) / 0.23); return W - 0.085 * f * f - 0.06 * r * r; };   /* seen from above, it narrows to a round nose and tail */
+	var rd = function (p) { return Math.max(0, Math.min(RD, (p[1] - ZS) * 0.5)); };                                                                     /* how far its top edge is rounded off */
+	var S = function (p, s, dy, dz) { return P(cx + p[0], cy + s * (wy(p[0]) - (dy || 0)), p[1] - (dz || 0)); };   /* s: -1 the far side, 1 the near side; dy in from the side */
+	var ring = function (x, r, a0, a1) { var ps = [], n = Math.max(2, Math.round(Math.abs(a1 - a0) / 15)), t, k; for (k = 0; k <= n; k++) { t = (a0 + (a1 - a0) * k / n) * Math.PI / 180; ps.push(P(cx + x + r * Math.cos(t), cy + W + 0.005, ZW + r * Math.sin(t))); } return ps; };
+	var tone = function (nx) { return nx <= 0.08 ? m.t : nx < 0.5 ? mix(m.t, (nx - 0.08) / 0.42, m.l) : mix(m.l, (nx - 0.5) / 0.5, m.r); };
+	var fill = function (c, sw) { return 'fill:' + c + ';stroke:' + c + ';stroke-width:' + (sw || 0.6) + ';stroke-linejoin:round'; };
+	o = new Obj(id, cx, cy, 0.66);
+	o.shadow.push([cx - 0.76, cy - W, 1.53, 2 * W, 0.3, -0.13]);
+	XW.forEach(function (x) { o.box(cx + x - 0.13, cy - W - 0.03, 0, 0.26, 0.08, 0.27, M_BLACK, { rim: false, track: false }); });   /* the far wheels, mostly hidden */
+	for (i = 0; i < pr.length - 1; i++) {   /* the body's skin, tail to nose: each strip takes its tone from the way it faces, and its near edge is rounded over into the side */
+		a = pr[i]; b = pr[i + 1]; len = Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1])); nx = (a[1] - b[1]) / len; nz = (b[0] - a[0]) / len;
+		if (nx + nz <= 0) continue;
+		col = tone(nx);
+		o.svg.push(poly([S(a, -1), S(b, -1), S(b, 1, rd(b)), S(a, 1, rd(a))], fill(col)));
+		o.svg.push(poly([S(a, 1, rd(a)), S(b, 1, rd(b)), S(b, 1, 0, rd(b)), S(a, 1, 0, rd(a))], fill(mix(col, 0.55, m.l))));
+	}
+	q = pr.filter(function (p) { return p[0] >= GX0 - 0.001 && p[0] <= GX1 + 0.001 && p[1] > 0.42; });
+	for (i = 0; i < q.length - 1; i++) {   /* one sweep of glass: the rear window, the roof, the windscreen */
+		a = q[i]; b = q[i + 1]; nx = (a[1] - b[1]) / Math.sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]));
+		col = nx < -0.08 ? mix('#2a3d48', Math.min(1, (-nx - 0.08) / 0.3), '#3d5769') : mix('#2a3d48', Math.min(1, Math.max(0, nx - 0.08) / 0.4), '#1c2c36');
+		o.svg.push(poly([S(a, -1, 0.085), S(b, -1, 0.085), S(b, 1, 0.095), S(a, 1, 0.095)], fill(col, 0.5)));
+	}
+	o.svg.push(pline(q.map(function (p) { return S(p, -1, 0.085); }).concat(q.slice().reverse().map(function (p) { return S(p, 1, 0.095); }), [S(q[0], -1, 0.085)]), 'fill:none;stroke:#0d1214;stroke-width:.6;stroke-linejoin:round'));
+	[-0.38, 0.13].forEach(function (x) { c = q.filter(function (p) { return Math.abs(p[0] - x) < 0.001; })[0]; if (c) o.svg.push(pline([S(c, -1, 0.085), S(c, 1, 0.095)], 'fill:none;stroke:' + m.l + ';stroke-width:' + px(0.9))); });   /* the roof's two cross bars */
+	c = q.filter(function (p) { return p[0] >= 0.13 - 0.001; });
+	o.svg.push(poly([S(c[0], -1, 0.14), S(c[0], -1, 0.34), S(c[c.length - 1], -1, 0.2), S(c[c.length - 1], -1, 0.1)], 'fill:#ffffff;opacity:.1'));   /* a glint on the windscreen */
+	o.svg.push(pline(pr.filter(function (p, k) { return k >= 12; }).map(function (p) { return S(p, -1); }), 'fill:none;stroke:' + m.e + ';stroke-width:.7;stroke-linejoin:round'));
+	/* the nose: two thin lights that wrap round its corners, a slim air slot low down */
+	c = pr.filter(function (p) { return p[0] > 0.7 && p[1] <= 0.34 && p[1] >= 0.3; });
+	[-1, 1].forEach(function (s) { o.svg.push(poly(c.map(function (p) { return S(p, s, 0.035); }).concat(c.slice().reverse().map(function (p) { return S(p, s, 0.25); })), fill('#fff3cf', 0.4))); });
+	c = pr.filter(function (p) { return p[0] > 0.7 && p[1] <= 0.215 && p[1] >= 0.165; });
+	o.svg.push(poly(c.map(function (p) { return S(p, -1, 0.14); }).concat(c.slice().reverse().map(function (p) { return S(p, 1, 0.14); })), 'fill:' + m.d));
+	/* the near side: one shape under the rounded edge, with its two wheel arches cut out */
+	g = pr.map(function (p) { return S(p, 1, 0, rd(p)); }).concat([P(cx + XW[1] + 0.175, cy + W, ZW)], ring(XW[1], 0.175, 0, 180), ring(XW[0], 0.175, 0, 180), [P(cx + XW[0] - 0.175, cy + W, ZW)]);
+	XW.forEach(function (x) { o.svg.push(poly(ring(x, 0.18, 0, 180), 'fill:#11181b')); });
+	o.svg.push(poly(g, 'fill:' + m.l + ';stroke:' + m.e + ';stroke-width:.7;stroke-linejoin:round'));
+	[0.66, 0.71, 0.75].forEach(function (x) {   /* the side turns into the nose: darker, step by step */
+		c = pr.filter(function (p) { return p[0] >= x; });
+		o.svg.push(poly(c.map(function (p) { return S(p, 1, 0, rd(p)); }).concat([P(cx + x, cy + wy(x), ZS)]), 'fill:' + m.r + ';opacity:.3'));
 	});
-	o.target = P(cx, cy, 0.72);
+	o.svg.push(poly([P(cx + XW[0] + 0.175, cy + W, 0.14), P(cx + XW[1] - 0.175, cy + W, 0.14), P(cx + XW[1] - 0.19, cy + W, 0.185), P(cx + XW[0] + 0.19, cy + W, 0.185)], 'fill:' + m.d + ';opacity:.55'));   /* the sill, in shade */
+	XW.forEach(function (x) { o.svg.push(pline(ring(x, 0.185, 35, 150), 'fill:none;stroke:' + m.hi2 + ';stroke-width:.8;stroke-linecap:round')); });                                                  /* the arches' lips */
+	o.svg.push(pline(pr.filter(function (p) { return p[0] > -0.74 && p[0] < 0.74 && p[1] > 0.36; }).map(function (p) { return S(p, 1, rd(p) * 0.5, rd(p) * 0.3); }), 'fill:none;stroke:' + m.hi + ';stroke-width:1;stroke-linecap:round;stroke-linejoin:round'));
+	o.svg.push(pline([P(cx - 0.7, cy + W, 0.335), P(cx + 0.66, cy + W, 0.325)], 'fill:none;stroke:' + m.hi2 + ';stroke-width:.8;stroke-linecap:round'));   /* the crease along its shoulder */
+	c = pr.filter(function (p) { return p[0] >= -0.47 && p[0] <= 0.365 && p[1] > 0.44; }).map(function (p) { return P(cx + p[0] * 0.985, cy + W, p[1] - RD - 0.012); });
+	c = c.concat([P(cx + 0.345, cy + W, 0.412), P(cx - 0.4, cy + W, 0.412), P(cx - 0.46, cy + W, 0.425)]);
+	o.svg.push(poly(c, 'fill:#1b2a33;stroke:#0d1214;stroke-width:.5;stroke-linejoin:round'));   /* the side windows */
+	o.svg.push(poly([P(cx - 0.3, cy + W, 0.5), P(cx - 0.17, cy + W, 0.53), P(cx - 0.3, cy + W, 0.418), P(cx - 0.39, cy + W, 0.418)], 'fill:#ffffff;opacity:.09'));
+	o.svg.push(pline([P(cx - 0.03, cy + W, 0.535), P(cx - 0.03, cy + W, 0.412)], 'fill:none;stroke:' + m.l + ';stroke-width:' + px(0.9)));               /* the pillar between them */
+	o.svg.push(pline([P(cx - 0.03, cy + W, 0.405), P(cx - 0.04, cy + W, 0.2)], 'fill:none;stroke:' + m.e + ';stroke-width:.5;opacity:.6'));
+	[-0.12, 0.25].forEach(function (x) { o.svg.push(pline([P(cx + x, cy + W, 0.372), P(cx + x + 0.07, cy + W, 0.372)], 'fill:none;stroke:' + m.d + ';stroke-width:.9;stroke-linecap:round')); });   /* flush door handles */
+	XW.forEach(function (x) {   /* the near wheels: a tyre, a flat cover with its slots */
+		o.svg.push(poly(ring(x, 0.14, 0, 360), 'fill:#1d2427;stroke:#0b1012;stroke-width:.7'), poly(ring(x, 0.098, 0, 360), 'fill:#9aa5a9;stroke:#56646a;stroke-width:.5'));
+		[18, 90, 162, 234, 306].forEach(function (t) { o.svg.push(pline([ring(x, 0.04, t, t)[0], ring(x, 0.08, t + 22, t + 22)[0]], 'fill:none;stroke:#3b484e;stroke-width:' + px(0.6) + ';stroke-linecap:round')); });
+		o.svg.push(poly(ring(x, 0.028, 0, 360), 'fill:#2c363a'));
+	});
+	c = P(cx - 0.65, cy + W, 0.37); g = px(0.9);   /* charging: a green light by the charge port */
+	o.svg.push('<circle cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" r="' + n1(g * 2.1) + '" style="fill:#3ddc97;opacity:.28"/>',
+		'<circle cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" r="' + g + '" class="df-a df-led" style="fill:#3ddc97;animation-duration:1.6s"/>');
+	pr.forEach(function (p) { o.pts.push(S(p, -1), S(p, 1)); });
+	o.pts = o.pts.concat(ring(XW[0], 0.14, 180, 360), ring(XW[1], 0.14, 180, 360));
+	o.target = P(cx, cy, 0.66);
 	return o;
 }
 function drawSolar(id, kind, cx, cy, face) {   /* solar and a home battery: a battery tower with its charge level, a panel tilted to the sun */
@@ -1754,20 +1918,43 @@ function drawMower(id, kind, cx, cy, face) {   /* a robot lawn mower: a low body
 	o.target = P(cx, cy, 0.45);
 	return o;
 }
-function drawVr(id, kind, cx, cy, face) {   /* a VR headset: a white visor, its dark front with two cameras, the strap behind; two controllers */
-	var o;
+function drawVr(id, kind, cx, cy, face) {   /* a headset for mixed reality: a curved visor of dark glass in a thin aluminium frame, a soft knitted band behind */
+	var o, FI = 22 * Math.PI / 180, RO = 0.57, RI = 0.47, RB = 0.45, TM = 68, ZB = 0.05, ZT = 0.47, ZM = 0.27, C = [cx - 0.08 * Math.sin(FI), cy - 0.08 * Math.cos(FI)];
+	var T0 = -43 - 22, i, t, q = [], c, g, front, glass;
+	var at = function (r, t, z) { var a = FI + t * Math.PI / 180; return P(C[0] + r * Math.sin(a), C[1] + r * Math.cos(a), z); };   /* t: degrees round the head, 0 = straight ahead */
+	var depth = function (t) { var a = FI + t * Math.PI / 180; return Math.sin(a) + Math.cos(a); };                                /* > 0: that side faces us */
+	var top = function (t) { var s = (Math.abs(t) / TM - 0.72) / 0.28; return ZT - (s > 0 ? 0.11 * (1 - Math.sqrt(1 - s * s)) : 0); };
+	var bot = function (t) { var s = (Math.abs(t) / TM - 0.72) / 0.28; return ZB + (s > 0 ? 0.11 * (1 - Math.sqrt(1 - s * s)) : 0) + 0.085 * Math.exp(-t * t / 160); };   /* a notch for the nose */
+	var edge = function (r, f, t0, t1, inset) { var ps = [], k, n = Math.round(Math.abs(t1 - t0) / 6), tt; for (k = 0; k <= n; k++) { tt = t0 + (t1 - t0) * k / n; ps.push(at(r, tt, f(tt) + (inset || 0))); } return ps; };
+	var half = function (t) { var s = Math.min(1, Math.max(0, (Math.abs(t) - 78) / 50)); return 0.04 + 0.085 * s * s * (3 - 2 * s); };   /* the band: a slim arm at the visor, wide at the back of the head */
 	o = new Obj(id, cx, cy, 0.5);
-	o.svg.push(ell(P(cx, cy - 0.42, 0.24), 0.4, 'fill:none;stroke:#1d2427;stroke-width:' + px(2.6)), ell(P(cx, cy - 0.42, 0.24), 0.4, 'fill:none;stroke:#3b484e;stroke-width:' + px(1.2)));   /* the head strap */
-	o.box(cx - 0.42, cy - 0.16, 0.08, 0.84, 0.34, 0.32, M_WHITE, { ao: true, shadow: true });
-	o.face('L', 0.03, 0.08, 0.97, 0.92, 'fill:#20282b;stroke:#8f9a9e;stroke-width:.7');   /* the visor */
-	[0.27, 0.73].forEach(function (u) { var g = o.fp('L', u, 0.5); o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="' + px(3.2) + '" style="fill:#2c363a;stroke:#56646a;stroke-width:.8"/>'); });
-	o.led('L', 0.5, 0.78, DN, 2.6, 0, 0.7);
-	[[cx + 0.52, cy + 0.02], [cx + 0.56, cy + 0.38]].forEach(function (g) {   /* two controllers, each with its tracking ring */
-		o.box(g[0], g[1], 0, 0.12, 0.12, 0.26, M_WHITE, { shadow: true });
-		o.svg.push(ell(P(g[0] + 0.06, g[1] + 0.06, 0.32), 0.14, 'fill:none;stroke:#d3dadc;stroke-width:' + px(1.6)));
-		ellPts(o, P(g[0] + 0.06, g[1] + 0.06, 0.32), 0.14);
+	o.shadow.push([C[0] - 0.45, C[1] - 0.42, 0.95, 0.9, 0.28, -0.12]);
+	for (t = TM; t < 360 - TM; t += 8) q.push(t);
+	q.sort(function (a, b) { return depth(a + 4) - depth(b + 4); });
+	q.forEach(function (t) {   /* the band, far side first: we see its inside there, its knitted outside nearer to us */
+		var out = depth(t + 4) > 0, col = out ? mix('#dfe4e6', 0.5 - 0.5 * Math.cos((FI * 180 / Math.PI + t + 4 - 45) * Math.PI / 180), '#aab4b8') : '#8a959a';
+		var ps = [at(RB, t, ZM - half(t)), at(RB, t + 8, ZM - half(t + 8)), at(RB, t + 8, ZM + half(t + 8)), at(RB, t, ZM + half(t))];
+		o.svg.push(poly(ps, 'fill:' + col + ';stroke:' + (out ? '#b4bdc1' : '#7b878c') + ';stroke-width:.5;stroke-linejoin:round'));
+		o.pts = o.pts.concat(ps);
 	});
-	ellPts(o, P(cx, cy - 0.42, 0.24), 0.4);
+	o.svg.push(poly(edge(RI, top, -TM, TM, -0.05).concat(edge(RI - 0.07, top, TM, -TM, -0.05)), 'fill:#56646a;stroke:#3b484e;stroke-width:.5;stroke-linejoin:round'));   /* the cushion against the face */
+	o.svg.push(poly(edge(RO, top, -TM, TM).concat(edge(RI, top, TM, -TM)), 'fill:' + M_ALU.t + ';stroke:' + M_ALU.e + ';stroke-width:.7;stroke-linejoin:round'));   /* the frame's top */
+	front = edge(RO, top, T0, TM).concat(edge(RO, bot, TM, T0));
+	o.svg.push(poly(front, 'fill:' + M_ALU.l + ';stroke:' + M_ALU.e + ';stroke-width:.7;stroke-linejoin:round'));                                                    /* the frame, round the glass */
+	glass = edge(RO, top, T0 + 2, TM - 5, -0.03).concat(edge(RO, bot, TM - 5, T0 + 2, 0.03));
+	o.svg.push(poly(glass, 'fill:#0e1519;stroke:#05080a;stroke-width:.5;stroke-linejoin:round'));                                                                    /* the glass */
+	o.svg.push(poly(edge(RO, top, T0 + 2, TM - 5, -0.03).concat(edge(RO, function (t) { return 0.5 * (top(t) + bot(t)) + 0.03; }, TM - 5, T0 + 2)), 'fill:#5aa9d6;opacity:.2'));   /* the sky in it, brighter to the top */
+	o.svg.push(poly(edge(RO, top, T0 + 2, TM - 5, -0.03).concat(edge(RO, top, TM - 5, T0 + 2, -0.115)), 'fill:#9fd6ff;opacity:.16'));
+	o.svg.push(poly(edge(RO, top, -40, -22, -0.05).concat(edge(RO, bot, -30, -48, 0.05)), 'fill:#ffffff;opacity:.13'));                                              /* a glint across it */
+	o.svg.push(pline(edge(RO, top, T0 + 8, 10, -0.066), 'fill:none;stroke:rgba(255,255,255,.6);stroke-width:' + px(0.8) + ';stroke-linecap:round'));
+	o.svg.push(pline(edge(RO, bot, 30, TM - 12, 0.06), 'fill:none;stroke:rgba(255,255,255,.22);stroke-width:' + px(0.7) + ';stroke-linecap:round'));
+	o.svg.push(pline(edge(RO, top, T0 + 1, TM), 'fill:none;stroke:' + M_ALU.hi + ';stroke-width:1;stroke-linecap:round;stroke-linejoin:round'));
+	c = at(0.52, 40, ZT + 0.012); o.svg.push(ell(c, 0.034, 'fill:' + M_ALU.l + ';stroke:' + M_ALU.e + ';stroke-width:.6'));                                           /* a dial and a button on top */
+	o.svg.push(pline([at(0.52, -32, ZT + 0.008), at(0.52, -22, ZT + 0.008)], 'fill:none;stroke:' + M_ALU.r + ';stroke-width:' + px(1.2) + ';stroke-linecap:round'));
+	c = at(RO, 46, bot(46) + 0.075); g = px(0.7);
+	o.svg.push('<circle cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" r="' + n1(g * 2.1) + '" style="fill:' + DN + ';opacity:.28"/>',
+		'<circle cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" r="' + g + '" class="df-a df-led" style="fill:' + DN + ';animation-duration:2.6s"/>');
+	o.pts = o.pts.concat(front, edge(RI, top, T0, TM));
 	o.target = P(cx, cy, 0.5);
 	return o;
 }
@@ -2162,10 +2349,10 @@ function buildMap(net, L) {
 		hubs.push('<ellipse cx="' + n1(o.hub[0]) + '" cy="' + n1(o.hub[1]) + '" rx="' + px(8) + '" ry="' + px(4.6) + '" style="fill:rgba(16,22,25,.6);stroke:' + MESH + ';stroke-width:1.2"/>');
 		hubs.push('<ellipse cx="' + n1(o.hub[0]) + '" cy="' + n1(o.hub[1]) + '" rx="' + px(8) + '" ry="' + px(4.6) + '" class="df-a df-ripple" style="fill:none;stroke:' + MESH + ';stroke-width:1.2;animation-delay:-1.3s"/>');
 		var m = a.mid;
-		marks.push('<g data-mk="' + x.node.id + ':off" class="hide"><circle cx="' + n1(m[0]) + '" cy="' + n1(m[1]) + '" r="9" style="fill:#2b3539;stroke:' + BAD + ';stroke-width:1.4"/>' +
+		marks.push('<g data-mk="' + x.node.id + ':off" class="hide"><circle cx="' + n1(m[0]) + '" cy="' + n1(m[1]) + '" r="9" style="fill:var(--surface);stroke:' + BAD + ';stroke-width:1.4"/>' +
 			'<path d="M' + n1(m[0] - 3.5) + ' ' + n1(m[1] - 3.5) + ' l7 7 M' + n1(m[0] + 3.5) + ' ' + n1(m[1] - 3.5) + ' l-7 7" style="fill:none;stroke:' + BAD + ';stroke-width:1.8;stroke-linecap:round"/></g>');
-		marks.push('<g data-mk="' + x.node.id + ':warn" class="hide"><circle cx="' + n1(m[0]) + '" cy="' + n1(m[1]) + '" r="9" style="fill:#2b3539;stroke:' + ACC + ';stroke-width:1.4"/>' +
-			'<path d="M' + n1(m[0]) + ' ' + n1(m[1] - 4.5) + ' v6 M' + n1(m[0]) + ' ' + n1(m[1] + 4.5) + ' v.01" style="fill:none;stroke:' + ACC + ';stroke-width:2;stroke-linecap:round"/></g>');
+		marks.push('<g data-mk="' + x.node.id + ':warn" class="hide"><circle cx="' + n1(m[0]) + '" cy="' + n1(m[1]) + '" r="9" style="fill:var(--surface);stroke:' + WARN + ';stroke-width:1.4"/>' +
+			'<path d="M' + n1(m[0]) + ' ' + n1(m[1] - 4.5) + ' v6 M' + n1(m[0]) + ' ' + n1(m[1] + 4.5) + ' v.01" style="fill:none;stroke:' + WARN + ';stroke-width:2;stroke-linecap:round"/></g>');
 		x.obj = o;
 	});
 	var hubOf = function (dv) { for (var i = 0; i < L.nodes.length; i++) if (L.nodes[i].node === dv.node) return L.nodes[i].obj.hub; return HR; };
@@ -2192,8 +2379,8 @@ function buildMap(net, L) {
 
 	/* the room: slab, two low walls, a grid and the fibre wall plate */
 	var WT = 0.35, WH = 1.1, floor = [], x0 = G.x0, y0 = G.y0, X1 = G.x1, Y1 = G.y1, FW = X1 - x0;
-	floor.push(poly([P(x0 - WT, Y1, 0), P(X1, Y1, 0), P(X1, Y1, -0.45), P(x0 - WT, Y1, -0.45)], 'fill:#28343a'));
-	floor.push(poly([P(X1, y0 - WT, 0), P(X1, Y1, 0), P(X1, Y1, -0.45), P(X1, y0 - WT, -0.45)], 'fill:#1b2428'));
+	floor.push(poly([P(x0 - WT, Y1, 0), P(X1, Y1, 0), P(X1, Y1, -0.45), P(x0 - WT, Y1, -0.45)], 'fill:var(--wall1)'));
+	floor.push(poly([P(X1, y0 - WT, 0), P(X1, Y1, 0), P(X1, Y1, -0.45), P(X1, y0 - WT, -0.45)], 'fill:var(--wall2)'));
 	floor.push(poly([P(x0 - WT, y0 - WT), P(X1, y0 - WT), P(X1, Y1), P(x0 - WT, Y1)], 'fill:url(#ar-floor)'));
 	var g = [];
 	for (var i = x0 + 1; i < X1; i++) { var a0 = P(i, y0), a1 = P(i, Y1); g.push('M' + n1(a0[0]) + ' ' + n1(a0[1]) + ' L' + n1(a1[0]) + ' ' + n1(a1[1])); }
@@ -2236,7 +2423,7 @@ function buildMap(net, L) {
 	var grad = function (id, a, b, c) {
 		return '<linearGradient id="' + id + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:' + a + '"/>' + (c ? '<stop offset=".55" style="stop-color:' + b + '"/>' : '') + '<stop offset="1" style="stop-color:' + (c || b) + '"/></linearGradient>';
 	};
-	var defs = '<defs><linearGradient id="ar-floor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:#43535b"/><stop offset="1" style="stop-color:#2e3b41"/></linearGradient>' +
+	var defs = '<defs><linearGradient id="ar-floor" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--floor1)"/><stop offset="1" style="stop-color:var(--floor2)"/></linearGradient>' +
 		grad('ar-scr1', '#123049', '#2c76a6', '#6cc6ea') + grad('ar-scr2', '#22265a', '#4f57bd', '#a3acf5') + grad('ar-scr3', '#0f2a40', '#2f78a6') + grad('ar-scr4', '#1b3346', '#4a96c0') + grad('ar-scr5', '#1a3a52', '#5aa9d6') +
 		'<linearGradient id="ar-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" style="stop-color:#59c3ff;stop-opacity:.5"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></linearGradient>' +
 		'<radialGradient id="ar-halo"><stop offset=".45" style="stop-color:#59c3ff;stop-opacity:.34"/><stop offset="1" style="stop-color:#59c3ff;stop-opacity:0"/></radialGradient>' +
@@ -2380,7 +2567,8 @@ function render() {
 	var net = A.net;
 	var root = $('ar');
 	if (!root) return;
-	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : '', A.pz.s > 1 ? 'zoomed' : '', A.moving ? 'moving' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
+	root.className = [A.paused ? 'paused' : '', A.big ? 'big' : '', A.big && A.narrow ? 'narrow' : '', A.pz.s > 1 ? 'zoomed' : '', A.moving ? 'moving' : '',
+		A.theme ? 'th-' + A.theme : '', A.anim ? 'anim' : ''].join(' ').replace(/^ +| +$/g, '').replace(/ +/g, ' ');
 	if (!net) { var h = haltNotice(); setNotice(h ? h[0] : 'Starting the sampler on the router…', h ? h[1] : MUTED); return; }
 	try { renderSummary(net); } catch (e) { logErr(e); }
 	if (A.tab === 'map') { try { renderMap(net); } catch (e) { logErr(e); } }
@@ -2410,24 +2598,24 @@ function renderSummary(net) {
 function haltNotice() {
 	var h = A.halt;
 	if (!h) return null;
-	if (h.gaveup) return ['No samples from the router for a minute, so Arteria stopped asking for them. Run arteria.sh status on the router, then tap Stopped to try again.', ACC];
+	if (h.gaveup) return ['No samples from the router for a minute, so Arteria stopped asking for them. Run arteria.sh status on the router, then tap Stopped to try again.', WARN];
 	var why = h.paused === 'memory' ? 'is low on memory (' + h.mem + ' MB available)' : h.paused === 'slow' ? 'took over 15 s for each sample' :
 		'is busy (load ' + h.load + ' on ' + h.cpus + ' cores)';
-	return ['The router ' + why + ', so Arteria paused to leave it alone. It tries again in about 2 minutes.', ACC];
+	return ['The router ' + why + ', so Arteria paused to leave it alone. It tries again in about 2 minutes.', WARN];
 }
 function noticeFor(net) {
 	if (A.paused) return ['Paused. The router stops sampling (unless another Arteria tab is open).', MUTED];
 	var h = haltNotice(); if (h) return h;
 	if (!A.fresh) return [Date.now() - A.started > 20000 ? 'No samples from the router. Is Arteria installed? Run arteria.sh status on the router.' : 'Starting the sampler on the router…', Date.now() - A.started > 20000 ? ACC : MUTED];
-	if (stale()) return ['The router stopped sending samples. Retrying…', ACC];
+	if (stale()) return ['The router stopped sending samples. Retrying…', WARN];
 	for (var i = 0; i < net.nodes.length; i++) {
 		var n = net.nodes[i];
 		if (!n.online) return [n.name + ' is offline. Its devices may rejoin through the router.', BAD];
-		if (n.weak) return ['Weak backhaul: ' + n.name + ' links at ' + (n.bhRssi || '?') + ' dBm, ' + (n.bhPhy || '?') + ' Mb/s.', ACC];
-		if (n.state === 'nokey') return [n.name + ': per-device traffic needs node access. Run arteria.sh nodekey on the router.', ACC];
-		if (n.state === 'hostkey') return [n.name + ' has a new SSH identity (reset?). Run arteria.sh nodekey to trust it again.', ACC];
-		if (n.state === 'down') return [n.name + ' isn\'t answering over SSH, so its devices show without numbers.', ACC];
-		if (n.state === 'crash') return ['Something on ' + n.name + ' crashed while Arteria read it. Run arteria.sh nodes test on the router: it says what.', ACC];
+		if (n.weak) return ['Weak backhaul: ' + n.name + ' links at ' + (n.bhRssi || '?') + ' dBm, ' + (n.bhPhy || '?') + ' Mb/s.', WARN];
+		if (n.state === 'nokey') return [n.name + ': per-device traffic needs node access. Run arteria.sh nodekey on the router.', WARN];
+		if (n.state === 'hostkey') return [n.name + ' has a new SSH identity (reset?). Run arteria.sh nodekey to trust it again.', WARN];
+		if (n.state === 'down') return [n.name + ' isn\'t answering over SSH, so its devices show without numbers.', WARN];
+		if (n.state === 'crash') return ['Something on ' + n.name + ' crashed while Arteria read it. Run arteria.sh nodes test on the router: it says what.', WARN];
 		if (n.state === 'busy') return ['The router is busy, so Arteria reads ' + n.name + ' only once it calms down. Its devices show without numbers meanwhile.', MUTED];
 		if (n.state === 'off') return ['Node access is off (NODES=off): ' + n.name + ' shows its backhaul total only.', MUTED];
 	}
@@ -2602,11 +2790,11 @@ function buildFlow(gs) {
 	o.push(lbl('rtb', '<text data-t="agg:rt" x="' + (FX0.rt + 6) + '" y="0" style="font-size:10.5px;fill:#c3c2b7;text-anchor:middle;font-variant-numeric:tabular-nums;paint-order:stroke;stroke:#2b3539;stroke-width:4px;stroke-linejoin:round"></text>'));
 	gs.forEach(function (g) {
 		var nm = g.node ? 'Backhaul' : g.label, pw = Math.round(textW(nm, true) + 70);
-		o.push(lbl('g:' + g.id, '<rect x="' + (FX0.link - 4) + '" y="-12.5" width="' + pw + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/>' +
+		o.push(lbl('g:' + g.id, '<rect x="' + (FX0.link - 4) + '" y="-12.5" width="' + pw + '" height="17" rx="4" style="fill:var(--surface);fill-opacity:.92"/>' +
 			'<text x="' + (FX0.link + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:' + (g.node ? '#cdc5fc' : '#f0efec') + '">' + esc(nm) + '<tspan data-t="gv:' + g.id + '" dx="6" style="font-weight:400;fill:#c3c2b7;font-variant-numeric:tabular-nums"></tspan></text>'));
 		if (g.node) {
 			var nn = g.label.length > 12 ? g.label.slice(0, 11) + '…' : g.label, tip = nn !== g.label ? '<title>' + esc(g.label) + '</title>' : '';
-			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:#2b3539;fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + tip + esc(nn) + '</text>'));
+			o.push(lbl('n:' + g.id, '<rect x="' + (FX0.mesh - 4) + '" y="-12.5" width="' + Math.round(textW(nn, true) + 12) + '" height="17" rx="4" style="fill:var(--surface);fill-opacity:.92"/><text x="' + (FX0.mesh + 2) + '" y="0" style="font-size:11px;font-weight:700;fill:#cdc5fc">' + tip + esc(nn) + '</text>'));
 		}
 	});
 	var hs = 'font-size:10px;font-weight:700;letter-spacing:.12em;fill:#93a9b1';
@@ -2700,7 +2888,7 @@ function flowRowInfo(g, r) {
 		x.sub = dv.st === 'off' ? 'Offline' : (dv.st === 'nodata' ? 'Not reported' : linkShort(dv));
 		if (G.big) {   /* wider rows: where it's connected and its address, then signal and link rate in columns */
 			var ip = ipOf(dv), wired = dv.link === 'wired';
-			x.sub = (wired ? dv.portLabel : (dv.node ? dv.node.name : bandName(dv.band))) + (ip ? ' · ' + ip : '') + (dv.guest ? ' · guest' : '') + (dv.st === 'off' ? ' · offline' : '');
+			x.sub = (wired ? dv.portLabel : (dv.node ? dv.node.name : bandName(dv.band))) + (ip ? ' · ' + ip : '') + (dv.net ? ' · ' + dv.net : '') + (dv.st === 'off' ? ' · offline' : '');
 			x.c1 = wired ? (dv.speed ? speedTxt(dv.speed) : '') : dbm(dv.rssi, '');
 			x.c2 = wired ? (dv.count > 1 ? dv.count + ' devices' : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
 		}
@@ -2857,7 +3045,7 @@ function thirdLine(x) {
 }
 function linkShort(dv) {
 	if (dv.link === 'wired') return dv.portLabel + (dv.speed ? ' · ' + speedTxt(dv.speed) : '') + (dv.count > 1 ? ' · ' + dv.count + ' devices' : '');
-	return (dv.node ? dv.node.name : bandName(dv.band)) + (dbm(dv.rssi, '') ? ' · ' + dbm(dv.rssi) : '') + (dv.guest ? ' · guest' : '');
+	return (dv.node ? dv.node.name : bandName(dv.band)) + (dbm(dv.rssi, '') ? ' · ' + dbm(dv.rssi) : '') + (dv.net ? ' · ' + dv.net : '');
 }
 
 /* ---------------------------------------------------------------- the readout card (both views) */
@@ -2900,12 +3088,12 @@ function readoutFor(net) {
 		path = rname + ' → ' + n.name;
 		note = { ok: 'Its devices are counted on the node and read over SSH.', nokey: 'Per-device data needs node access: run arteria.sh nodekey.', hostkey: 'Its SSH identity changed: run arteria.sh nodekey.',
 			down: 'Not answering over SSH: showing its backhaul total.', busy: 'Not read while the router is busy: showing its backhaul total.', crash: 'Something on the node crashed reading it: run arteria.sh nodes test.', wait: 'Connecting to the node…', off: 'Node access is off: backhaul total only.' }[n.state] || '';
-		if (n.weak) { note = 'A weak backhaul caps everything behind the node.'; tone = ACC; }
+		if (n.weak) { note = 'A weak backhaul caps everything behind the node.'; tone = WARN; }
 		if (!n.online) { note = 'The node isn\'t connected to the router.'; tone = BAD; sdn = sup = 'offline'; }
 	} else if (id && net.byId[id] && net.byId[id].link) {
 		var dv = net.byId[id];
 		d = { icon: dv.kind, badge: dv.link === 'wired' ? 'Wired' : 'Wi-Fi', name: dv.name,
-			link: dv.link === 'wired' ? 'Wired · ' + dv.portLabel : bandName(dv.band) + ' · on ' + (dv.node ? dv.node.name : rname) + (dv.guest ? ' · guest network' : '') + (dv.alias ? ' · matched by host name' : '') };
+			link: dv.link === 'wired' ? 'Wired · ' + dv.portLabel : bandName(dv.band) + ' · on ' + (dv.node ? dv.node.name : rname) + (dv.net ? ' · ' + dv.net : '') + (dv.alias ? ' · matched by host name' : '') };
 		dn = dv.st === 'ok' ? dv.dn : null; up = dv.st === 'ok' ? dv.up : null;
 		sdn = pct(dn, net.total.dn) + '% of all download'; sup = pct(up, net.total.up) + '% of all upload';
 		if (dv.link === 'wired') { k1 = 'Port'; v1 = dv.portLabel; k2 = 'Link rate'; v2 = dv.speed ? dv.speed + ' Mb/s' : '—'; }
@@ -3377,7 +3565,32 @@ function togglePause() {
 	if (A.paused) { suspend(); stopBeacon(); } else resume();
 	render();
 }
+/* The router's own theme: the firmware says which (rog_support, tuf_support, in its state.js). ROG and TUF pages are black
+   with red or amber: Arteria's controls, highlights and room follow (the CSS's .th-rog, .th-tuf), and so do the drawings that
+   use the accent (the router's light strip, its ring on the map, its bar in Flow). */
+function theme() {
+	var t = '';
+	try { t = window.rog_support ? 'rog' : (window.tuf_support ? 'tuf' : ''); } catch (e) { /* no firmware globals: the standard theme */ }
+	if (!t) return;
+	A.theme = t; $('ar').classList.add('th-' + t);   /* render() sets the classes from A: A.theme, A.anim */
+	ACC = t === 'rog' ? '#ff3349' : '#ffbb28';
+	M_WALL = MAT('#3b3e42');
+}
+/* Packets stand still when the device asks for less motion (Windows' animation effects off, macOS's Reduce motion, Android's
+   Remove animations): the legend says so, with a button to animate them anyway, which this browser remembers. */
+function motionWire() {
+	var mq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+	var apply = function () {
+		var still = !!(mq && mq.matches) && store('anim') !== '1';
+		A.anim = !still; $('ar').classList.toggle('anim', !still);
+		$('arMotion').classList.toggle('hide', !still);
+	};
+	$('arMotionOn').addEventListener('click', function () { store('anim', '1'); apply(); });
+	if (mq && mq.addEventListener) mq.addEventListener('change', apply);
+	apply();
+}
 function boot() {
+	theme();
 	$('arPackets').textContent = packetCss();
 	A.tab = store('tab') === 'flow' ? 'flow' : 'map';
 	A.mode = store('mode') === 'up' ? 'up' : 'dn';
@@ -3389,7 +3602,7 @@ function boot() {
 	$('arTabMap').addEventListener('click', function () { setTab('map'); });
 	$('arTabFlow').addEventListener('click', function () { setTab('flow'); });
 	$('arLive').addEventListener('click', togglePause);
-	pzWire(); renameWire();
+	pzWire(); renameWire(); motionWire();
 	/* a name, a maker or a path cut short with "…" shows in full on hover: only the text itself (a few inline parts at most),
 	   never a container, and never the map's labels (tap one for its details) */
 	$('ar').addEventListener('mouseover', function (e) {
@@ -3497,6 +3710,7 @@ window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKin
 				<div><span class="sw" style="background:#59c3ff"></span>Download, toward the device</div>
 				<div><span class="sw" style="background:#ff8a3d"></span>Upload, toward the internet</div>
 				<div><span class="sw" style="background:#a99cf5"></span>AiMesh backhaul</div>
+				<div id="arMotion" class="hide">Still: your device asks for less motion. <button type="button" class="ar-link" id="arMotionOn">Animate</button></div>
 			</div>
 			<div id="arMapLabels"></div>
 			<div class="ar-over ar-notice" id="arNoticeMap" style="left:16px;bottom:12px"><span class="sw"></span><span class="tx">Starting the sampler on the router…</span></div>

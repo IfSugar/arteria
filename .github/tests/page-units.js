@@ -504,4 +504,59 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	if (A.prev) Object.assign(A.prev, keep); if (A.sm) Object.assign(A.sm, keepSm);
 }
 
+// ---- 17. a device's network: named only when it isn't a main one (a guest network, or one of Guest Network Pro's); a main
+// network's name served on a wl0.x interface is still a main network
+{
+	const nn = AR.buildNet(smp({ up: '7100.0', nets: [['eth6', 'Home', 1], ['wl0.1', 'Guest <x>', 0], ['wl0.2', 'Home', 0], ['eth7', 'Home', 1]],
+		sta: [['eth6', '2.4', '00:00:5E:00:53:71', '1', '1', -50, 100, 100, 10, 1, null, null, null], ['wl0.1', '2.4', '00:00:5E:00:53:72', '1', '1', -50, 100, 100, 10, 1, null, null, null],
+			['wl0.2', '2.4', '00:00:5E:00:53:73', '1', '1', -50, 100, 100, 10, 1, null, null, null]] }));
+	const by = m => (nn.devs.filter(d => d.mac === m)[0] || {}).net;
+	ok(by('00:00:5E:00:53:71') === '' && by('00:00:5E:00:53:72') === 'Guest <x>' && by('00:00:5E:00:53:73') === '',
+		'network names: a guest network is named, a main one (even on wl0.2) isn\'t', [by('00:00:5E:00:53:71'), by('00:00:5E:00:53:72'), by('00:00:5E:00:53:73')].join(' | '));
+}
+
+// ---- 18. ports named as printed on the router: the firmware's own numbers when it has them (the RT-AX88U's LAN 1-4 run
+// eth4-eth1), a port shared by several (its LAN 5-8 behind eth5) by the one that is up; else by the router's order
+{
+	const pm = (o) => AR.buildNet(smp(Object.assign({ up: '7200.0', ports: ['eth1', 'eth2', 'eth3', 'eth4', 'eth5'], macs: [['eth4', '00:00:5E:00:53:81'], ['eth5', '00:00:5E:00:53:82']] }, o)));
+	const lab = (n, m) => (n.devs.filter(d => d.mac === m)[0] || {}).portLabel;
+	const a1 = pm({ plab: { eth4: '1', eth3: '2', eth2: '3', eth1: '4', eth5: '5-8' }, links: [['eth0', 1, 1000], ['eth4', 1, 1000], ['eth5', 1, 100, '7']] });
+	const a2 = pm({ plab: { eth4: '1', eth5: '5-8' }, links: [['eth0', 1, 1000], ['eth4', 1, 1000], ['eth5', 1, 1000, '6,7']] });
+	const a3 = pm({ links: [['eth0', 1, 1000], ['eth4', 1, 1000], ['eth5', 1, 1000]] });
+	const got = [lab(a1, '00:00:5E:00:53:81'), lab(a1, '00:00:5E:00:53:82'), lab(a2, '00:00:5E:00:53:82'), lab(a3, '00:00:5E:00:53:81'), lab(a3, '00:00:5E:00:53:82')];
+	ok(got.join(' | ') === 'LAN 1 | LAN 7 | LAN 5–8 | LAN 4 | LAN 5', 'ports: the firmware\'s own numbers, a shared port by the one that is up, else the router\'s order', got.join(' | '));
+}
+
+// ---- 19. a weak backhaul: judged by the link carrying the node's traffic, or while the node is quiet by its fastest link that
+// isn't 2.4 GHz; an idle link's last packets (control frames, sent slowly) say nothing, and 6 GHz reads lower for the same link
+{
+	const bhNet = (up, rows) => AR.buildNet(smp({ up: up, sta: rows, nodes: [{ mac: '02:10:00:00:00:A0', ip: '192.168.50.11', model: 'BQ16', alias: 'Den',
+		sta: '02:10:00:00:00:A1 02:10:00:00:00:A2', state: 'ok', up: up, c: [] }] }));
+	const row = (mac, band, rx, tx, rssi, ptx, prx) => ['eth7', band, mac, String(tx), String(rx), rssi, ptx, prx, 100, 0, 'be', 2, 160];
+	const weak = (rows1, rows2, t) => { bhNet(t[0], rows1); const n = bhNet(t[1], rows2); return n.nodes[0].weak; };
+	// a 6 GHz backhaul at -75 dBm, idle, its last packets at 24/54 Mb/s; the 2.4 GHz link as strong as ever: not weak
+	const quiet6 = weak([row('02:10:00:00:00:A1', '6', 1000, 1000, -75, 24, 54), row('02:10:00:00:00:A2', '2.4', 1000, 1000, -44, 229, 195)],
+		[row('02:10:00:00:00:A1', '6', 1000, 1000, -75, 24, 54), row('02:10:00:00:00:A2', '2.4', 1000, 1000, -44, 229, 195)], ['7300.0', '7302.0']);
+	// the same link busy (20 Mb/s) at 2882 Mb/s: not weak; busy at 144 Mb/s: weak
+	const busyFast = weak([row('02:10:00:00:00:A1', '6', 1e6, 1e6, -75, 2882, 2401)], [row('02:10:00:00:00:A1', '6', 1e6 + 5e6, 1e6, -75, 2882, 2401)], ['7400.0', '7402.0']);
+	const busySlow = weak([row('02:10:00:00:00:A1', '6', 1e6, 1e6, -60, 144, 120)], [row('02:10:00:00:00:A1', '6', 1e6 + 5e6, 1e6, -60, 144, 120)], ['7500.0', '7502.0']);
+	// a 5 GHz backhaul carrying the traffic at -78 dBm, a strong idle 2.4 GHz one beside it: weak (the 5 GHz link is the one in use)
+	const weak5 = weak([row('02:10:00:00:00:A1', '5', 1e6, 1e6, -78, 144, 459), row('02:10:00:00:00:A2', '2.4', 1000, 1000, -44, 229, 195)],
+		[row('02:10:00:00:00:A1', '5', 1e6 + 5e6, 1e6, -78, 144, 459), row('02:10:00:00:00:A2', '2.4', 1000, 1000, -44, 229, 195)], ['7600.0', '7602.0']);
+	ok(!quiet6 && !busyFast && busySlow && weak5, 'weak backhaul: by the link in use, not an idle link\'s last packets; 6 GHz at -75 dBm is fine',
+		JSON.stringify({ quiet6, busyFast, busySlow, weak5 }));
+}
+
+// ---- 20. a node on a Wi-Fi backhaul that counts its own uplink: its backhaul is its own count, made in the same round as its
+// devices' (the router's count of the same link runs a round ahead of the node's); one on a wired backhaul keeps the router's
+{
+	const nd = (up, nup, bhTx, uRx, devRx) => AR.buildNet(smp({ up: up, sta: [['eth7', '5', '02:10:00:00:00:B1', String(bhTx), '1000', -55, 864, 864, 100, 0, 'ax', 2, 80]],
+		nodes: [{ mac: '02:10:00:00:00:B0', ip: '192.168.50.12', model: 'RP-AX56', alias: 'Loft', sta: '02:10:00:00:00:B1', state: 'ok', up: nup,
+			c: [['wl1.1', '5', '00:00:5E:00:53:B2', String(devRx), '1000', -50, 600, 600, 100, 0, 'ax', 2, 80]], u: [['eth6', String(uRx), '2000']] }] }));
+	nd('7700.0', '500.0', 1e6, 1e6, 1e6);
+	// the router's count says 8 MB/s already; the node's round, 2 s on its clock, says 2 MB/s through the uplink and to the device
+	const n = nd('7702.0', '502.0', 1e6 + 16e6, 1e6 + 4e6, 1e6 + 4e6).nodes[0], dv = n.devs[0];
+	ok(n.bhOwn && Math.abs(n.bh.dn - 16) < 0.01 && Math.abs(dv.dn - 16) < 0.01, 'a node\'s backhaul from its own uplink count, in step with its devices (backhaul ' + n.bh.dn.toFixed(1) + ', device ' + (dv ? dv.dn.toFixed(1) : '-') + ' Mb/s)');
+}
+
 process.exit(fails ? 1 : 0);

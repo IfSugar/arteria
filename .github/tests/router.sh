@@ -56,12 +56,13 @@ case "\$2" in
 	sshd_pass) cat "$t/sshd-pass" 2>/dev/null || echo 1 ;;   # Allow Password Login (a test turns it off)
 	productid) echo RT-AX86U ;; buildno) echo 388.13 ;; extendno) echo 0 ;; firmver) echo 3.0.0.4 ;;
 	wl0_ifname) echo eth6 ;; wl1_ifname) echo eth7 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
-	lan_ifnames) echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7" ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
+	wl0_vifs) echo wl0.1 ;; wl0_ssid|wl1_ssid) echo 'Home "net"' ;; wl0.1_ssid) echo 'Guest <net>' ;; lan_netmask) echo 255.255.255.0 ;;
+	lan_ifnames) if [ -f "$t/ax88u" ]; then echo "eth1 eth2 eth3 eth4 eth5 eth6 eth7"; else echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7"; fi ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
 	wans_dualwan) cat "$t/dualwan" 2>/dev/null || echo "wan none" ;; wan1_ifname) echo usb0 ;; wan1_proto) echo dhcp ;; wans_mode) echo lb ;;   # a test turns dual WAN on
 	lan_ipaddr) echo 192.168.50.1 ;; http_username) echo admin ;; sshd_port) echo 2222 ;; sshd_enable) echo 1 ;;
 	jffs2_scripts) echo 1 ;; rc_support) echo "mssid 2.4G 5G usbX1 bwdpi wl6 amas" ;;
 	# AiMesh's list of the nodes it's in touch with: saving a setting empties it for minutes (a test sets no-device-list)
-	cfg_device_list) [ -f "$t/no-device-list" ] || echo "<RP-AX56>192.168.50.10>$NODE>0" ;;
+	cfg_device_list) [ -f "$t/no-device-list" ] || echo "<RP-AX56>192.168.50.10>$NODE>0<GT6>192.168.1.1>02:10:00:00:00:90>0" ;;
 	# every node that has joined (node, its 2.4 and 5 GHz backhaul addresses, when): kept across saves
 	cfg_relist) echo "<$NODE>$S2>$S5>1761147712" ;;
 	dhcp_staticlist) echo "<02:CC:00:00:00:04>192.168.50.20>>" ;;
@@ -102,6 +103,19 @@ case "\$1 \$2" in
 	'showmacs br52') printf 'port no\tmac addr\t\tis local?\tageing timer\n  1\t02:cc:00:00:00:52\tno\t\t   1.10\n  1\t02:cc:00:00:00:09\tno\t\t   1.10\n' ;;
 esac
 EOF
+# The firmware's port map ('rc port_status', on stderr), with the router's numbering: the RT-AX86U's, or, when a test says so,
+# the RT-AX88U's, whose LAN 1-4 are eth4-eth1 and whose LAN 5-8 all sit behind eth5 (only LAN 7 has a device, at 100 Mb/s)
+cat > "$B/rc" <<EOF
+#!$bb sh
+[ "\$1" = port_status ] || exit 0
+p() { printf ' phy_port_id=%s, label_name=%s, cap=2, cap_name=LAN, max_rate=1000, ifname=%s, state=%s, link_rate=%s, duplex=full, tx_packets=1, rx_packets=1, tx_bytes=1, rx_bytes=1, crc_errors=0\\n' "\$@" >&2; }
+p 4 W0 eth0 up 1000
+if [ -f "$t/ax88u" ]; then p 3 L1 eth4 down 0; p 2 L2 eth3 down 0; p 1 L3 eth2 down 0; p 0 L4 eth1 down 0; p 8 L5 eth5 down 0; p 9 L6 eth5 down 0; p 10 L7 eth5 up 100; p 11 L8 eth5 down 0
+else p 3 L1 eth4 down 0; p 2 L2 eth3 down 0; p 1 L3 eth2 down 0; p 0 L4 eth1 down 0; p 7 L5 eth5 up 2500; fi
+printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
+EOF
+# 'service start_x', as the router's rc runs it: service-event, with "start" and "x"
+printf '#!%s sh\na=${1%%%%_*}; exec "%s" sh "%s/jffs/scripts/service-event" "$a" "${1#*_}"\n' "$bb" "$bb" "$R" > "$B/service"
 cat > "$t/proc/net/dev" <<'EOF'
 Inter-|   Receive                                                |  Transmit
  face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
@@ -213,14 +227,15 @@ case "\$1 \$2" in
 	'get sshd_authkeys') cat "$t/node-authkeys" 2>/dev/null ;;
 	'set sshd_authkeys='*) printf '%s' "\${2#sshd_authkeys=}" > "$t/node-authkeys" ;;
 	'commit '*) ;;
-	*) case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;; esac ;;
+	*) case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
+		sta_phy_ifnames) echo eth2 ;; esac ;;   # its 5 GHz radio's own interface is its uplink to the router (a Wi-Fi backhaul)
 esac
 EOF
 cat > "$B/dbclient" <<EOF
 #!$bb sh
 # a node that accepts only the router's Arteria key
 [ "\$1 \$2" = "-o help" ] && { printf 'Available options:\\n\\tBatchMode\\n\\tPort\\n' >&2; exit 0; }
-echo "\$*" >> "$t/dbclient.args"
+printf '%s\\n' "\$*" | head -n 1 >> "$t/dbclient.args"   # its options (a node script's lines after the first aren't)
 y=0; for a in "\$@"; do [ "\$a" = -y ] && y=1; done
 keys=""; while [ \$# -gt 1 ]; do [ "\$1" = -i ] && keys="\$keys \$2"; shift; done
 # root's own key (it says "userkey") opens the node only when a test says so; Arteria's key ("key") as below
@@ -239,15 +254,17 @@ if [ -f "$t/node-identity" ]; then
 	grep -q AAAAC3NzaC1lZDI1NTE5AAAAITEST "$t/node-authkeys" 2>/dev/null || own=0
 fi
 [ \$own = 1 ] || [ \$user = 1 ] || { echo "dbclient: Connection to admin@192.168.50.10:2222 exited: No auth methods could be used." >&2; exit 1; }
-echo "\$1" >> "$t/dbclient.cmds"
-[ "\$1" = 'sh -s' ] || exec env PATH="$N:$B" "$bb" sh -c "\$1"
-# The page's session: like the real dbclient it stays this process (Arteria stops it by its pid, and checks that the pid is a
+# Arteria's node script comes as the command itself (the node's login shell runs it); anything else is run as it is
+case "\$1" in
+	"# arteria node script"*) echo "node-script N=\$(printf '%s\\n' "\$1" | sed -n 's/^N=//p')\$(printf '%s\\n' "\$1" | grep -q '^T=1' && echo ' traced')" >> "$t/dbclient.cmds" ;;
+	*) echo "\$1" >> "$t/dbclient.cmds"; exec env PATH="$N:$B" "$bb" sh -c "\$1" ;;
+esac
+# A node script: like the real dbclient this stays this process (Arteria stops a session by its pid, and checks that the pid is a
 # dbclient), and stopping it ends the node's side. AR_NODE_SESSION marks the node's side, so a test can see that it's gone.
-exec 3<&0
-if [ -f "$t/node-hostile" ]; then env AR_NODE_SESSION="$t" "$bb" sh "$t/node-hostile" <&3 3<&- &   # a node that sends anything but counters
-else env AR_NODE_SESSION="$t" PATH="$N:$B" "$bb" sh -s <&3 3<&- &
+if [ -f "$t/node-hostile" ]; then env AR_NODE_SESSION="$t" "$bb" sh "$t/node-hostile" < /dev/null &   # a node that sends anything but counters
+else env AR_NODE_SESSION="$t" PATH="$N:$B" "$bb" sh -c "\$1" < /dev/null &
 fi
-c=\$!; exec 3<&-
+c=\$!
 trap 'kill \$c 2>/dev/null; exit 0' TERM INT HUP
 wait \$c
 EOF
@@ -255,6 +272,9 @@ printf '#!%s sh\nf=""; while [ $# -gt 0 ]; do [ "$1" = -f ] && f=$2; shift; done
 for f in "$B"/* "$N"/*; do [ -L "$f" ] || chmod +x "$f"; done   # the stand-ins; never the symlinked system tools
 
 echo 'enable -n test [ printf echo' > "$t/no-builtins.sh"
+# the node's own /proc/net/dev: its uplink (eth2, a client of the router) with its counters
+mkdir -p "$t/node-proc/net"; printf 'Inter-|   Receive\n face |bytes    packets\n  eth2: 7340032 5000 0 0 0 0 0 0 1048576 3000 0 0 0 0 0 0\n  eth1: 99 1 0 0 0 0 0 0 99 1 0 0 0 0 0 0\n' > "$t/node-proc/net/dev"
+export AR_NODE_PROC="$t/node-proc"
 run()  { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" BASH_ENV="$t/no-builtins.sh" "$bash_bin" "$script" "$@"; }
 runa() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$script" "$@"; }
 
@@ -266,7 +286,11 @@ run sample > "$t/sample2.json" 2> "$t/sample2.err" || true
 # debug: router facts and classification counts for an issue, never a name, host name, MAC or IP
 run debug > "$t/debug.out" 2>&1 || true
 if grep -q '^Saved icons: ' "$t/debug.out" && grep -q '^Detected types: ' "$t/debug.out" && grep -q '^Private MACs: ' "$t/debug.out" \
-	&& ! grep -qE 'Living room|tablet|Pixel-8|Hall|192\.168\.|02:[Cc][Cc]|02:10:00' "$t/debug.out"; then ok "debug: counts only, no names, MACs or IPs"
+	&& grep -q '^Wi-Fi:       wl0.1 radio 0 (2.4 GHz), channel ?, mode ap, bridge none, other network, up=1, clients=0$' "$t/debug.out" \
+	&& grep -q '^Wi-Fi:       eth6 radio 0 (2.4 GHz), .* main network' "$t/debug.out" \
+	&& grep -q '^Port map:    LAN 1 eth4 down 0, LAN 2 eth3 down 0, LAN 3 eth2 down 0, LAN 4 eth1 down 0, LAN 5 eth5 up 2500 ' "$t/debug.out" \
+	&& grep -q '^Client list: 2Gx1$' "$t/debug.out" && grep -q '^    backhaul: 5 GHz on eth7, -58 dBm, last packets 864/650 Mb/s, idle 2 s, ax 2 streams 80 MHz$' "$t/debug.out" \
+	&& ! grep -qE 'Living room|tablet|Pixel-8|Hall|Home|Guest|SECRET|192\.168\.|02:[Cc][Cc]|02:10:00' "$t/debug.out"; then ok "debug: counts and settings only, no names, network names, MACs or IPs"
 else bad "debug output:"; cat "$t/debug.out"; fi
 [ -s "$t/sample2.err" ] && { bad "'sample' printed errors under bash without builtins:"; cat "$t/sample2.err"; }
 python3 - "$t/sample.json" <<'EOF' && ok "sample: internet, ports, Wi-Fi clients, node and backhaul" || fail=1
@@ -291,6 +315,20 @@ assert n['sta'].split() == ['02:10:00:00:00:81', '02:10:00:00:00:84'], n['sta']
 assert n['state'] == 'nokey' and n['c'] == [], n
 assert '00:00:5E:00:53:FC' in s['own']
 assert s['router']['model'] == 'RT-AX86U' and s['router']['fw'] == '3004.388.13_0', s['router']
+assert s['plab'] == {'eth4': '1', 'eth3': '2', 'eth2': '3', 'eth1': '4', 'eth5': '5'}, s['plab']   # the firmware's own numbers
+assert s['nets'] == [['eth6', 'Home "net"', 1], ['wl0.1', 'Guest <net>', 0], ['eth7', 'Home "net"', 1]], s['nets']
+EOF
+# The RT-AX88U: its port map numbers LAN 1-4 the other way round, and puts LAN 5-8 behind eth5, whose own link is always up:
+# eth5 counts as up only while one of LAN 5-8 is, at that port's speed (LAN 7 at 100 Mb/s here), and nothing else shows on it
+touch "$t/ax88u"; runa sample > "$t/sample-88.json" 2>/dev/null || true; rm -f "$t/ax88u"
+python3 - "$t/sample-88.json" <<'EOF' && ok "RT-AX88U: the ports are numbered as printed on the router, and LAN 5-8 behind one link show as one port, with its real speed" || fail=1
+import json, sys
+s = json.load(open(sys.argv[1]))
+assert s['ports'] == ['eth1', 'eth2', 'eth3', 'eth4', 'eth5'], s['ports']
+assert s['plab'] == {'eth4': '1', 'eth3': '2', 'eth2': '3', 'eth1': '4', 'eth5': '5-8'}, s['plab']
+links = {l[0]: l for l in s['links']}
+assert links['eth5'] == ['eth5', 1, 100, '7'], links['eth5']   # its own link (2500) says nothing about the ports
+assert links['eth1'] == ['eth1', 0, -1], links['eth1']
 EOF
 # dual WAN: the second WAN (a USB modem here) is sampled too, and named in the sample
 echo "wan usb" > "$t/dualwan"; runa sample > "$t/sample-dw.json" 2>/dev/null || true; rm -f "$t/dualwan"
@@ -355,6 +393,24 @@ tries=$(cat "$R/tmp/arteria/"node.*.err 2>/dev/null | grep -c 'No auth')   # wit
 runi service_event start arteriastop
 waitfor 6 sampler_gone
 [ -f "$R/tmp/arteria/sampler.pid" ] && bad "sampler still running after the page closed" || ok "sampler stops when the page closes"
+# The page is live from its second sample: on a router that isn't busy that one comes 1 s after the first, however long the
+# interval, and the first round's extra work (the ports, starting the node sessions, the names) doesn't slow the ones after it
+sed -i 's/^INTERVAL=1$/INTERVAL=3/' "$R/jffs/addons/arteria/config"; rm -f "$W/live.htm" "$W/names.htm"
+runi service_event start arteria
+s0=""; s1=""; end=$(( $(date +%s%N) / 1000000 + 10000 ))
+while [ $(( $(date +%s%N) / 1000000 )) -lt $end ]; do
+	q=$(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null | cut -d: -f2); m=$(( $(date +%s%N) / 1000000 ))
+	[ "$q" = 0 ] && [ -z "$s0" ] && s0=$m
+	[ "$q" = 1 ] && { s1=$m; break; }
+	sleep 0.05
+done
+waitfor 12 seq_at_least 3
+gap=$(( ${s1:-99999} - ${s0:-0} ))
+if [ -n "$s0" ] && [ "$gap" -lt 1900 ] && grep -q '"interval":3' "$W/live.htm" && [ -s "$W/names.htm" ]; then
+	ok "start: the second sample comes $gap ms after the first, then every 3 s as set; the names are written meanwhile"
+else bad "start: the second sample came $gap ms after the first (${s0:-no first sample seen})"; grep -o '"seq":[0-9]*,\|"interval":[0-9]*' "$W/live.htm"; ls "$W"; fi
+runi service_event start arteriastop; waitfor 6 sampler_gone
+sed -i 's/^INTERVAL=3$/INTERVAL=1/' "$R/jffs/addons/arteria/config"
 
 # ---- 2: with the key: the node's clients over the session ------------------------------------------
 printf 'key\n' > "$R/jffs/addons/arteria/node_key"
@@ -369,6 +425,7 @@ assert n['state'] == 'ok', n
 c = {r[2]: r for r in n['c']}
 assert set(c) >= {'02:CC:00:00:00:11', '02:CC:00:00:00:12', '02:CC:00:00:00:13'}, c
 assert c['02:CC:00:00:00:12'][0] == 'wl1.1' and c['02:CC:00:00:00:12'][1] == '5', c
+assert n['u'] == [['eth2', '7340032', '1048576']], n['u']   # its uplink's own counters, read in the same round
 assert c['02:CC:00:00:00:11'][1] == '2.4', c
 assert float(n['up']) > 0, n['up']
 names = json.load(open(sys.argv[2]))
@@ -387,8 +444,14 @@ assert names['arp'] == '02:cc:00:00:00:01 192.168.50.30|', names['arp']
 assert names['n6'] == '02:cc:00:00:00:12 2001:db8::12|02:cc:00:00:00:12 fe80::12|', names['n6']
 EOF
 grep -q '<' "$W/live.htm" "$W/names.htm" && bad "a raw '<' reached the page's data (httpd would run it as a template)" || ok "no raw '<' in the data files"
-[ "$(grep -c "sh -s" "$t/dbclient.cmds" 2>/dev/null || echo 0)" = 1 ] && ok "one SSH session per node" || bad "SSH sessions: $(grep -c 'sh -s' "$t/dbclient.cmds" 2>/dev/null)"
-grep -q -- "-p 2222 .*admin@192.168.50.10 sh -s" "$t/dbclient.args" && ok "the session uses the router's SSH port and admin name" || { bad "SSH arguments:"; cat "$t/dbclient.args"; }
+sessions() { grep -c '^node-script N=[0-9][0-9]' "$t/dbclient.cmds" 2>/dev/null || echo 0; }   # a page's session (a round is N=1)
+[ "$(sessions)" = 1 ] && ok "one SSH session per node" || bad "SSH sessions: $(sessions)"
+grep -q -- "-p 2222 .*admin@192.168.50.10 # arteria node script" "$t/dbclient.args" && ok "the session uses the router's SSH port and admin name, and sends the node script as its command" || { bad "SSH arguments:"; cat "$t/dbclient.args"; }
+python3 - "$W/live.htm" <<'EOF' && ok "a node's uplink (its Wi-Fi backhaul to the router) isn't read as one of its devices' interfaces" || fail=1
+import json, sys
+c = json.load(open(sys.argv[1]))['nodes'][0]['c']
+assert c and not [r for r in c if r[0] == 'eth2'], c
+EOF
 grep -- " -i " "$t/dbclient.args" | grep -qv -- "-o BatchMode=yes" && { bad "a key login without BatchMode (dbclient could ask for a password):"; cat "$t/dbclient.args"; } || ok "key logins never offer a password (BatchMode)"
 runi service_event start arteriastop
 # no session left: neither the stand-in dbclient nor the node side it runs
@@ -465,8 +528,8 @@ grep -q 'state=(page closed)' "$t/debug2.out" && ! grep -q '192\.168\.' "$t/debu
 # Which nodes: the router's AiMesh list, never the router itself. Saving a setting empties that list for minutes while
 # the nodes stay online: nodes then says so, rather than "no nodes".
 run nodes > "$t/nodes.out" 2>&1
-[ "$(grep -c 'Hall (RP-AX56, 192.168.50.10)' "$t/nodes.out")" = 1 ] && ! grep -q '192.168.50.1)' "$t/nodes.out" \
-	&& ok "nodes: the AiMesh node once, with its name, model and address; not the router" || { bad "nodes:"; cat "$t/nodes.out"; }
+[ "$(grep -c 'Hall (RP-AX56, 192.168.50.10)' "$t/nodes.out")" = 1 ] && ! grep -q '192.168.50.1)\|GT6' "$t/nodes.out" \
+	&& ok "nodes: the AiMesh node once, with its name, model and address; not the router, nor an old entry outside the LAN" || { bad "nodes:"; cat "$t/nodes.out"; }
 touch "$t/no-device-list"; run nodes > "$t/nodes.out" 2>&1
 grep -q "AiMesh lists 1 node(s), but none is in the router's current AiMesh list" "$t/nodes.out" \
 	&& ok "nodes: while a settings save has emptied the AiMesh list, says the node will come back, not 'no nodes'" \
@@ -584,7 +647,7 @@ if [ -f "$t/node-accepts-user" ]; then
 	run nodes test > "$t/nt-user.out" 2>&1 || true
 	grep -q 'key login OK (/tmp/home/root/.ssh/id_dropbear), reads' "$t/nt-user.out" && ok "nodes test names the key that works" || { bad "nodes test with root's key:"; cat "$t/nt-user.out"; }
 	run debug > "$t/debug-user.out" 2>&1 || true
-	grep -q '^Node keys:   /tmp/home/root/.ssh/id_dropbear$' "$t/debug-user.out" && grep -q 'state=ok, a round every [0-9]* s, last output [0-9]* s ago, 5 station(s)' "$t/debug-user.out" \
+	grep -q '^Node keys:   /tmp/home/root/.ssh/id_dropbear$' "$t/debug-user.out" && grep -q 'state=ok, a round every [0-9]* s, last output [0-9]* s ago, 4 station(s)' "$t/debug-user.out" \
 		&& ok "debug: the node keys, and each node's pace, freshness and devices while the page is open" || { bad "debug, nodes:"; grep -A3 '^Node' "$t/debug-user.out"; }
 	runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
 	no_sampler() { ! pgrep -f "$inst sampler" > /dev/null 2>&1; }; waitfor 10 no_sampler   # gone, not only its pid file
@@ -658,10 +721,10 @@ waitfor 4 sampler_gone
 printf 'MemTotal: 500000 kB\nMemAvailable: 300000 kB\n' > "$t/proc/meminfo"; lav 0.50; rm -f "$R/tmp/arteria/paused"
 runi service_event start arteria; waitfor 12 node_read
 runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
-s0=$(grep -c "sh -s" "$t/dbclient.cmds"); rm -f "$W/live.htm"; lav 4.50; : > "$t/syslog"
+s0=$(sessions); rm -f "$W/live.htm"; lav 4.50; : > "$t/syslog"
 runi service_event start arteria
 waitfor 10 seq_at_least 1
-python3 - "$W/live.htm" <<'EOF' && [ "$(grep -c "sh -s" "$t/dbclient.cmds")" = "$s0" ] && ok "guard: a busy router (load 2 per core) is sampled a third as often, opens no node session, and the sample says so" || { bad "guard, busy: $(grep -c "sh -s" "$t/dbclient.cmds") sessions, $s0 before"; fail=1; }
+python3 - "$W/live.htm" <<'EOF' && [ "$(sessions)" = "$s0" ] && ok "guard: a busy router (load 2 per core) is sampled a third as often, opens no node session, and the sample says so" || { bad "guard, busy: $(sessions) sessions, $s0 before"; fail=1; }
 import json, sys
 s = json.load(open(sys.argv[1]))
 assert s['interval'] == 3 and s['router']['busy'] == 1 and s['router']['cpus'] == 2 and s['router']['mem'] == 292, (s['interval'], s['router'])
@@ -710,8 +773,9 @@ if [ "$r" = "Network Tools|1" ] && [ "$(wc -l < "$t/nt.js")" -eq $(( $(wc -l < "
 else bad "Network Tools menu ($r):"; grep -n -B2 -A2 Arteria "$t/nt.js"; fi
 grep -q "arteria.sh startup & # arteria" "$R/jffs/scripts/services-start" && grep -q 'service_event "$@" & ;; esac # arteria' "$R/jffs/scripts/service-event" && ok "hooks added" || bad "hooks missing"
 se="$R/jffs/scripts/service-event"
-if [ "$(grep -c '# arteria$' "$se")" = 1 ] && grep -q '^case "\$2" in arteria\*) .*arteria\.sh service_event "\$@" & ;; esac # arteria$' "$se" && grep -q '^/some/other/script event' "$se"; then
-	ok "the service-event hook replaces 1.0.0's line, and other scripts' lines stay"
+if [ "$(grep -c '# arteria$' "$se")" = 1 ] && sed -n 2p "$se" | grep -q '^case "\$2" in arteria\*) .*arteria\.sh service_event "\$@" & ;; esac # arteria$' \
+	&& grep -q '^/some/other/script event' "$se" && sed -n 2p "$R/jffs/scripts/services-start" | grep -q 'arteria.sh startup & # arteria$'; then
+	ok "the hook lines go first (nothing before them can stop them), replacing 1.0.0's line; other scripts' lines stay"
 else bad "service-event hook:"; cat "$se"; fi
 hook() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" sh "$se" "$@" 2>/dev/null; }   # the other script's line isn't there to run
 rm -f "$R/tmp/arteria/heartbeat"; hook restart wan; sleep 1
@@ -804,8 +868,9 @@ printf '%s/jffs/addons/arteria/arteria.sh service_event "$@" & # arteria\n' "$R"
 echo pub > "$R/jffs/addons/arteria/node_key.new.pub"
 mkdir -p "$W"; echo '{}' > "$W/clist.htm"; chmod 777 "$W"; chmod 666 "$W/clist.htm"
 printf 'while :; do sleep 1; done\n' > "$t/loop.sh"
-(env PATH="$B" HOME="$R/jffs/addons/arteria" "$B/dbclient" -o BatchMode=yes -K 10 -I 30 -p 2222 -i "$R/jffs/addons/arteria/node_key" admin@192.168.50.10 'sh -s' < "$t/loop.sh" > /dev/null 2>&1 &)
-left_session() { pgrep -f "$B/dbclient .* -K 10 -I 30 .*sh -s" > /dev/null 2>&1; }
+(env PATH="$B" HOME="$R/jffs/addons/arteria" "$B/dbclient" -o BatchMode=yes -K 10 -I 30 -p 2222 -i "$R/jffs/addons/arteria/node_key" admin@192.168.50.10 "# arteria node script
+$(cat "$t/loop.sh")" < /dev/null > /dev/null 2>&1 &)
+left_session() { pgrep -f "$B/dbclient .* -K 10 -I 30 .*# arteria node script" > /dev/null 2>&1; }
 waitfor 3 left_session
 doc && rc=0 || rc=1
 if [ $rc = 1 ] && grep -q '^  \[FIX \] service-event has 2 lines of Arteria' "$t/doc.out" && grep -q '^  \[ OK \] services-start: ' "$t/doc.out" \
@@ -814,14 +879,38 @@ if [ $rc = 1 ] && grep -q '^  \[FIX \] service-event has 2 lines of Arteria' "$t
 	&& grep -q '^  \[ OK \] node 1 (RP-AX56): key login works' "$t/doc.out" && ! grep -q '192\.168\|02:CC\|Hall' "$t/doc.out"; then
 	ok "doctor: finds what going back to 1.0.0 leaves, old files, open permissions, a leftover client list and node session"
 else bad "doctor:"; cat "$t/doc.out"; fi
-doc fix || true; grep -q '^Fixed 5 problem(s)\.$' "$t/doc.out" && fixed=1 || { fixed=0; cat "$t/doc.out"; }
+# (the first run's request test started a sampler, which already tightened the permissions and removed the copy of the list)
+doc fix || true; grep -q '^Fixed 3 problem(s)\.$' "$t/doc.out" && fixed=1 || { fixed=0; cat "$t/doc.out"; }
 doc && rc=0 || rc=1
 if [ $rc = 0 ] && [ $fixed = 1 ] && grep -q 'Nothing wrong found' "$t/doc.out" && [ "$(grep -c '# arteria$' "$R/jffs/scripts/service-event")" = 1 ] \
 	&& grep -qxF "case \"\$2\" in arteria*) $R/jffs/addons/arteria/arteria.sh service_event \"\$@\" & ;; esac # arteria" "$R/jffs/scripts/service-event" \
 	&& grep -q '/some/other/script event' "$R/jffs/scripts/service-event" && [ "$(stat -c %a "$W")" = 755 ] && [ ! -e "$W/clist.htm" ] \
-	&& [ ! -e "$R/jffs/addons/arteria/node_key.new.pub" ] && ! left_session; then
-	ok "doctor fix: one hook line, today's (others' lines kept), files tidied, permissions tightened, the session stopped"
+	&& [ ! -e "$R/jffs/addons/arteria/node_key.new.pub" ] && ! left_session \
+	&& grep -q "^  \[ OK \] a request like the page's reached Arteria in [0-9]* s, and its first samples came [0-9]* s later$" "$t/doc.out"; then
+	ok "doctor fix: one hook line, today's (others' lines kept), files tidied, permissions tightened, the session stopped; the page's requests work"
 else bad "doctor fix:"; cat "$t/doc.out"; grep -n . "$R/jffs/scripts/service-event"; ls -la "$W"; fi
+# A line before Arteria's that ends service-event: the page's requests never reach it. doctor says so (after a short wait here)
+# and moves Arteria's line first; then the requests work.
+printf '#!/bin/sh\nexit 0\ncase "$2" in arteria*) %s/jffs/addons/arteria/arteria.sh service_event "$@" & ;; esac # arteria\n' "$R" > "$se"
+AR_DR_WAIT=2 doc || true
+if grep -q "^  \[FIX \] service-event: Arteria's line isn't first" "$t/doc.out" && grep -q "^  \[WARN\] a request like the page's (start_arteria) didn't reach Arteria within 2 s" "$t/doc.out"; then
+	AR_DR_WAIT=5 doc fix || true
+	if sed -n 2p "$se" | grep -q '# arteria$' && grep -q "^  \[ OK \] a request like the page's reached Arteria" "$t/doc.out"; then
+		ok "doctor: a line before Arteria's that ends service-event keeps the page's requests out; doctor fix puts Arteria's line first"
+	else bad "doctor fix, a line before Arteria's:"; cat "$t/doc.out"; cat "$se"; fi
+else bad "doctor, a line before Arteria's:"; cat "$t/doc.out"; fi
+# Windows line endings: the router can't run the file at all
+sed -i 's/$/\r/' "$se"; doc || true
+grep -q "^  \[FIX \] service-event has Windows line endings" "$t/doc.out" && { doc fix || true; ! grep -q "$(printf '\r')" "$se"; } \
+	&& ok "doctor: a hook file with Windows line endings is found, and fixed" || { bad "doctor, CRLF:"; cat "$t/doc.out"; }
+# Something left holding the sampler's lock: every sampler the page starts gives up at once, and says why
+( exec "$bb" sh -c 'flock 9; while :; do sleep 1; done' arteria-lock-holder 9>"$R/tmp/arteria/sampler.lock" ) & holder=$!
+sleep 0.5; AR_DR_WAIT=3 doc || true
+if grep -q "^  \[FIX \] something still holds the sampler's lock" "$t/doc.out" && grep -q "no samples came within 3 s" "$t/doc.out" && grep -q 'another sampler holds' "$t/doc.out"; then
+	AR_DR_WAIT=5 doc fix || true
+	kill -0 $holder 2>/dev/null && { bad "doctor fix left the lock holder running"; kill $holder; } || ok "doctor: a process left holding the sampler's lock is found, with the sampler's own error, and doctor fix ends it"
+else bad "doctor, lock held:"; cat "$t/doc.out"; kill $holder 2>/dev/null; fi
+wait $holder 2>/dev/null || true
 touch "$t/node-cut-crash"; doc || true; rm -f "$t/node-cut-crash"
 if grep -q "^  \[WARN\] node 1 (RP-AX56): something crashed on the node running Arteria's script, at: cut " "$t/doc.out" \
 	&& grep -q '^== node 1 (RP-AX56)' "$R/tmp/arteria/node-trace.txt" && ! grep -qi '192\.168\|02:CC' "$t/doc.out" "$R/tmp/arteria/node-trace.txt"; then

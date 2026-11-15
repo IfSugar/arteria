@@ -19,7 +19,7 @@ An **Arteria** tab in **Traffic Analyzer** (or the last tab of **Network Tools**
 - **Rename it right there**: the pencil after its name opens a field; the icon shows what the new name will make it while you type. The name goes into the router's own client list, so the router shows it too. See [Devices](#devices).
 - **51 kinds of device**, each with its own drawing and icon, recognised by name, by the icon you picked in the router, or by maker. AiMesh nodes and routers are drawn by model.
 - **Expanded view**: fills the window (or the screen), with a stand for about 30 devices and a third line on each label. Its map **zooms and pans** like a whiteboard: the mouse wheel or a pinch zooms around the pointer, dragging or two fingers move around, and **− / 100% / +** zoom in steps or show the whole map.
-- **AiMesh nodes, per device**: the router reads each node's own clients over SSH while the page is open. Without that, each node shows its backhaul total. **Dual WAN** counts both WANs as internet, and devices on a **Guest Network Pro** LAN port are placed on it.
+- **AiMesh nodes, per device**: the router reads each node's own clients over SSH while the page is open. Without that, each node shows its backhaul total. **Dual WAN** counts both WANs as internet, devices on a **Guest Network Pro** LAN port are placed on it, and a device on a guest network shows that network's name.
 - **Mb/s or MB/s** with one switch, and notices for a weak or offline backhaul, a node that can't be read, or a router that's too busy.
 
 <details>
@@ -28,7 +28,7 @@ An **Arteria** tab in **Traffic Analyzer** (or the last tab of **Network Tools**
 Every 2 seconds while the page is open the router writes one sample (in RAM), and the page turns the differences between samples into rates.
 
 - **Wi-Fi devices**: the driver's per-client byte counters (`wl sta_info`), which also give signal and link rate; on a node, the same counters, read on the node.
-- **Wired devices**: the router's port counters, with the LAN bridges' address tables telling which device is on which port. Devices behind one switch share that port's figure; an unmanaged switch doesn't show, and its devices appear on the router port it's plugged into.
+- **Wired devices**: the router's port counters, with the LAN bridges' address tables telling which device is on which port. Devices behind one switch share that port's figure; an unmanaged switch doesn't show, and its devices appear on the router port it's plugged into. Ports are numbered as printed on the router, from the firmware's own port map where it has one.
 - **Internet**: the WAN interface's counters (both, with Dual WAN). **Local traffic** is what your devices send each other or the router itself, which is why *Whole network* is usually higher than *Internet*.
 - **Names and details** come from the router's own client list, DHCP leases and reservations, ARP and IPv6 neighbours, and the Wi-Fi driver.
 
@@ -111,7 +111,7 @@ Nothing on a node changes except the one line in its authorized keys. To stop re
 
 ## Light on the router
 
-- **Nothing while the page is closed.** No cron jobs, no background service. While it's open: one sample every 2 seconds at the lowest CPU priority (`nice 19`), plus one SSH session per node. The page's footer shows how long the last sample took and the router's load.
+- **Nothing while the page is closed.** No cron jobs, no background service. While it's open: one sample every 2 seconds at the lowest CPU priority (`nice 19`), plus one SSH session per node. The page is live about a second after it opens. The page's footer shows how long the last sample took and the router's load.
 - **Why the heartbeat is every 45 seconds.** The page keeps sampling going by asking the router every so often, through the router's *service-event* hook, and the router writes two lines to its system log for each request. In 1.0.0 that was every 8 seconds, about 900 lines an hour; now it's every 45 seconds, about 160. The map still updates every 2 seconds: the page reads the latest sample file, which runs nothing on the router. Closing or pausing the page stops sampling at once; a hidden tab or a sleeping laptop stops it after 2 minutes.
 - **A busy router is left alone.** While it samples, Arteria watches the load and the memory available:
   - **Busy** (a load of 2 per CPU core, or under 48 MB available): it samples a third as often and opens no new node sessions.
@@ -175,7 +175,7 @@ Arteria follows amtm's conventions for third-party scripts: with no arguments in
 
 ## Issues and security
 
-Something not working? `arteria.sh doctor` looks for the known problems and says what fixes each; `doctor fix` fixes the ones it can. Found a bug, or run Arteria on another router? [Open an issue](https://github.com/IfSugar/arteria/issues/new/choose) or post in the [SNBForums thread](https://www.snbforums.com/threads/arteria-v1-0-0-2026-nov-12-a-live-animated-map-of-your-networks-traffic-aimesh-aware.98274/); the issue form asks for `check` and `debug`.
+Something not working? `arteria.sh doctor` looks for the known problems and says what fixes each; `doctor fix` fixes the ones it can. It also sends a request like the page's and says whether it reaches Arteria and samples follow, which is what a page stuck on *Connecting…* needs to know. Found a bug, or run Arteria on another router? [Open an issue](https://github.com/IfSugar/arteria/issues/new/choose) or post in the [SNBForums thread](https://www.snbforums.com/threads/arteria-v1-0-0-2026-nov-12-a-live-animated-map-of-your-networks-traffic-aimesh-aware.98274/); the issue form asks for `check` and `debug`.
 
 **Security reviews.** Each release was reviewed by separate AI reviewers (Claude) that hadn't written the code, looking for bugs, regressions and security problems, and showing each finding on a stand-in router and in a browser; what they found was fixed (1.0.0: [pull request #15](https://github.com/IfSugar/arteria/pull/15); 2.0.0: [pull request #27](https://github.com/IfSugar/arteria/pull/27)). No human security expert has reviewed it yet; if you know Merlin or shell security well, a review is very welcome. Please report security problems privately: see the [security policy](.github/SECURITY.md).
 
