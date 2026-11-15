@@ -155,6 +155,39 @@ lan_ports() {
 	done
 }
 
+# The Wi-Fi network each interface serves, by name, and whether it is a radio's own interface (its main network): the page
+# names a device's network only when it isn't a main one (a guest network, or one of Guest Network Pro's on 3006). A network
+# reached through wl0.1 and the like isn't necessarily a guest one: some setups put a main network there.
+nets_json() {   # ["ifname","network name",1 for a radio's own interface] for every Wi-Fi interface the router serves
+	c=0
+	for u in 0 1 2 3; do
+		f=$(nvram get wl${u}_ifname); [ -n "$f" ] || continue
+		for x in $f $(nvram get wl${u}_vifs); do
+			if [ "$x" = "$f" ]; then n=$(nvram get wl${u}_ssid); o=1; else n=$(nvram get "${x}_ssid"); o=0; fi
+			[ $c -gt 0 ] && printf ','; c=1
+			printf '["%s","%s",%s]' "$x" "$(js "$n")" "$o"
+		done
+	done
+}
+
+# The firmware's own map of its ports ('rc port_status', on firmware that has it): each LAN port's number as printed on the
+# router, its interface and its link. lan_ifnames lists the ports in the router's order on most models, but not on all:
+# the RT-AX88U's LAN 1-4 are eth4-eth1, and its LAN 5-8 all sit behind eth5, a link to a second switch chip that is always up.
+port_table() {   # lines "ifname number up Mb/s" for the LAN ports; nothing on firmware without the map
+	have rc || return 0
+	rc port_status 2>&1 | awk '/phy_port_id=/ { l = ""; i = ""; s = ""; r = ""
+		n = split($0, f, ","); for (k = 1; k <= n; k++) { e = f[k]; gsub(/^ +| +$/, "", e); p = index(e, "="); if (!p) continue
+			key = substr(e, 1, p - 1); v = substr(e, p + 1)
+			if (key == "label_name") l = v; else if (key == "ifname") i = v; else if (key == "state") s = v; else if (key == "link_rate") r = v }
+		if (l ~ /^L[0-9]+$/ && i ~ /^[A-Za-z0-9._-]+$/) print i, substr(l, 2), (s == "up" ? 1 : 0), (r ~ /^[0-9]+$/ ? r : 0) }'
+}
+# {"ifname":"numbers"}: "1" for one port, "5-8" for an interface several ports share
+port_labels_json() {
+	printf '%s\n' "$PTAB" | awk -v want=" $PORTS " 'NF == 4 && index(want, " " $1 " ") {
+		if (!($1 in lo) || $2 + 0 < lo[$1]) lo[$1] = $2 + 0; if (!($1 in hi) || $2 + 0 > hi[$1]) hi[$1] = $2 + 0 }
+		END { for (i in lo) printf "%s\"%s\":\"%s\"", (c++ ? "," : ""), i, (lo[i] == hi[i] ? lo[i] : lo[i] "-" hi[i]) }'
+}
+
 wan_if() { w=$(nvram get wan0_gw_ifname); [ -n "$w" ] || w=$(nvram get wan0_ifname); printf '%s' "$w"; }
 # Dual WAN (Load Balance or Failover): the second WAN's interface, when one is set up (wans_dualwan "wan usb", "wan lan"...).
 wan2_if() {
@@ -170,11 +203,15 @@ own_macs() {
 	cat "$SYSNET"/*/address 2>/dev/null | tr a-f A-F | grep -v '^00:00:00:00:00:00$' | sort -u
 }
 
-# AiMesh nodes, one per line: "MAC IP MODEL". From the router's own AiMesh list; never the router itself.
+# AiMesh nodes, one per line: "MAC IP MODEL". From the router's own AiMesh list; never the router itself, and never an address
+# outside the router's LAN (an old entry, such as a node's address from before it joined, 192.168.50.x by default: nothing
+# answers there, so it only showed as a node that's down).
 node_list() {
-	me=$(nvram get lan_ipaddr)
-	nvram get cfg_device_list | tr '<' '\n' | awk -F'>' -v me="$me" '
-		NF >= 3 && $2 != me && $2 ~ /^[0-9.]+$/ && $3 ~ /^[0-9A-Fa-f:]+$/ { m = $1; gsub(/[^ -~]/, "", m); print toupper($3), $2, m }'   # the model as printable text only: it reaches the terminal
+	me=$(nvram get lan_ipaddr); nm=$(nvram get lan_netmask)
+	nvram get cfg_device_list | tr '<' '\n' | awk -F'>' -v me="$me" -v nm="${nm:-255.255.255.0}" '
+		function net(a,   x, y, i, b, s) { split(a, x, "."); split(nm, y, "."); s = ""; for (i = 1; i <= 4; i++) { b = 256 - y[i]; s = s "." (x[i] - x[i] % b) } return s }
+		NF >= 3 && $2 != me && $2 ~ /^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$/ && (me == "" || net($2) == net(me)) && $3 ~ /^[0-9A-Fa-f:]+$/ {
+			m = $1; gsub(/[^ -~]/, "", m); print toupper($3), $2, m }'   # the model as printable text only: it reaches the terminal
 }
 # How many nodes have joined AiMesh (cfg_relist), whether or not they're in the list above right now: saving
 # almost any setting empties that list for several minutes while the nodes stay online. Only for messages.
@@ -288,27 +325,61 @@ sta_json() {
 # The script each node runs while the page is open: every INTERVAL seconds it prints a block of its
 # clients' counters ("#B uptime", "S ..." lines, "#E"). It stops by itself after 30 minutes, or as soon
 # as the router hangs up. It reads counters only; nothing on the node is changed.
-write_node_script() {   # [rounds]   default: 30 minutes' worth (the page's session); 'nodes test' runs one
-	printf 'I=%s\nN=%s\n' "$INTERVAL" "${1:-$((1800 / INTERVAL))}"
+# The script the page runs on each node, sent as the SSH command itself: the node's login shell runs it, as it would run it
+# typed in a terminal there. (Sent to "sh -s" instead, it crashed on some stock-firmware nodes, whose sh also refuses -x.)
+# It reads the node's own Wi-Fi interfaces, never its uplink: on a node with a Wi-Fi backhaul, the radio's own interface is a
+# client of the router (sta_phy_ifnames, or a client mode), and the node's devices are on wl0.1-style interfaces.
+# Each round also reports the uplink's own byte counters ("U ifname rx tx"), read in the same round as its devices': the page
+# shows the node's part of Flow from those, so the node's backhaul and its devices always add up, even while a download that
+# just started is reaching the router's figures a round before the node's (a node with a wired backhaul sends none).
+# With "trace" it runs one round and says on stderr what it runs before each command ("+ wl -i ... assoclist"), so a command
+# that crashes on the node is named (nodes test, doctor), without needing the node's sh to support -x.
+NODE_MARK="# arteria node script"
+NODE_PROC="${AR_NODE_PROC:-/proc}"   # AR_NODE_PROC: test hook only (a stand-in node's /proc)
+write_node_script() {   # [rounds] [trace]   rounds default: 30 minutes' worth (the page's session); 'nodes test' runs one
+	printf '%s\nI=%s\nN=%s\nT=%s\nP=%s\n' "$NODE_MARK" "$INTERVAL" "${1:-$((1800 / INTERVAL))}" "${2:+1}" "$NODE_PROC"
+	printf "A='%s'\n" "$STA_AWK"
 	cat <<'EOF'
+t() { [ -z "$T" ] || echo "+ $*" >&2; }
+[ -z "$T" ] || { t busybox; v=$(busybox 2>&1 | head -n 1); t "shell: $0, /bin/sh is $(readlink /bin/sh 2>/dev/null), ${v%% multi-call*}"; }
+t nvram get sta_phy_ifnames sta_ifnames
+S=" $(nvram get sta_phy_ifnames) $(nvram get sta_ifnames) "
+U="$S"
 L=""
 for u in 0 1 2 3; do
+	t nvram get wl${u}_ifname
 	f=$(nvram get wl${u}_ifname); [ -n "$f" ] || continue
+	t nvram get wl${u}_nband wl${u}_mode wl${u}_vifs
 	b=$(nvram get wl${u}_nband)
 	case "$b" in 2) b=2.4 ;; 1) b=5 ;; 4) b=6 ;; *) b=0 ;; esac
-	for x in $f $(nvram get wl${u}_vifs); do L="$L $x:$b"; done
+	case "$(nvram get wl${u}_mode)" in sta|wet|psta|psr) U="$U$f "; f="" ;; esac
+	for x in $f $(nvram get wl${u}_vifs); do
+		case "$S" in *" $x "*) continue ;; esac
+		L="$L $x:$b"
+	done
 done
-n=0
-while [ $n -lt $N ]; do
-	echo "#B $(cut -d' ' -f1 /proc/uptime)"
+t "reads:$L, uplink:$U"
+r() {
 	for p in $L; do
 		x=${p%%:*}; b=${p#*:}
-		for m in $(wl -i "$x" assoclist 2>/dev/null | cut -d' ' -f2); do
-			echo "@ $x $b $m"; wl -i "$x" sta_info "$m" 2>/dev/null
+		t wl -i $x assoclist
+		a=$(wl -i "$x" assoclist 2>/dev/null)
+		t cut -d' ' -f2
+		for m in $(echo "$a" | cut -d' ' -f2); do
+			echo "@ $x $b $m"
+			t wl -i $x sta_info
+			wl -i "$x" sta_info "$m" 2>/dev/null
 		done
-EOF
-	printf "\tdone | awk '%s'\n" "$STA_AWK"
-	cat <<'EOF'
+	done
+}
+n=0
+while [ $n -lt $N ]; do
+	t cut -d' ' -f1 /proc/uptime
+	echo "#B $(cut -d' ' -f1 /proc/uptime)"
+	t awk $P/net/dev
+	awk -v w="$U" 'NR > 2 { sub(/^[ \t]+/, ""); i = index($0, ":"); if (!i) next; n = substr($0, 1, i - 1); split(substr($0, i + 1), f, " ")
+		if (index(w, " " n " ")) print "U", n, f[1], f[9] }' $P/net/dev
+	if [ -n "$T" ]; then o=/tmp/arteria-trace.$$; r > "$o"; t awk; awk "$A" < "$o"; rm -f "$o"; else r | awk "$A"; fi
 	echo "#E"
 	n=$((n + 1)); [ $n -lt $N ] && sleep $I
 done
@@ -326,8 +397,8 @@ node_start() {   # mac ip
 	# ulimit -f: a session that writes more than about 1 MB between two trims is ended (nodes_tick trims at 128 KB),
 	# so a node that floods its output can't fill the router's RAM; it is reconnected like any dropped session.
 	import_pin "$2"
-	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -K 10 -I 30 -p "$PORT" $KEYARGS "$SSHUSER@$2" 'sh -s') \
-		< "$TMPD/node.sh" >> "$f.out" 2>> "$f.err" 8>&- &
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $BATCH -K 10 -I 30 -p "$PORT" $KEYARGS "$SSHUSER@$2" "$(cat "$TMPD/node.sh")") \
+		< /dev/null >> "$f.out" 2>> "$f.err" 8>&- &
 	echo $! > "$f.pid"
 }
 node_stop_all() {
@@ -405,10 +476,11 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 # Only rows between a "#B" and its "#E" count: the file can be emptied in the middle of a block. At most 512 rows a
 # block (a node serves far fewer clients): a hostile node can't make every sample cost seconds of CPU.
 NODE_AWK="$ROWS_AWK"'
-/^#B / { cur = ""; cc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
+/^#B / { cur = ""; cc = 0; cu = ""; uc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
 open && cc < 512 && /^S / && $2 ~ /^[A-Za-z0-9.]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9A-Fa-f:]+$/ { cur = cur (cc++ ? "," : "") row(); next }
-/^#E/ { if (open) { last = cur; lup = cup; done = 1 } open = 0; next }
-END { if (done) printf "\"up\":\"%s\",\"c\":[%s]", lup, last; else printf "\"up\":null,\"c\":[]" }'
+open && uc < 8 && /^U / && NF == 4 && $2 ~ /^[A-Za-z0-9._-]+$/ && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ { cu = cu (uc++ ? "," : "") "[\"" $2 "\",\"" $3 "\",\"" $4 "\"]"; next }
+/^#E/ { if (open) { last = cur; lu = cu; lup = cup; done = 1 } open = 0; next }
+END { if (done) printf "\"up\":\"%s\",\"c\":[%s],\"u\":[%s]", lup, last, lu; else printf "\"up\":null,\"c\":[],\"u\":[]" }'
 
 nodes_json() {
 	c=0
@@ -418,17 +490,22 @@ nodes_json() {
 		[ $c -gt 0 ] && printf ','; c=1
 		printf '{"mac":"%s","ip":"%s","model":"%s","alias":"%s","sta":"%s","state":"%s",' \
 			"$mac" "$ip" "$(js "$model")" "$(js "$(node_alias "$mac")")" "$(node_stas "$mac")" "$(node_state "$f")"
-		if [ -s "$f.out" ] || [ -s "$f.last" ]; then cat "$f.last" "$f.out" 2>/dev/null | awk "$NODE_AWK"; else printf '"up":null,"c":[]'; fi
+		if [ -s "$f.out" ] || [ -s "$f.last" ]; then cat "$f.last" "$f.out" 2>/dev/null | awk "$NODE_AWK"; else printf '"up":null,"c":[],"u":[]'; fi
 		printf '}'
 	done
 }
 
 # ---- one sample ---------------------------------------------------------------------
-links_json() {   # [port, carrier, Mb/s] for the WAN and every wired port
+links_json() {   # [port, carrier, Mb/s] for the WAN and every wired port; [port, up, Mb/s, "numbers up"] for one ports share
+	[ -n "$SHARED" ] && PTAB=$(port_table)
 	c=0; printf '['
 	for p in $WAN_IF $WAN2_IF $PORTS; do
 		[ $c -gt 0 ] && printf ','; c=1
-		printf '["%s",%s,%s]' "$p" "$(jnum "$(cat "$SYSNET/$p/carrier" 2>/dev/null)")" "$(jnum "$(cat "$SYSNET/$p/speed" 2>/dev/null)")"
+		case " $SHARED " in
+			*" $p "*) printf '%s\n' "$PTAB" | awk -v p="$p" '$1 == p && $3 == 1 { u = u (u == "" ? "" : ",") $2; if ($4 + 0 > s) s = $4 + 0 }
+				END { printf "[\"%s\",%d,%d,\"%s\"]", p, (u != ""), (u != "" ? s : -1), u }' ;;
+			*) printf '["%s",%s,%s]' "$p" "$(jnum "$(cat "$SYSNET/$p/carrier" 2>/dev/null)")" "$(jnum "$(cat "$SYSNET/$p/speed" 2>/dev/null)")" ;;
+		esac
 	done
 	printf ']'
 }
@@ -467,12 +544,16 @@ sample_init() {
 	NODE_LIST=""
 	[ "$NODES" = on ] && NODE_LIST=$(node_list)
 	PORTS_JSON=$(printf '%s' "$PORTS" | awk '{ for (i = 1; i <= NF; i++) printf "%s\"%s\"", (i > 1 ? "," : ""), $i }')
+	NETS_JSON=$(nets_json)
+	PTAB=$(port_table); PLAB_JSON=$(port_labels_json)
+	# interfaces several ports share (the RT-AX88U's eth5): their own link says nothing about the ports, so those come from the map
+	SHARED=$(printf '%s\n' "$PTAB" | awk -v want=" $PORTS " 'NF == 4 && index(want, " " $1 " ") { n[$1]++ } END { for (i in n) if (n[i] > 1) printf "%s ", i }')
 }
 
 sample_json() {   # seq ms -> one sample as JSON on stdout
 	printf '{"v":1,"seq":%s,"up":"%s","epoch":%s,"ms":%s,' "$1" "$(cut -d' ' -f1 "$PROC/uptime")" "$(now)" "$2"
 	printf '"router":{"model":"%s","fw":"%s","load":"%s","cpus":%s,"mem":%s,"busy":%s},' "$(js "$MODEL")" "$(js "$FW")" "$(cut -d' ' -f1 "$PROC/loadavg")" "${CPUS:-2}" "$(jnum "${MEMMB:--}")" "${HEALTH:-0}"
-	printf '"interval":%s,"nodes_mode":"%s","wan":"%s","wan2":"%s","ports":[%s],"own":[%s],' "${EFF:-$INTERVAL}" "$NODES" "$WAN_IF" "$WAN2_IF" "$PORTS_JSON" "$OWN"
+	printf '"interval":%s,"nodes_mode":"%s","wan":"%s","wan2":"%s","ports":[%s],"plab":{%s},"nets":[%s],"own":[%s],' "${EFF:-$INTERVAL}" "$NODES" "$WAN_IF" "$WAN2_IF" "$PORTS_JSON" "$PLAB_JSON" "$NETS_JSON" "$OWN"
 	printf '"links":'; cat "$TMPD/links.json" 2>/dev/null || printf '[]'
 	printf ',"macs":'; cat "$TMPD/macs.json" 2>/dev/null || printf '[]'
 	printf ',"ifs":['; ifs_json; printf ']'
@@ -556,7 +637,7 @@ sampler_running() { pid_ours "$(cat "$TMPD/sampler.pid" 2>/dev/null)" "$NAME.sh 
 sampler() {
 	tmpd; web_init
 	exec 8>"$TMPD/sampler.lock"
-	flock -n 8 || exit 0                 # another sampler is already running
+	flock -n 8 || { echo "another sampler holds $TMPD/sampler.lock" >&2; exit 0; }
 	lowprio
 	echo $$ > "$TMPD/sampler.pid"
 	trap 'node_stop_all; rm -f "$TMPD/sampler.pid"; exit 0' INT TERM
@@ -568,29 +649,40 @@ sampler() {
 	rm -f "$TMPD"/node.*.fail "$TMPD"/node.*.start "$TMPD"/node.*.last "$TMPD"/node.*.k "$TMPD"/node.*.out "$TMPD"/node.*.err
 	WD=$(web_dir); seq=0; ms=0; over=0; slow=0; paused=0; EFF=$INTERVAL
 	log "sampling started (page open)"
-	export_names
 	while hb_fresh; do
 		t0=$(uptime_cs)
 		health
 		if [ "$HEALTH" -ge 2 ]; then over=$((over + 1)); else over=0; fi
 		[ $over -ge 3 ] && { pause_sampling "$HWHY"; paused=1; break; }
+		# Work done only every few rounds (the ports, the names, the lists of nodes and radios) and starting the node
+		# sessions doesn't count toward the pace below: a round that does it would otherwise slow the next ones.
 		if [ $((seq % 5)) -eq 0 ]; then
 			links_json > "$TMPD/links.json"; macs_json > "$TMPD/macs.json"
 		fi
 		[ $((seq % 15)) -eq 14 ] && export_names
-		[ $((seq % 30)) -eq 29 ] && sample_init      # nodes and radios can change while the page is open
+		[ $((seq % 30)) -eq 29 ] && { sample_init; [ "$(wc -c < "$TMPD/sampler.err" 2>/dev/null || echo 0)" -gt 32768 ] && : > "$TMPD/sampler.err"; }   # nodes and radios can change while the page is open
 		NODE_NOSTART=""; [ "$HEALTH" -ge 1 ] && NODE_NOSTART=1
-		[ "$NODES" = on ] && nodes_tick
+		[ "$NODES" = on ] && [ $seq -eq 0 ] && nodes_tick
+		t1=$(uptime_cs)
+		[ "$NODES" = on ] && [ $seq -gt 0 ] && nodes_tick
 		sample_json "$seq" "$ms" | write_atomic "$WD/live.htm"
-		ms=$(( ($(uptime_cs) - t0) * 10 )); [ "$ms" -lt 0 ] && ms=0   # the counter wrapped during this sample
+		t2=$(uptime_cs)
+		ms=$(( (t2 - t0) * 10 )); [ "$ms" -lt 0 ] && ms=0   # the counter wrapped during this sample
 		if [ "$ms" -gt 15000 ]; then slow=$((slow + 1)); else slow=0; fi
 		[ $slow -ge 2 ] && { pause_sampling slow; paused=1; break; }
 		# Sampling takes at most about a third of the time: a router that needs longer for a sample is sampled less
 		# often (up to every 10 s), and a busy one at a third of the rate. The page polls at the interval each sample states.
-		EFF=$(( (ms * 3 + 999) / 1000 )); [ "$EFF" -lt "$INTERVAL" ] && EFF=$INTERVAL
+		core=$(( (t2 - t1) * 10 )); [ "$core" -lt 0 ] && core=0
+		EFF=$(( (core * 3 + 999) / 1000 )); [ "$EFF" -lt "$INTERVAL" ] && EFF=$INTERVAL
 		[ "$HEALTH" -ge 1 ] && [ "$EFF" -lt $((INTERVAL * 3)) ] && EFF=$((INTERVAL * 3))
 		[ "$EFF" -gt 10 ] && EFF=10
 		seq=$((seq + 1))
+		# The page shows rates from the second sample on: on a router that isn't busy that one comes after 1 s, so the page is
+		# live about a second after the router started. The names are written alongside, so they don't hold it up.
+		if [ $seq -eq 1 ]; then
+			export_names &
+			[ "$HEALTH" -eq 0 ] && { sleep 1; continue; }
+		fi
 		sleep "$EFF"
 	done
 	node_stop_all
@@ -605,7 +697,8 @@ service_event() {   # action service
 	case "$2" in
 		"$NAME")
 			tmpd; touch "$TMPD/heartbeat"
-			sampler_running || paused_recently || (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>&1 &) ;;   # paused: the page says why
+			# the sampler's own errors are kept (doctor shows them): it is started with nowhere else to say anything
+			sampler_running || paused_recently || { : > "$TMPD/sampler.err"; (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>> "$TMPD/sampler.err" &); } ;;   # paused: the page says why
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat" ;;
 		"${NAME}names"*)   # a device was renamed on the page (it saved the router's client list first): show it now, not in 30 s
@@ -745,13 +838,17 @@ unmount_webui() {
 	flock -u 9
 }
 
+# Arteria's line goes first, right after #!/bin/sh: the router runs these scripts line by line, and a line before ours that
+# ends the script (exit) or waits for something would keep the page's requests from ever reaching Arteria. Our line only
+# starts Arteria in the background, for its own events: it never holds up the lines after it.
 hook_add() {   # file line
 	f="$SCRIPTS_DIR/$1"
 	[ -s "$f" ] || printf '#!/bin/sh\n' > "$f"   # missing or empty
 	head -1 "$f" | grep -q '^#!' || sed -i '1i #!/bin/sh' "$f"
 	hook_del "$1"
-	[ -n "$(tail -c 1 "$f")" ] && echo >> "$f"   # never glue onto a last line with no newline
-	printf '%s # %s\n' "$2" "$NAME" >> "$f"
+	# the file is rewritten in place (cat >), so it keeps its owner and mode; ENVIRON, so awk reads the line as it is
+	L="$2 # $NAME" awk 'NR == 1 { print; print ENVIRON["L"]; next } { print }' "$f" > "$f.$$" && cat "$f.$$" > "$f"
+	rm -f "$f.$$"
 	chmod 755 "$f"
 }
 
@@ -856,11 +953,10 @@ scrub() { sed 's/[0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}/IP/g; s/[0-9A-Fa-f]\{2\}\(:
 # One round of the script the page runs on a node: whether it works there, how many devices it reads and how
 # long that takes. The page counts a node as answering while its output keeps up with its own pace, up to a round every
 # 30 s, so a node slower than that shows as "not answering" even though key login works.
-node_probe() {   # ip -> PROBE_MSG; 0 if a round came back
-	tmpd; ssh_home_init; s="$TMPD/probe.$$.sh"; o="$TMPD/probe.$$"; PROBE_MSG=""
-	write_node_script 1 > "$s"
+node_probe() {   # ip [trace-file] -> PROBE_MSG, PROBE_CRASH (1: something crashed there); 0 if a round came back
+	tmpd; ssh_home_init; o="$TMPD/probe.$$"; PROBE_MSG=""; PROBE_CRASH=0; TRACE_AT=""
 	t0=$(now)
-	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" 'sh -s') < "$s" > "$o" 2>&1 &
+	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1)") < /dev/null > "$o" 2>&1 &
 	wait_pid $! 30; late=$?
 	t=$(( $(now) - t0 )); [ $t -ge 1 ] || t=1
 	if grep -q '^#E' "$o" 2>/dev/null; then
@@ -872,25 +968,26 @@ node_probe() {   # ip -> PROBE_MSG; 0 if a round came back
 		e=$(grep -v -e '^#B' -e '^S ' -e '^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
 		PROBE_MSG="reading its devices failed${e:+: $e}"; rc=1
 	fi
-	crashed=0; grep -Eq "$CRASH_RE" "$o" 2>/dev/null && crashed=1
-	rm -f "$s" "$o"
+	grep -Eq "$CRASH_RE" "$o" 2>/dev/null && PROBE_CRASH=1
+	rm -f "$o"
 	# Something on the node crashed (its firmware's awk or wl, say): the same round again, traced, says what
-	if [ $crashed = 1 ]; then
-		node_trace "$1" "$TMPD/node-trace.txt"
-		PROBE_MSG="$PROBE_MSG; something on the node crashed${TRACE_AT:+ running: $TRACE_AT} (what it ran is in $TMPD/node-trace.txt, without addresses)"
+	if [ $PROBE_CRASH = 1 ]; then
+		tf=${2:-$TMPD/node-trace.txt}
+		node_trace "$1" "$tf"
+		PROBE_MSG="$PROBE_MSG; something on the node crashed${TRACE_AT:+ running: $TRACE_AT} (what it ran is in $tf, without addresses)"
 	fi
 	return $rc
 }
-# One round of the node's script, traced (sh -x), with every command's errors shown (the page's own run hides wl's): a
-# command that crashes on the node is named. The trace goes to a file for a bug report, without addresses or user names.
+# One round of the node's script, traced (each command named before it runs), with every command's errors shown (the page's
+# own run hides wl's): a command that crashes on the node is named. The trace goes to a file for a bug report, without
+# addresses or user names.
 CRASH_RE='Segmentation fault|Illegal instruction|Bus error'
 node_trace() {   # ip file -> 0 if something crashed on the node; TRACE_AT: the command it was running
-	tmpd; s="$TMPD/trace.$$.sh"; o="$TMPD/trace.$$"; TRACE_AT=""
-	write_node_script 1 | sed 's| 2>/dev/null||g' > "$s"
-	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" 'sh -x -s') < "$s" > "$o" 2>&1 &
+	tmpd; o="$TMPD/trace.$$"; TRACE_AT=""
+	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1 trace | sed 's| 2>/dev/null||g')") < /dev/null > "$o" 2>&1 &
 	wait_pid $! 30
 	tr -cd '\012\040-\176' < "$o" | scrub | cut -c1-200 | head -n 400 > "$2"
-	rm -f "$s" "$o"
+	rm -f "$o"
 	grep -Eq "$CRASH_RE" "$2" || return 1
 	TRACE_AT=$(awk -v re="$CRASH_RE" '$0 ~ re { print c; exit } /^\+ / { c = substr($0, 3, 80) }' "$2")
 	return 0
@@ -1416,14 +1513,19 @@ dr_warn() { say "  [WARN] $*"; DR_W=$((DR_W + 1)); }
 dr_fix()  { if [ "$DR_FX" = 1 ]; then say "  [DONE] $*: fixed"; DR_D=$((DR_D + 1)); else say "  [FIX ] $*"; DR_F=$((DR_F + 1)); fi; }
 dr_hook() {   # file line what
 	f="$SCRIPTS_DIR/$1"
+	if grep -q "$(printf '\r')" "$f" 2>/dev/null; then   # saved by a Windows editor: "#!/bin/sh\r" isn't a shell, so the router can't run it
+		[ "$DR_FX" = 1 ] && sed -i 's/\r$//' "$f"
+		dr_fix "$1 has Windows line endings, so the router can't run it (none of the lines in it run)"
+	fi
 	cur=$(grep -cxF "$2 # $NAME" "$f" 2>/dev/null); cur=${cur:-0}
 	all=$(grep -c "# $NAME\$" "$f" 2>/dev/null); all=${all:-0}
-	if [ "$cur" = 1 ] && [ "$all" = 1 ] && [ -x "$f" ]; then dr_ok "$1: Arteria's line, once ($3)"
+	if [ "$cur" = 1 ] && [ "$all" = 1 ] && [ -x "$f" ] && [ "$(sed -n 2p "$f")" = "$2 # $NAME" ]; then dr_ok "$1: Arteria's line, once, first ($3)"
 	else
 		if [ "$all" = 0 ]; then w="$1 has no line of Arteria's, so $3 doesn't happen"
 		elif [ "$cur" = 0 ]; then w="$1 has an older line of Arteria's (an older version's, or one left by going back to 1.0.0)"
 		elif [ ! -x "$f" ]; then w="$1 isn't executable, so the router doesn't run it"
-		else w="$1 has $all lines of Arteria's: an older one too (going back to 1.0.0 leaves today's line next to its own)"
+		elif [ "$all" != 1 ]; then w="$1 has $all lines of Arteria's: an older one too (going back to 1.0.0 leaves today's line next to its own)"
+		else w="$1: Arteria's line isn't first, so a line before it can keep it from running (one that ends the script, or waits)"
 		fi
 		[ "$DR_FX" = 1 ] && hook_add "$1" "$2"
 		dr_fix "$w"
@@ -1432,6 +1534,89 @@ dr_hook() {   # file line what
 	[ "$o" -gt 0 ] && dr_info "$1: $o more line(s) mention $NAME but aren't Arteria's own (yours?), left alone"
 	return 0
 }
+# The router's system log, oldest first: /tmp/syslog.log and the one before it, or scribe's (syslog-ng's) when it keeps its own.
+log_files() {
+	for f in "$ROOT/tmp/syslog.log-1" "$ROOT/tmp/syslog.log"; do [ -s "$f" ] && printf '%s\n' "$f"; done
+	f="$ROOT/opt/var/log/messages"; [ -s "$f" ] && [ ! -L "$f" ] && printf '%s\n' "$f"
+	return 0
+}
+# The log's lines about the page's requests: Arteria's own, the router running service-event for them, and the router's
+# service handler waiting for, or dropping, a request because it was still busy with another. Addresses taken out.
+log_requests() {   # [lines]
+	for f in $(log_files); do cat "$f"; done 2>/dev/null | grep -E "$NAME|skip the event|waitting|waiting \"" | tail -n "${1:-12}" | scrub | tr -cd '\012\040-\176' | cut -c1-160
+}
+# Lines of service-event other than Arteria's that run a program and wait for it. The router runs service-event for every
+# service request, one request at a time, and waits for it (up to 2 minutes): the page's requests wait behind these lines.
+hook_waiters() {
+	sed 's/\r$//' "$SCRIPTS_DIR/service-event" 2>/dev/null | awk -v me="# $NAME" 'NR == 1 && /^#!/ { next } /^[ \t]*(#|$)/ { next }
+		substr($0, length($0) - length(me) + 1) == me { next }
+		/\// && $0 !~ /&[ \t]*($|;|#|fi([ \t]|$)|esac)/ { print substr($0, 1, 100) }'
+}
+# What the page does when it opens, end to end: a service request (start_arteria), the router's service-event hook, the
+# sampler starting, and its first samples. Then it stops sampling again, as the page does when it closes.
+dr_wait() {   # seconds test-command...  -> 0 once the test passes
+	dw_n=$1; shift
+	if have usleep; then dw_n=$((dw_n * 5)); dw_s="usleep 200000"; else dw_s="sleep 1"; fi
+	while [ "$dw_n" -gt 0 ]; do "$@" && return 0; $dw_s; dw_n=$((dw_n - 1)); done
+	"$@"
+}
+dr_hb_since() { h=$(date -r "$TMPD/heartbeat" +%s 2>/dev/null) && [ "$h" -ge "$DR_T0" ]; }
+dr_sampled() { f="$(web_dir)/live.htm"; m=$(date -r "$f" +%s 2>/dev/null) && [ "$m" -ge "$DR_T0" ] && grep -q '"seq":[1-9]\|"paused":' "$f"; }
+dr_stopped() { ! sampler_running; }
+dr_request() {
+	if sampler_running; then dr_ok "a page is open and sampling runs: its requests reach Arteria"; return 0; fi
+	if paused_recently; then dr_info "Arteria paused itself in the last 2 minutes ('$SCRIPT status' says why): run doctor again after that to test the page's requests"; return 0; fi
+	if ! have service; then dr_info "this firmware has no 'service' command, so the page's requests can't be tested from here"; return 0; fi
+	dwq=${AR_DR_WAIT:-20}; dws=${AR_DR_WAIT:-15}   # AR_DR_WAIT: test hook only
+	sleep 1; DR_T0=$(now)
+	service start_arteria > /dev/null 2>&1
+	if ! dr_wait "$dwq" dr_hb_since; then
+		dr_warn "a request like the page's (start_arteria) didn't reach Arteria within $dwq s: the page would show 'Connecting…'"
+		e=$(log_requests 40 | grep -E "skip the event|waitting|waiting \"" | tail -n 3)
+		[ -n "$e" ] && { dr_info "the router's service handler was busy with another request:"; printf '%s\n' "$e" | sed 's/^/           /'; }
+	else
+		t1=$(( $(now) - DR_T0 ))
+		if dr_wait "$dws" dr_sampled; then
+			if grep -q '"paused":' "$(web_dir)/live.htm"; then dr_info "a request like the page's reached Arteria in $t1 s, and it paused itself: '$SCRIPT status' says why"
+			else dr_ok "a request like the page's reached Arteria in $t1 s, and its first samples came $(( $(now) - DR_T0 - t1 )) s later"; fi
+		else
+			dr_warn "a request like the page's reached Arteria in $t1 s, but no samples came within $dws s"
+			e=$(grep . "$TMPD/sampler.err" 2>/dev/null | tail -n 3 | scrub | tr -cd '\012\040-\176' | cut -c1-140)
+			[ -n "$e" ] && { dr_info "the sampler's last errors:"; printf '%s\n' "$e" | sed 's/^/           /'; }
+		fi
+		[ "$t1" -gt 5 ] && dr_info "requests take $t1 s to reach Arteria: the router handles one at a time, so each waits for the one before it"
+	fi
+	service start_arteriastop > /dev/null 2>&1
+	dr_wait 10 dr_stopped
+	w=$(hook_waiters)
+	if [ -n "$w" ]; then
+		dr_info "service-event runs these line(s) for every service request, the page's too, and the router waits for them:"
+		printf '%s\n' "$w" | head -n 5 | scrub | sed 's/^/           /'
+	fi
+	return 0
+}
+# A lock left held: something still has the sampler's lock open (a process left from a sampler that was killed), so every
+# sampler the page starts gives up at once.
+dr_lock() {
+	l="$TMPD/sampler.lock"
+	sampler_running && return 0
+	[ -f "$l" ] || return 0
+	( flock -n 9 ) 9< "$l" 2>/dev/null && return 0
+	hp=""; hc=""
+	for q in /proc/[0-9]*; do
+		for d in "$q"/fd/*; do
+			[ "$(readlink "$d" 2>/dev/null)" = "$l" ] || continue
+			hp="$hp ${q#/proc/}"; hc="$hc; $(tr '\000' ' ' < "$q/cmdline" 2>/dev/null | cut -c1-60)"; break
+		done
+	done
+	if [ "$DR_FX" = 1 ]; then
+		for q in $hp; do case "$(tr '\000' ' ' < "/proc/$q/cmdline" 2>/dev/null)" in *"$NAME"*|*dbclient*) kill "$q" 2>/dev/null ;; esac; done
+		dr_wait 3 dr_lock_free
+	fi
+	dr_fix "something still holds the sampler's lock, so the page can't start sampling${hc:+ (${hc#; })}"
+}
+dr_lock_free() { ( flock -n 9 ) 9< "$TMPD/sampler.lock" 2>/dev/null; }
+
 doctor() {   # [fix]
 	tmpd; DR_FX=0; [ "$1" = fix ] && DR_FX=1; DR_F=0; DR_W=0; DR_D=0
 	say "$TITLE $VERSION: looking for known problems$( [ "$DR_FX" = 1 ] && printf ', and fixing what can be fixed here')"
@@ -1465,14 +1650,18 @@ doctor() {   # [fix]
 	if sampler_running; then dr_info "running (a page is open)"
 	else
 		n=0; ps=""
-		for q in /proc/[0-9]*; do   # a page's node session (its own -K 10 -I 30 ... sh -s) with no page open
+		for q in /proc/[0-9]*; do   # a page's node session (its own -K 10 -I 30 ... and the node script) with no page open
 			c=$(tr '\000' ' ' < "$q/cmdline" 2>/dev/null)
-			case "$c" in *dbclient*" -K 10 -I 30 "*" sh -s ") n=$((n + 1)); ps="$ps ${q#/proc/}" ;; esac
+			case "$c" in *dbclient*" -K 10 -I 30 "*"$NODE_MARK"*|*dbclient*" -K 10 -I 30 "*" sh -s ") n=$((n + 1)); ps="$ps ${q#/proc/}" ;; esac
 		done
 		if [ $n -gt 0 ]; then [ "$DR_FX" = 1 ] && kill $ps 2>/dev/null; dr_fix "$n node session(s) still running with no page open"
 		else dr_ok "not running, nothing left running (it runs only while the page is open)"; fi
 	fi
 	paused_recently && dr_info "paused in the last 2 minutes: the router was busy ('$SCRIPT status' says why)"
+	dr_lock
+	say ""
+	say "The page's requests"
+	if [ -f "$SCRIPT" ]; then dr_request; else dr_info "not tested: Arteria isn't installed"; fi
 	say ""
 	say "AiMesh nodes"
 	list=$(node_list)
@@ -1480,6 +1669,7 @@ doctor() {   # [fix]
 	elif [ -z "$list" ]; then dr_info "none found"
 	elif [ -z "$(node_keys)" ]; then dr_warn "no key to read them with: run '$SCRIPT nodekey'"
 	else
+		# the same check as 'nodes test': one round of the page's own node script; traced when something crashes there
 		i=0; : > "$TMPD/node-trace.txt"
 		printf '%s\n' "$list" > "$TMPD/doctor.nodes"
 		while read -r mac ip model; do
@@ -1487,10 +1677,15 @@ doctor() {   # [fix]
 			import_pin "$ip"; node_try "$ip"; rc=$?
 			if [ $rc -eq 2 ]; then dr_info "$nm: can't be tested from here ($TRY_ERR)"; continue; fi
 			if [ $rc -ne 0 ]; then dr_warn "$nm: key login doesn't work${TRY_ERR:+ ($(printf '%s' "$TRY_ERR" | scrub))}: run '$SCRIPT nodes test'"; continue; fi
-			if node_trace "$ip" "$TMPD/trace.n"; then
+			rm -f "$TMPD/trace.n"
+			node_probe "$ip" "$TMPD/trace.n"; rc=$?
+			if [ "$PROBE_CRASH" = 1 ]; then
 				dr_warn "$nm: something crashed on the node running Arteria's script${TRACE_AT:+, at: $TRACE_AT}"
-				{ echo "== $nm"; cat "$TMPD/trace.n"; } >> "$TMPD/node-trace.txt"
-			else dr_ok "$nm: key login works, and Arteria's script runs there without crashing"; fi
+			elif [ $rc -eq 0 ]; then
+				case "$PROBE_MSG" in *too\ slow*) dr_warn "$nm: key login works, and Arteria's script $PROBE_MSG" ;;
+					*) dr_ok "$nm: key login works, and Arteria's script $PROBE_MSG" ;; esac
+			else dr_warn "$nm: key login works, but Arteria's script failed there: ${PROBE_MSG#reading its devices failed: }"; fi
+			[ -s "$TMPD/trace.n" ] && { echo "== $nm"; cat "$TMPD/trace.n"; } >> "$TMPD/node-trace.txt"
 			rm -f "$TMPD/trace.n"
 		done < "$TMPD/doctor.nodes"
 		rm -f "$TMPD/doctor.nodes"
@@ -1513,13 +1708,24 @@ debug() {
 	CPUS=$(cpu_count); health
 	say "Health:      load $LOAD on $CPUS cores, $MEMMB MB available (level $HEALTH)$( [ -f "$PAUSED" ] && read -r pt pw pl < "$PAUSED" && printf ', last pause: %s, %s s ago' "$pw" "$(( $(now) - pt ))")"
 	say "WAN:         $(wan_if) ($(nvram get wan0_proto))$(w2=$(wan2_if); [ -n "$w2" ] && printf ', second WAN: %s (%s, %s)' "$w2" "$(nvram get wan1_proto)" "$(nvram get wans_mode)")"
-	for p in $(radio_list); do
-		x=${p%%:*}
-		say "Wi-Fi:       $x band ${p#*:} GHz, up=$(wl -i "$x" isup 2>/dev/null), clients=$(wl -i "$x" assoclist 2>/dev/null | wc -l | tr -d ' ')"
+	# each Wi-Fi interface: its radio's band setting and the band of the channel it is on, its mode, its bridge, whether its
+	# network is a main one (by name, never shown), its clients. A network name only as "main" or "other".
+	mains=" "; for u in 0 1 2 3; do [ -n "$(nvram get wl${u}_ifname)" ] && mains="$mains$(nvram get wl${u}_ssid | tr -d ' ')|"; done
+	for u in 0 1 2 3; do
+		f=$(nvram get wl${u}_ifname); [ -n "$f" ] || continue
+		case "$(nvram get wl${u}_nband)" in 2) b=2.4 ;; 1) b=5 ;; 4) b=6 ;; *) b=? ;; esac
+		for x in $f $(nvram get wl${u}_vifs); do
+			if [ "$x" = "$f" ]; then n="main"; md=$(nvram get wl${u}_mode); else n=$(nvram get "${x}_ssid" | tr -d ' '); case "$mains" in *"|$n|"*|*" $n|"*) n="main" ;; *) n="other" ;; esac; md=$(nvram get "${x}_mode"); fi
+			cs=$(wl -i "$x" chanspec 2>/dev/null | cut -d' ' -f1)
+			br=$(readlink "$SYSNET/$x/master" 2>/dev/null); br=${br##*/}
+			say "Wi-Fi:       $x radio $u ($b GHz), channel ${cs:-?}, mode ${md:-ap}, bridge ${br:-none}, $n network, up=$(wl -i "$x" isup 2>/dev/null), clients=$(wl -i "$x" assoclist 2>/dev/null | wc -l | tr -d ' ')"
+		done
 	done
 	for p in $(lan_ports); do
 		say "Port:        $p carrier=$(cat "$SYSNET/$p/carrier" 2>/dev/null) speed=$(cat "$SYSNET/$p/speed" 2>/dev/null)"
 	done
+	pt=$(port_table | awk '{ printf "%sLAN %s %s %s %s", (c++ ? ", " : ""), $2, $1, ($3 ? "up" : "down"), $4 }')
+	say "Port map:    ${pt:-none from the firmware}   (lan_ifnames: $(nvram get lan_ifnames))"
 	say "WDS links:   $(grep -c '^ *wds' "$PROC/net/dev")"
 	nl=$(node_list)
 	say "Nodes:       $(printf '%s\n' "$nl" | grep -c .) $(printf '%s\n' "$nl" | awk '{ printf "%s%s", (c++ ? "," : ""), $3 }')   ssh port: $(ssh_port)   sshd_enable: $(nvram get sshd_enable)"
@@ -1529,11 +1735,19 @@ debug() {
 		f=$(node_file "$mac"); x=""
 		if sampler_running; then
 			st=$(node_state "$f")
-			[ -f "$f.out" ] && x=", a round every $(node_period "$f") s, last output $(( $(now) - $(date -r "$f.out" +%s) )) s ago, $(cat "$f.last" "$f.out" 2>/dev/null | awk "$NODE_AWK" | grep -o '\["[A-Za-z0-9.]*","[0-9.]*","[0-9A-F:]*"' | wc -l | tr -d ' ') station(s)"
+			[ -f "$f.out" ] && x=", a round every $(node_period "$f") s, last output $(( $(now) - $(date -r "$f.out" +%s) )) s ago, $(cat "$f.last" "$f.out" 2>/dev/null | awk "$NODE_AWK" | grep -o '\["[A-Za-z0-9.]*","[0-9.]*","[0-9A-F:]\{17\}"' | wc -l | tr -d ' ') station(s)"
 		else st="(page closed)"; fi
 		say "  $model: backhaul stations=$(node_stas "$mac" | wc -w | tr -d ' ') state=$st$x"
 		e=$(tail -c 2048 "$f.err" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
 		[ -n "$e" ] && say "    last SSH message: $e"
+		# its Wi-Fi backhaul as the router sees it: band, signal, the rates of the last packets each way, idle time
+		for m in $(node_stas "$mac"); do
+			for p in $(radio_list); do
+				x=${p%%:*}
+				wl -i "$x" assoclist 2>/dev/null | grep -qi "$m" || continue
+				{ echo "@ $x ${p#*:} $m"; wl -i "$x" sta_info "$m" 2>/dev/null; } | awk "$STA_AWK" | awk '{ printf "    backhaul: %s GHz on %s, %s dBm, last packets %d/%d Mb/s, idle %s s, %s %s streams %s MHz\n", $3, $2, $7, $8 / 1000, $9 / 1000, $11, $12, $13, $14 }'
+			done
+		done
 	done
 	[ -n "$nl" ] && say "  (for each node's devices and round time, run: $SCRIPT nodes test)"
 	# the first client's sta_info field names (the values are counters only)
@@ -1557,6 +1771,15 @@ debug() {
 	say "Private MACs:   $(for p in $(radio_list); do wl -i "${p%%:*}" assoclist 2>/dev/null; done | awk '$2 ~ /^.[26AEae]/ { n++ } END { print n + 0, "of", NR }')"
 	live="$(web_dir)/live.htm"
 	[ -f "$live" ] && say "Last sample: $(sed -n 's/.*"ms":\([0-9]*\).*/\1/p' "$live" | head -1) ms, $(( $(now) - $(date -r "$live" +%s) )) s ago"
+	# what the router's AiMesh client list has for each node (its sections' names only): a node's wired devices, if it lists them
+	ours_file "$ROOT/tmp/clientlist.json" && say "Client list: $(tr -d '\n' < "$ROOT/tmp/clientlist.json" | grep -o '"[A-Za-z0-9_]\{1,16\}":{' | tr -d '":{' | grep -v '^[0-9A-Fa-f]*$' | sort | uniq -c | awk '{ printf "%s%sx%s", (c++ ? " " : ""), $2, $1 }')"
+	# the page's requests: service-event lines that wait, the sampler's last errors, and the system log's lines about them
+	say "Hook:        line $(grep -n "# $NAME\$" "$SCRIPTS_DIR/service-event" 2>/dev/null | cut -d: -f1 | tr '\n' ' ')of service-event, $(hook_waiters | grep -c .) other line(s) there wait for their program"
+	e=$(grep . "$TMPD/sampler.err" 2>/dev/null | tail -n 3 | scrub | tr -cd '\012\040-\176' | cut -c1-140)
+	[ -n "$e" ] && { say "Sampler errors:"; printf '%s\n' "$e" | sed 's/^/  /'; }
+	l=$(log_requests 12)
+	[ -n "$l" ] && { say "System log (the page's requests):"; printf '%s\n' "$l" | sed 's/^/  /'; }
+	return 0
 }
 
 # ---- amtm and the menu ----------------------------------------------------------

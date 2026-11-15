@@ -2,6 +2,52 @@
 
 What changed in each release of Arteria. The release workflow copies a version's section into its GitHub release notes, so write for people running the addon.
 
+## Unreleased
+
+Fixes for what the SNBForums thread reported after 2.0.0, a page that follows ROG and TUF routers' colours, and four devices drawn anew.
+
+### Fixes
+
+- **The page is live about a second after it opens.** 2.0.0 spaced samples by how long each took, so the first sample, which does the most work (reading the ports, starting the node sessions), held the second one back by 3 to 6 seconds, and the page waited on *Connecting…* for it. The second sample now comes a second after the first, the names are written alongside instead of before it, and the page checks for samples every second until it is live.
+- **AiMesh nodes where reading crashed ("Segmentation fault")** — reported on GT6, XD6, RT-AX56U, RT-AX58U, RT-AX86S and RT-BE9700 nodes:
+  - Arteria no longer reads a node's uplink. On a node with a Wi-Fi backhaul, the radio's own interface is a client of the router, and the node's devices are on `wl0.1`-style interfaces; Arteria read the uplink as if devices were on it.
+  - The node's login shell now runs Arteria's script, as it would run it typed in a terminal there, instead of `sh -s`.
+  - The trace `nodes test` and `doctor` save when something crashes no longer needs `sh -x`, which those nodes' shells refuse (that is why `node-trace.txt` held only "invalid option -- 'x'"). It names the command that crashed and the node's shell.
+  - `doctor` checks a node the way `nodes test` does. It said a node was fine when the script had never run there.
+- **A node's part of Flow adds up.** The bar of a node on a Wi-Fi backhaul could be taller than the ribbons to its devices, for a few seconds after traffic changed. The router counts the backhaul every sample, but the node counts its devices once a round, and those figures reach the page a round later. In the expanded view the minimum width of each quiet device's ribbon hid the gap. The node now also counts its own uplink in the same round, and its part of Flow and the map use that figure. A node on a wired backhaul keeps the router's.
+- **No phantom node.** An old entry in AiMesh's own list with an address outside the router's LAN (often 192.168.50.x, ASUS's default) showed as a node that's down. Such entries are ignored.
+- **Ports are numbered as printed on the router.** Arteria takes the numbers from the firmware's own port map, where it has one. On the RT-AX88U, LAN 1 to 4 showed in reverse, and LAN 5 to 8, which sit behind one link to a second switch chip, showed as a device on LAN 5 even with nothing plugged in, at that link's speed. They now show as the port that's in use (*LAN 7*), at its own speed, and nothing shows when none of them is.
+- **"Weak backhaul" only when it is.** The verdict is now based on the backhaul link that carries the node's traffic. While the node is quiet, it's based on its fastest link that isn't 2.4 GHz. The speed of an idle link's last packets is no longer counted: they are control frames, sent slowly on purpose. A 6 GHz link is allowed a weaker signal (-78 dBm), as it reads lower for the same quality.
+- **Network names instead of "guest".** A device on a guest network, or on another of Guest Network Pro's networks, shows that network's name. Devices on a main network show none, even when the router serves it on a `wl0.1`-style interface: Arteria used to call every such device a guest.
+- **The page's requests reach Arteria first.** The router runs the lines in `/jffs/scripts/service-event` in order, so a line before Arteria's that ended the script, or waited, kept the page's requests out: the page said *Connecting…* for ever. Arteria's lines in `service-event` and `services-start` now come first, right after `#!/bin/sh`. They only start Arteria in the background, for its own events, so they never hold up the lines after them. Installing or updating moves them.
+
+### Doctor and debug
+
+- **`doctor` tests what the page does when it opens.** It sends the same request as the page, `start_arteria`, and says whether it reached Arteria and how long it took, and whether samples followed. It then stops sampling again. When something goes wrong it shows:
+  - the router's system log lines about requests it delayed or dropped while busy with another one;
+  - the sampler's own errors, which used to go nowhere;
+  - the other lines in `service-event` that wait for their program on every request.
+- **`doctor` also finds and fixes** a hook file saved with Windows line endings, which the router can't run at all, Arteria's line not being first, and a process left holding the sampler's lock (every sampler the page starts would give up at once).
+- **`debug` shows more, still without names or addresses:**
+  - each Wi-Fi interface's band setting and channel, mode and bridge, and whether its network is a main one;
+  - the firmware's port map;
+  - each node's backhaul links (band, signal, the speed of the last packets each way);
+  - which sections the router's AiMesh client list has;
+  - the sampler's last errors;
+  - the system log's lines about the page's requests.
+
+### The page
+
+- **Colours that follow the router's theme.** On ROG and TUF routers, whose pages are black with red or amber, Arteria's controls, highlights and room turn black with red or amber too. The traffic's colours stay as they are everywhere.
+- **Less motion.** When the device asks for less motion (Windows' animation effects off, macOS's *Reduce motion*, Android's *Remove animations*), the packets stand still. That used to happen without a word; now the map's legend says so, with an **Animate** button, which the browser remembers.
+- **Four devices drawn anew:**
+  - the VR headset: a curved glass visor with a soft band;
+  - the car: a smooth electric saloon with a glass roof;
+  - the washing machine and dryer: round porthole doors;
+  - the smart plug: a round plug in a wall socket.
+
+  Their icons match.
+
 ## 2.0.0
 
 Arteria's second release: rename devices right from the map, zoom into the expanded map, 24 more kinds of device, and a router that's left alone when it's struggling. Thanks to everyone in the SNBForums thread for the reports that shaped it.
