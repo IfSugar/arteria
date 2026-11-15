@@ -50,6 +50,7 @@ Fixes for what the SNBForums thread reported after 2.0.0: AiMesh nodes that cras
 
 ### The page
 
+- **Labels stay off other devices on a crowded map.** With many devices, in the expanded view especially, the last labels to be placed found every spot near their device taken, and one could end up over another device's drawing or over the zoom buttons. Once all labels are placed, a label still covering a device now moves to a free spot further out, with a longer line.
 - **More AiMesh nodes than the map has room for.** The map has a zone for two nodes, three in the expanded view. With more, the first ones in the list got the zones, and the others weren't drawn at all, without a word. Now the busiest nodes get the zones, and keep them unless a node without one gets much busier. The tray names the nodes without a zone (*+1 node*), and its list says their devices are in it. Flow shows every node, as before.
 - **Colours that follow the router's theme.** On ROG and TUF routers, whose pages are black with red or amber, Arteria's controls, highlights and room turn black with red or amber too. The traffic's colours stay as they are everywhere.
 - **Less motion.** When the device asks for less motion (Windows' animation effects off, macOS's *Reduce motion*, Android's *Remove animations*), the packets stand still. That used to happen without a word; now the map's legend says so, with an **Animate** button, which the browser remembers.

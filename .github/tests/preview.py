@@ -3,7 +3,7 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones).
+Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, nodecrowd, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones).
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -52,6 +52,20 @@ if SCN == 'bulbs':   # the real-world mix: a desktop PC, a Mac desktop, an AC un
     for i in range(18):
         dev('02:CC:00:00:03:%02X' % i, '', 'router' if i % 3 else 'node', '2.4', 0.002 + (i % 6) * 0.004, 0.001 + (i % 4) * 0.002, -52 - i,
             nick=False, host='wiz_%06x' % (0xa1b2c3 + i * 7919), vendor='WiZ Connected Lighting Company Limited' if i % 2 else '', ntype=60 if i % 5 == 0 else 0, vc='udhcp 1.24.2')
+if SCN == 'nodecrowd':   # 20 clients, half of them behind the node, several TVs and appliances: a crowded expanded map
+    DEVICES[:] = [d for d in DEVICES if d[2] == 'wired']
+    for i, (nm, where, band, d, u, rssi) in enumerate([
+            ('Work MacBook', 'router', '5', 0.007, 0.006, -55), ('Echo Studio', 'router', '5', 0.002, 0.001, -50),
+            ('Studio Mac', 'router', '5', 0.006, 0.002, -49), ('ems-esp-boiler', 'router', '2.4', 0.001, 0.0, -60),
+            ('Desktop PC', 'router', '5', 0.002, 0.001, -75), ('Philips Air', 'router', '2.4', 0.001, 0.0, -28),
+            ('Apple Watch Ultra', 'router', '5', 0.001, 0.0, -64), ('Lounge TV', 'router', '5', 0.001, 0.0, -43),
+            ('Roborock S5 Max', 'router', '2.4', 0.001, 0.0, -56),
+            ('Bedroom TV', 'node', '5', 0.003, 0.002, -64), ('tado-bridge-x', 'node', '2.4', 0.002, 0.0, -43),
+            ('', 'node', '2.4', 0.002, 0.0, -58), ('Bedroom Fire TV', 'node', '5', 0.005, 0.008, -62),
+            ('iPhone', 'node', '5', 0.002, 0.0, -57), ('Govee smart led strip', 'node', '2.4', 0.002, 0.0, -54),
+            ('Guest iPhone 13 Pro Max', 'node', '5', 0.002, 0.0, -70), ('BOSCH-WAV28K40GB-AB12CD3456', 'node', '2.4', 0.001, 0.0, -60),
+            ('Lounge AC', 'node', '2.4', 0.002, 0.0, -53), ('Kids TV', 'node', '5', 0.002, 0.0, -59)]):
+        dev('02:CC:00:00:04:%02X' % i, nm, where, band, d, u, rssi, nick=bool(nm), **({} if nm else {'vendor': 'Signify B.V.'}))
 if SCN == 'crowd':   # a real-world crowd: 28 clients, many quiet and unnamed, half of them on the node
     for i, (nm, where, band, host, vendor) in enumerate([
             ('Work MacBook', 'router', '5', '', ''), ('', 'router', '2.4', '', ''), ('LGwebOSTV', 'router', '5', 'LGwebOSTV', ''),

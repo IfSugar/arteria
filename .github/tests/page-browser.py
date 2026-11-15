@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4']
+SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd']
 fails = []
 
 
@@ -53,6 +53,18 @@ LABEL_OVERLAPS = '''() => {
 }'''
 
 
+# labels that cover another device's drawing
+LABEL_COVERS = '''() => {
+    const objs = [...document.querySelectorAll('#ar g[data-obj]')].map(g => [g.getAttribute('data-obj'), g.getBoundingClientRect()]);
+    let n = 0;
+    document.querySelectorAll('#ar .ar-lb').forEach(b => {
+        const r = b.firstElementChild.getBoundingClientRect(), id = b.getAttribute('data-id');
+        objs.forEach(([oid, o]) => { if (oid !== id && o.width && r.left < o.right - 2 && o.left + 2 < r.right && r.top < o.bottom - 2 && o.top + 2 < r.bottom) n++; });
+    });
+    return n;
+}'''
+
+
 async def ready(pg):   # two samples in: rates, stands and the tray are known
     await pg.wait_for_function("window.Arteria && Arteria.state.gotAny && Arteria.state.net", timeout=20000)
     await pg.wait_for_timeout(300)
@@ -69,7 +81,7 @@ async def scenario(b, scn, port):
         await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
         await ready(pg)
         small = await pg.evaluate(STAGE)
-        tag = scn.ljust(8)
+        tag = scn.ljust(10)
         if scn == 'mesh4':   # four nodes and two zones: the busiest two get them, and the tray and its list name the other two
             await pg.wait_for_timeout(2200)   # a few samples in: the busiest nodes are known
             lb = await pg.evaluate("(document.querySelector('#arMapLabels .ar-lb[data-id=\"more\"]') || {}).innerText || ''")
@@ -99,6 +111,12 @@ async def scenario(b, scn, port):
         await pg.evaluate("Arteria.pick(null)")
         await pg.click('#arBig'); await pg.wait_for_timeout(400)
         lbov_big = await pg.evaluate(LABEL_OVERLAPS)
+        cover_big = await pg.evaluate(LABEL_COVERS)
+        if scn == 'nodecrowd':   # a crowded floor in a smaller window, where labels have the least room
+            await pg.set_viewport_size({'width': 1456, 'height': 832}); await pg.wait_for_timeout(900)
+            lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS)
+            await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
+        check(cover_big == 0, tag + 'expanded view: labels don\'t cover other devices (%d)' % cover_big)
         if scn == 'crowd':   # a smaller window, where a crowd of labels has the least room
             await pg.set_viewport_size({'width': 1280, 'height': 720}); await pg.wait_for_timeout(700)
             lbov_big += await pg.evaluate(LABEL_OVERLAPS)
@@ -141,15 +159,7 @@ async def scenario(b, scn, port):
             return Math.max(Math.abs(x1 - x0), Math.abs(x2 - x0));
         }''')
         # a device's label doesn't cover another device's drawing (on a crowded floor, one may have to)
-        cover = await pg.evaluate('''() => {
-            const objs = [...document.querySelectorAll('#ar g[data-obj]')].map(g => [g.getAttribute('data-obj'), g.getBoundingClientRect()]);
-            let n = 0;
-            document.querySelectorAll('#ar .ar-lb').forEach(b => {
-                const r = b.firstElementChild.getBoundingClientRect(), id = b.getAttribute('data-id');
-                objs.forEach(([oid, o]) => { if (oid !== id && o.width && r.left < o.right - 2 && o.left + 2 < r.right && r.top < o.bottom - 2 && o.top + 2 < r.bottom) n++; });
-            });
-            return n;
-        }''')
+        cover = await pg.evaluate(LABEL_COVERS)
         # labels never sit on one another
         lbov = await pg.evaluate(LABEL_OVERLAPS)
         # a label's rates (2.1M, 47k, 1.25G) fit inside it
@@ -179,7 +189,7 @@ async def scenario(b, scn, port):
         check(out == 0, tag + 'Tab stays inside the expanded view')
         check(after == small, tag + 'closing the expanded view puts the stage back as it was')
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
-        check(cover <= (1 if scn in ('bulbs', 'busy', 'hostile', 'newer') else 0), tag + 'labels don\'t cover other devices (%d)' % cover)
+        check(cover == 0, tag + 'labels don\'t cover other devices (%d)' % cover)
         check(not spill, tag + 'every label\'s rates fit inside it' + ('' if not spill else ' (%s)' % ', '.join(spill[:4])))
         check(still is not None and still < 0.5, tag + 'the totals keep their place as the numbers change (%s px)' % still)
         check(lbov == 0 and lbov_big == 0, tag + 'labels don\'t sit on one another (%d in the page\'s view, %d expanded)' % (lbov, lbov_big))
