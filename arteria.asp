@@ -162,6 +162,7 @@
 #ar .ar-x { width: 44px; height: 44px; margin: -14px -8px -14px 0; border: 0; background: transparent; color: var(--ink-2); font-size: 18px; line-height: 1; border-radius: 8px; }
 #ar .ar-x:hover { color: #fff; }
 #ar .ar-more-list button { height: 40px; }
+#ar .ar-more-note { padding: 6px 8px 2px; color: var(--muted); font-size: 11.5px; line-height: 15px; }
 #ar .ar-more-list { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--scroll) transparent; }
 #ar .ar-more-list::-webkit-scrollbar { width: 6px; } #ar .ar-more-list::-webkit-scrollbar-thumb { background: var(--scroll); border-radius: 3px; }
 #ar .ar-empty { padding: 8px; color: var(--muted); font-size: 11.5px; }
@@ -2125,8 +2126,8 @@ function objTray(cx, cy) {
 	return o;
 }
 
-/* Where things go. The router sits in the middle; up to two AiMesh nodes get a zone of their own,
-   each with stands for its busiest clients; the router's busiest Wi-Fi and wired clients get stands
+/* Where things go. The router sits in the middle; up to two AiMesh nodes (three in the expanded view) get a zone of their
+   own, each with stands for its busiest clients (with more nodes, the busiest get the zones: pickNodes); the router's busiest Wi-Fi and wired clients get stands
    around it; everything else goes on the "+N more" tray. Stands are sticky, so devices don't jump. */
 var NODE_SLOTS = [
 	{ cx: 11.55, cy: 0.95, zone: [10.4, 0, 18, 6.4], text: [10.7, 6.05], dev: [{ cx: 16.98, cy: 1.9, face: 'R' }, { cx: 16.4, cy: 4.45 }, { cx: 13.9, cy: 4.75 }] },
@@ -2236,10 +2237,35 @@ function pickStands(list, n, prevKey) {   /* the n busiest, keeping devices that
 	}
 	return keep;
 }
+/* More nodes than the map has zones: the busiest get one, and the others are named on the tray, where their devices wait. A
+   node keeps its zone, in the same place, unless one without a zone is 3x busier (and over 1 Mb/s): at most one swap every
+   20 s, so nodes don't trade places. Picked again once the first rates are known (before them every node looks idle). */
+function pickNodes(nodes, n) {
+	if (nodes.length <= n) { A.nodeZones = null; return nodes.slice(); }
+	var nb = function (x) { return x.online ? busy(x.bh) : -1; };
+	var z = (A.nodeZones || []).slice(0, n).map(function (mac) { return nodes.filter(function (x) { return x.mac === mac; })[0] || null; });
+	while (z.length < n) z.push(null);
+	var rest = nodes.filter(function (x) { return z.indexOf(x) < 0; }).sort(function (a, b) { return nb(b) - nb(a); });
+	for (var i = 0; i < n; i++) if (!z[i]) z[i] = rest.shift();
+	if (rest.length && Date.now() - (A.nodeSwapAt || 0) > 20000) {
+		var w = 0;
+		for (i = 1; i < n; i++) if (nb(z[i]) < nb(z[w])) w = i;
+		if (nb(rest[0]) > 3 * Math.max(nb(z[w]), 0) + 1) { z[w] = rest[0]; A.nodeSwapAt = Date.now(); }
+	}
+	A.nodeZones = A.gotAny ? z.map(function (x) { return x.mac; }) : null;
+	return z;
+}
+function trayName(devs, nodes) {
+	var p = [];
+	if (devs.length) p.push('+' + devs.length + ' more');
+	if (nodes.length) p.push('+' + nodes.length + (nodes.length > 1 ? ' nodes' : ' node'));
+	return p.join(' · ');
+}
 function mapLayout(net) {
-	var L = { nodes: [], devs: [], tray: [], wired: [] };
-	var shownNodes = net.nodes.slice(0, G.nodeSlots.length);
+	var L = { nodes: [], devs: [], tray: [], wired: [], hidden: [] };
+	var shownNodes = pickNodes(net.nodes, G.nodeSlots.length);
 	shownNodes.forEach(function (n, i) { L.nodes.push({ node: n, slot: G.nodeSlots[i] }); });
+	L.hidden = net.nodes.filter(function (n) { return shownNodes.indexOf(n) < 0; });
 	var visible = net.devs.filter(function (dv) { return dv.st !== 'off'; });
 	var nodeB = shownNodes.length > 1;
 	/* wired */
@@ -2275,7 +2301,7 @@ function mapLayout(net) {
 	return L;
 }
 function mapSignature(L) {
-	return JSON.stringify([G.key, L.nodes.map(function (x) { return [x.node.mac, formOf(x.node.model, 'tower').form]; }), L.wired.concat(L.devs).map(function (x) { return [x.dev.id, x.group, x.slot.cx, x.dev.kind]; }), L.tray.length > 0]);
+	return JSON.stringify([G.key, L.nodes.map(function (x) { return [x.node.mac, formOf(x.node.model, 'tower').form]; }), L.wired.concat(L.devs).map(function (x) { return [x.dev.id, x.group, x.slot.cx, x.dev.kind]; }), L.tray.length > 0, L.hidden.map(function (n) { return n.mac; })]);
 }
 
 /* lanes: one direction of one link, a soft halo plus a bright capsule riding the same dash pattern */
@@ -2366,7 +2392,7 @@ function buildMap(net, L) {
 		objs.push(objDevice(x.dev.id, x.dev.kind, x.slot.cx, x.slot.cy, 'L'));
 		links.push(tube(x.dev.id, x.slot.route));
 	});
-	if (L.tray.length) {
+	if (L.tray.length || L.hidden.length) {
 		var tr = objTray(G.tray.cx, G.tray.cy);
 		objs.push(tr);
 		arcs.push(arc('more', HR, tr.target, 0.2, false));
@@ -2462,7 +2488,7 @@ function placeLabels(net, L, objs, arcs) {
 	var items = [{ id: 'router', name: net.router.model || 'Router', o: byId.router }, { id: 'wan', name: 'Internet', o: byId.wan }];
 	L.nodes.forEach(function (x) { items.push({ id: x.node.id, name: x.node.name, o: byId[x.node.id], x3: G.big ? thirdLine(x.node) : '' }); });
 	L.wired.concat(L.devs).sort(function (a, b) { return busy(b.dev) - busy(a.dev); }).forEach(function (x) { items.push({ id: x.dev.id, name: x.dev.name, o: byId[x.dev.id], x3: G.big ? thirdLine(x.dev) : '' }); });
-	if (L.tray.length) items.push({ id: 'more', name: '+' + L.tray.length + ' more', o: byId.more });
+	if (L.tray.length || L.hidden.length) items.push({ id: 'more', name: trayName(L.tray, L.hidden), o: byId.more });
 	var ov = function (a, b) { return !(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]); };
 	var obb = objs.map(function (o) { return [o, o.bbox()]; });   /* each drawing's outline, worked out once */
 	var arcPts = [];
@@ -2533,10 +2559,10 @@ function inTray(id) { return !!(A.layout && A.layout.tray.some(function (dv) { r
 /* The devices behind the "+N more" that is open: the map's tray, or one Flow group's "+N more" row.
    open: the list shows (the group itself or one of its devices is selected). */
 function hiddenSet(net) {
-	var sel = A.sel, devs = null, key = 'more', title = '';
+	var sel = A.sel, devs = null, key = 'more', title = '', nodes = [];
 	if (A.tab === 'map') {
-		if (!A.layout || !A.layout.tray.length) return null;
-		devs = A.layout.tray; title = 'On the tray';
+		if (!A.layout || !(A.layout.tray.length || A.layout.hidden.length)) return null;
+		devs = A.layout.tray; nodes = A.layout.hidden; title = 'On the tray';
 	} else {
 		var rows = [];
 		(A.flowGs || []).forEach(function (g) { g.rows.forEach(function (r) { if (r.more) rows.push({ g: g, r: r }); }); });
@@ -2546,7 +2572,7 @@ function hiddenSet(net) {
 		else { devs = []; rows.forEach(function (x) { devs = devs.concat(x.r.more); }); title = 'Grouped'; }
 	}
 	var has = devs.some(function (dv) { return dv.id === sel; });
-	return { key: key, title: title, devs: devs, open: isMore(sel) || has, dev: has ? net.byId[sel] : null };
+	return { key: key, title: title, devs: devs, nodes: nodes, open: isMore(sel) || has, dev: has ? net.byId[sel] : null };
 }
 function selValid(net) {
 	if (A.sel && !net.byId[A.sel] && !isMore(A.sel)) A.sel = null;
@@ -3073,12 +3099,12 @@ function readoutFor(net) {
 			note = 'Both WANs together, measured on their interface counters.';
 		}
 	} else if (isMore(id) && hiddenSet(net)) {
-		var t = hiddenSet(net).devs, sd = 0, su = 0;
+		var hz = hiddenSet(net), t = hz.devs, sd = 0, su = 0;
 		t.forEach(function (dv) { sd += dv.dn; su += dv.up; });
-		d = { icon: 'more', badge: 'Grouped', name: '+' + t.length + ' more', link: t.length + ' quieter devices, grouped' };
+		d = { icon: 'more', badge: 'Grouped', name: trayName(t, hz.nodes), link: t.length + ' quieter devices, grouped' };
 		dn = sd; up = su; sdn = pct(dn, net.total.dn) + '% of all download'; sup = pct(up, net.total.up) + '% of all upload';
 		k1 = 'Busiest'; v1 = t.length ? t.slice().sort(function (a, b) { return busy(b) - busy(a); })[0].name : '—'; k2 = 'Devices'; v2 = String(t.length);
-		path = rname + ' → ' + t.length + ' devices'; note = 'Listed on the right, busiest first. Pick one to trace it.';
+		path = rname + ' → ' + t.length + ' devices'; note = 'Listed on the right, busiest first. Pick one to trace it.' + (hz.nodes.length ? ' ' + noZoneText(hz) : '');
 	} else if (id && id.indexOf('node:') === 0 && net.byId[id]) {
 		var n = net.byId[id];
 		d = { icon: FORM_ICON[formOf(n.model, 'tower').form] || 'mesh', badge: 'AiMesh node', name: n.name, link: n.online ? (n.wiredPort ? 'Wired backhaul' : bandName(n.bhBand) + ' wireless backhaul') : 'Offline' };
@@ -3307,6 +3333,9 @@ function renderMore(hs) {
 	var box = $('arMoreList'), ord = A.moreOrd;
 	A.moreKey = hs.key;
 	$('arMoreTitle').textContent = hs.title + ' · ' + hs.devs.length + ' devices';
+	var nt = $('arMoreNote'), why = noZoneText(hs);
+	nt.className = why ? 'ar-more-note' : 'ar-more-note hide';
+	if (nt.textContent !== why) nt.textContent = why;
 	var byId = {};
 	hs.devs.forEach(function (dv) { byId[dv.id] = dv; });
 	if (!ord || ord.key !== hs.key || Date.now() - ord.at > 10000) {
@@ -3336,6 +3365,18 @@ function renderMore(hs) {
 		el.setAttribute('aria-pressed', A.sel === id ? 'true' : 'false');
 	});
 	Object.keys(have).forEach(function (id) { box.removeChild(have[id]); });
+}
+/* The nodes the map has no zone for, named in the tray's list and its readout: "No room on the map for Office (3 devices).
+   Its devices are in this list, and Flow shows every node." */
+function noZoneText(hs) {
+	if (!hs.nodes || !hs.nodes.length) return '';
+	var names = hs.nodes.map(function (n) {
+		var c = hs.devs.filter(function (dv) { return dv.node === n; }).length;
+		return n.name + ' (' + c + (c === 1 ? ' device)' : ' devices)');
+	});
+	var list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
+	var any = hs.devs.some(function (dv) { return hs.nodes.indexOf(dv.node) >= 0; });
+	return 'No room on the map for ' + list + '. ' + (any ? (names.length > 1 ? 'Their' : 'Its') + ' devices are in this list, and Flow shows every node.' : 'Flow shows every node.');
 }
 /* After opening a "+N more" from the keyboard, move to its list. */
 function focusMore() {
@@ -3651,7 +3692,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, pickNodes: pickNodes, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
@@ -3759,6 +3800,7 @@ window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKin
 		</div>
 		<div class="ar-card ar-side hide" id="arMore" role="region" aria-labelledby="arMoreTitle">
 			<div class="ar-more-head"><div class="eyebrow" id="arMoreTitle"></div><button type="button" class="ar-x" id="arMoreClose" aria-label="Close this list" title="Close (Esc)">×</button></div>
+			<div class="ar-more-note hide" id="arMoreNote"></div>
 			<div class="ar-top ar-more-list" id="arMoreList"></div>
 		</div>
 		<div class="ar-card ar-side ar-report hide" id="arReport" role="region" aria-labelledby="arRepTitle">

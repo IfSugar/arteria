@@ -3,7 +3,7 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile.
+Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones).
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -169,6 +169,13 @@ def sample(seq):
         nodes.append({'mac': NODE, 'ip': '192.168.50.10', 'model': 'RP-AX56', 'alias': 'Hall', 'sta': '02:10:00:00:00:81 02:10:00:00:00:84',
                       'state': NODE_STATE if NODE_ONLINE else 'down', 'up': ('%.2f' % (35054.41 + t)) if NODE_STATE == 'ok' and NODE_ONLINE else None,
                       'c': node_c if NODE_STATE == 'ok' and NODE_ONLINE else []})
+    if SCN == 'mesh4':   # three more nodes, each with one device: Office busy, Loft a little, Garage idle
+        for k, (alias, rate) in enumerate([('Office', 30.0), ('Garage', 0.2), ('Loft', 8.0)], 1):
+            bh = '02:10:00:00:00:A%d' % k
+            sta.append(['eth7', '5', bh, counter(rate * 1.02 + 0.05, t, 300 + k, 9e9), counter(rate * 0.1, t, 310 + k, 1e9), -55, 864, 864, 25000, 0])
+            nodes.append({'mac': '02:10:00:00:00:9%d' % k, 'ip': '192.168.50.2%d' % k, 'model': ['RT-AC86U', 'ZenWiFi_XD6', 'RP-AX58'][k - 1], 'alias': alias, 'sta': bh,
+                          'state': 'ok', 'up': '%.2f' % (30000.0 + t),
+                          'c': [['wl1.1', '5', '02:CC:00:00:01:%02d' % k, counter(rate, t, 320 + k, 9e9), counter(rate * 0.1, t, 330 + k, 1e9), -58, 600, 600, 5000, 0, 'ax', 2, 80]]})
     return {'v': 1, 'seq': seq, 'up': '%.2f' % up, 'epoch': int(time.time()), 'ms': 41, 'router': {'model': 'RT-AX86U', 'fw': '3004.388.13_0', 'load': '1.39'},
             'interval': 2, 'nodes_mode': 'on', 'wan': 'eth0', 'ports': ['eth4', 'eth3', 'eth2', 'eth1', 'eth5'], 'own': OWN,
             'links': [['eth0', 1, 1000], ['eth4', 1 if any(d[3] == 'eth4' for d in DEVICES) else 0, 1000 if any(d[3] == 'eth4' for d in DEVICES) else -1], ['eth3', 0, -1], ['eth2', 0, -1], ['eth1', 0, -1], ['eth5', 1, 2500]],
