@@ -557,6 +557,21 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	// the router's count says 8 MB/s already; the node's round, 2 s on its clock, says 2 MB/s through the uplink and to the device
 	const n = nd('7702.0', '502.0', 1e6 + 16e6, 1e6 + 4e6, 1e6 + 4e6).nodes[0], dv = n.devs[0];
 	ok(n.bhOwn && Math.abs(n.bh.dn - 16) < 0.01 && Math.abs(dv.dn - 16) < 0.01, 'a node\'s backhaul from its own uplink count, in step with its devices (backhaul ' + n.bh.dn.toFixed(1) + ', device ' + (dv ? dv.dn.toFixed(1) : '-') + ' Mb/s)');
+	// a node whose own count stays at nothing (it isn't counting its real uplink) while the router counts 16 Mb/s on its
+	// backhaul: the node's count for two samples, then, from the third in a row, the router's
+	const nz = (k) => AR.buildNet(smp({ up: (7800 + 2 * k).toFixed(1), sta: [['eth7', '5', '02:10:00:00:00:C1', String(1e6 + k * 4e6), '1000', -55, 864, 864, 100, 0, 'ax', 2, 80]],
+		nodes: [{ mac: '02:10:00:00:00:C0', ip: '192.168.50.13', model: 'RP-AX56', alias: 'Attic', sta: '02:10:00:00:00:C1', state: 'ok', up: (600 + 2 * k).toFixed(1),
+			c: [['wl1.1', '5', '00:00:5E:00:53:C2', '1000', '1000', -50, 600, 600, 100, 0, 'ax', 2, 80]], u: [['eth6', '5000', '2000']] }] })).nodes[0];
+	let m = null, own = [];
+	for (let k = 0; k <= 5; k++) { m = nz(k); if (k) own.push(m.bhOwn ? 1 : 0); }
+	// the same while the node's round is slower than the page: samples without a new round don't count towards the three
+	const nz2 = (k, r) => AR.buildNet(smp({ up: (7900 + 2 * k).toFixed(1), sta: [['eth7', '5', '02:10:00:00:00:D1', String(1e6 + k * 4e6), '1000', -55, 864, 864, 100, 0, 'ax', 2, 80]],
+		nodes: [{ mac: '02:10:00:00:00:D0', ip: '192.168.50.14', model: 'RP-AX56', alias: 'Den', sta: '02:10:00:00:00:D1', state: 'ok', up: (700 + 3 * r).toFixed(1),
+			c: [['wl1.1', '5', '00:00:5E:00:53:D2', '1000', '1000', -50, 600, 600, 100, 0, 'ax', 2, 80]], u: [['eth6', '5000', '2000']] }] })).nodes[0];
+	const slow = [];
+	[0, 1, 1, 1, 2, 2].forEach((r, k) => { const q = nz2(k, r); if (k) slow.push(q.bhOwn ? 1 : 0); });
+	ok(slow.join('') === '11111', 'a node slower than the page keeps its own count until three of its rounds say otherwise (' + slow.join('') + ')');
+	ok(own.join('') === '11000' && m.bh.dn > 10, 'a node whose own uplink count stays at nothing while the router counts its backhaul falls back to the router\'s (' + own.join('') + ', ' + m.bh.dn.toFixed(1) + ' Mb/s)');
 }
 
 // ---- 21. more AiMesh nodes than the map has zones (two, three in the expanded view): the busiest get them, a node keeps its
@@ -576,6 +591,11 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	A.nodeSwapAt = Date.now() - 21000; z = T.pickNodes(ns, 3);
 	ok(kept && swapped && held && names(z) === 'Node 4,Node 2,Node 1', 'a node keeps its zone unless one without is 3x busier, takes its place, and swaps wait 20 s', names(z));
 	A.nodeZones = null; ok(names(T.pickNodes(ns.slice(0, 2), 3)) === 'Node 1,Node 2' && A.nodeZones === null, 'with no more nodes than zones, they keep their order');
+	{   /* an offline node with a zone gives way to an idle node that's online */
+		const o = [mk(5, 9), mk(6, 8), mk(7, 0)]; A.nodeZones = null; A.nodeSwapAt = 0;
+		T.pickNodes(o, 2); o[0].online = false; o[0].bh.sdn = 0; A.nodeSwapAt = 0;
+		ok(names(T.pickNodes(o, 2)) === 'Node 7,Node 6', 'an offline node gives its zone to an idle node that is online', names(T.pickNodes(o, 2)));
+	}
 	const dv = { id: 'D1', node: ns[1], name: 'TV' };
 	const hs = { nodes: [ns[1]], devs: [dv, { id: 'D2', node: null, name: 'Phone' }] };
 	ok(T.trayName(hs.devs, hs.nodes) === '+2 more · +1 node' && T.trayName([], [ns[1], ns[2]]) === '+2 nodes', 'the tray counts the nodes without a zone', T.trayName(hs.devs, hs.nodes));

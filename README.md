@@ -59,7 +59,9 @@ Reading these counters doesn't disturb Wi-Fi or change any setting.
 
 ## Install
 
-Over SSH on the router (needs Asuswrt-Merlin on a Broadcom model; no Entware or USB drive):
+**With amtm** (version 7.2 or later; if yours is older, enter **u** in amtm first): run `amtm` and choose **ar Arteria**. amtm runs the same installer as below.
+
+**Or over SSH** on the router (needs Asuswrt-Merlin on a Broadcom model; no Entware or USB drive):
 
 ```sh
 d=/tmp/arteria-install; rm -rf "$d" && mkdir -m 700 "$d" && curl -fsL --retry 3 "https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh" -o "$d/arteria.sh" && sh "$d/arteria.sh" install; rm -rf "$d"
@@ -164,7 +166,9 @@ To remove everything: `arteria.sh uninstall`. If the web UI ever looks wrong, a 
 
 ## amtm
 
-Arteria follows amtm's conventions for third-party scripts: with no arguments in a terminal the script shows its menu; `amtmupdate check` exits 0 when amtm may update it (1 when you turned that off with menu option 7 or `AMTM_UPDATE=off`), and `amtmupdate` installs the latest release, prints two lines and exits 0, or 1 if the update failed.
+Arteria is in amtm, the Asuswrt-Merlin Terminal Menu, since amtm 7.2, as **ar**: amtm installs it, **ar** then opens Arteria's menu, and amtm's update check and its automatic script updates cover it. To keep amtm from updating Arteria, turn that off with menu option 7 (or `AMTM_UPDATE=off`); `arteria.sh update` still works.
+
+For amtm's module, Arteria follows amtm's conventions for third-party scripts: with no arguments in a terminal the script shows its menu; `amtmupdate check` exits 0 when amtm may update it (1 when you turned that off with menu option 7 or `AMTM_UPDATE=off`), and `amtmupdate` installs the latest release, prints two lines and exits 0, or 1 if the update failed.
 
 | | |
 |---|---|
