@@ -15,7 +15,7 @@
 #              https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh -o "$d/arteria.sh" && sh "$d/arteria.sh" install
 ###############################################################################
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 NAME="arteria"
 # Files and folders only root can change. Scripts the router starts from service-event run with no umask, which made
 # the page's data files and their folder writable by any program on the router.
@@ -92,8 +92,11 @@ tmpd() {
 }
 
 # A file in a folder others can write (/tmp) that Arteria may read or install from: a regular file, not a
-# link, that belongs to root. Anyone on the router can create /tmp/arteria.asp or /tmp/menuTree.js first.
-ours_file() { [ -f "$1" ] && [ ! -L "$1" ] && [ -O "$1" ]; }
+# link, that belongs to root, and has one name only (a hard link to a root-only file elsewhere in /tmp, such as /tmp/etc's,
+# would pass the other tests). Anyone on the router can create /tmp/arteria.asp or /tmp/menuTree.js first.
+ours_file() { [ -f "$1" ] && [ ! -L "$1" ] && [ -O "$1" ] && [ "$(ls -ln "$1" 2>/dev/null | awk '{ print $2 }')" = 1 ]; }
+# The menu copy addons share: root's own file, and a menu (it defines menuTree), before Arteria edits or mounts it.
+ours_menu() { ours_file "$TMP_MENUTREE" && grep -q menuTree "$TMP_MENUTREE" 2>/dev/null; }
 
 # The Addons API's lock file, shared with other addons. Opened for appending (never truncated) and never
 # through a link or someone else's file: a name in /tmp could be a link planted by anyone.
@@ -165,7 +168,7 @@ nets_json() {   # ["ifname","network name",1 for a radio's own interface] for ev
 		for x in $f $(nvram get wl${u}_vifs); do
 			if [ "$x" = "$f" ]; then n=$(nvram get wl${u}_ssid); o=1; else n=$(nvram get "${x}_ssid"); o=0; fi
 			[ $c -gt 0 ] && printf ','; c=1
-			printf '["%s","%s",%s]' "$x" "$(js "$n")" "$o"
+			printf '["%s","%s",%s]' "$(js "$x")" "$(js "$n")" "$o"
 		done
 	done
 }
@@ -175,10 +178,14 @@ nets_json() {   # ["ifname","network name",1 for a radio's own interface] for ev
 # the RT-AX88U's LAN 1-4 are eth4-eth1, and its LAN 5-8 all sit behind eth5, a link to a second switch chip that is always up.
 port_table() {   # lines "ifname number up Mb/s" for the LAN ports; nothing on firmware without the map
 	have rc || return 0
-	rc port_status 2>&1 | awk '/phy_port_id=/ { l = ""; i = ""; s = ""; r = ""
+	# the router's own ports come first (a USB port's devices on lines of their own, usb_path=, after it); what follows, its
+	# AiMesh nodes' ports from a closed library, is left out: the parse stops at the end of the router's block, or at a port
+	# label it has already seen
+	rc port_status 2>&1 | awk 'go && !/phy_port_id=/ && !/^[ \t]*usb_path=/ { exit } /phy_port_id=/ { go = 1; l = ""; i = ""; s = ""; r = ""
 		n = split($0, f, ","); for (k = 1; k <= n; k++) { e = f[k]; gsub(/^ +| +$/, "", e); p = index(e, "="); if (!p) continue
 			key = substr(e, 1, p - 1); v = substr(e, p + 1)
 			if (key == "label_name") l = v; else if (key == "ifname") i = v; else if (key == "state") s = v; else if (key == "link_rate") r = v }
+		if (l ~ /^[A-Z][0-9]+$/) { if (l in seen) exit; seen[l] = 1 }
 		if (l ~ /^L[0-9]+$/ && i ~ /^[A-Za-z0-9._-]+$/) print i, substr(l, 2), (s == "up" ? 1 : 0), (r ~ /^[0-9]+$/ ? r : 0) }'
 }
 # {"ifname":"numbers"}: "1" for one port, "5-8" for an interface several ports share
@@ -346,7 +353,7 @@ write_node_script() {   # [rounds] [trace|why]   rounds default: 30 minutes' wor
 	printf '%s\nI=%s\nN=%s\nT=%s\nW=%s\nP=%s\n' "$NODE_MARK" "$INTERVAL" "${1:-$((1800 / INTERVAL))}" "$( [ "$2" = trace ] && echo 1)" "$( [ "$2" = why ] && echo 1)" "$NODE_PROC"
 	printf "A='%s'\n" "$STA_AWK"
 	cat <<'EOF'
-t() { [ -z "$T" ] || echo "+ $*" >&2; }
+if [ -n "$T" ]; then t() { echo "+ $*" >&2; }; else t() { :; }; fi   # decided once: no "[" run for each command
 [ -z "$T" ] || { t busybox; v=$(busybox 2>&1 | head -n 1); t "shell: $0, /bin/sh is $(readlink /bin/sh 2>/dev/null), ${v%% multi-call*}"; }
 t nvram get sta_phy_ifnames sta_ifnames
 S=" $(nvram get sta_phy_ifnames) $(nvram get sta_ifnames) "
@@ -407,7 +414,7 @@ while [ $n -lt $N ]; do
 	t awk $P/net/dev
 	awk -v w="$U" 'NR > 2 { sub(/^[ \t]+/, ""); i = index($0, ":"); if (!i) next; n = substr($0, 1, i - 1); split(substr($0, i + 1), f, " ")
 		if (index(w, " " n " ")) print "U", n, f[1], f[9] }' $P/net/dev
-	if [ -n "$T" ]; then o=/tmp/arteria-trace.$$; r > "$o"; t awk; awk "$A" < "$o"; rm -f "$o"; else r | awk "$A"; fi
+	if [ -n "$T" ]; then o=$(r); t awk; printf '%s\n' "$o" | awk "$A"; else r | awk "$A"; fi   # traced: the reading, then the awk
 	echo "#E"
 	n=$((n + 1)); [ $n -lt $N ] && sleep $I
 done
@@ -506,7 +513,7 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 NODE_AWK="$ROWS_AWK"'
 /^#B / { cur = ""; cc = 0; cu = ""; uc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
 open && cc < 512 && /^S / && $2 ~ /^[A-Za-z0-9.]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9A-Fa-f:]+$/ { cur = cur (cc++ ? "," : "") row(); next }
-open && uc < 8 && /^U / && NF == 4 && $2 ~ /^[A-Za-z0-9._-]+$/ && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ { cu = cu (uc++ ? "," : "") "[\"" $2 "\",\"" $3 "\",\"" $4 "\"]"; next }
+open && uc < 8 && /^U / && NF == 4 && $2 ~ /^[A-Za-z0-9._-]+$/ && length($2) <= 16 && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && length($3) <= 20 && length($4) <= 20 { cu = cu (uc++ ? "," : "") "[\"" $2 "\",\"" $3 "\",\"" $4 "\"]"; next }
 /^#E/ { if (open) { last = cur; lu = cu; lup = cup; done = 1 } open = 0; next }
 END { if (done) printf "\"up\":\"%s\",\"c\":[%s],\"u\":[%s]", lup, last, lu; else printf "\"up\":null,\"c\":[],\"u\":[]" }'
 
@@ -708,7 +715,7 @@ sampler() {
 		# The page shows rates from the second sample on: on a router that isn't busy that one comes after 1 s, so the page is
 		# live about a second after the router started. The names are written alongside, so they don't hold it up.
 		if [ $seq -eq 1 ]; then
-			export_names &
+			( export_names ) 8>&- &   # without the sampler's lock (a hung child must not keep it); ash keeps fd 8 for "f 8>&-"
 			[ "$HEALTH" -eq 0 ] && { sleep 1; continue; }
 		fi
 		sleep "$EFF"
@@ -784,21 +791,23 @@ menu_insert() {   # file line
 	fi
 }
 
-# Puts the edited menu ($1, in our folder) in place of /tmp/menuTree.js and removes $1. Renamed into place; but while
-# the menu is mounted more than once, one mount over another (see menu_remount), /tmp/menuTree.js can't be renamed
-# over ("Device or resource busy"), so the menu is written into it instead. Fails (menu unchanged) when neither works.
+# Puts the edited menu ($1, in our folder) in place of /tmp/menuTree.js and removes $1, renamed into place (all at once:
+# never a half-written menu). While the menu is mounted more than once, one mount over another (see menu_remount),
+# /tmp/menuTree.js can't be renamed over ("Device or resource busy"): then the mounts come off first, and the caller
+# mounts it again (menu_remount). Fails, the menu unchanged, when even that doesn't work.
 menu_put() {
-	mv -f "$1" "$TMP_MENUTREE" 2>/dev/null || cat "$1" > "$TMP_MENUTREE" 2>/dev/null
-	[ ! -f "$1" ] || cmp -s "$1" "$TMP_MENUTREE"
+	mv -f "$1" "$TMP_MENUTREE" 2>/dev/null || { menu_unmount; mv -f "$1" "$TMP_MENUTREE" 2>/dev/null; }
 	set -- $? "$1"; rm -f "$2"; return $1
 }
 
 # Every addon mounts the shared copy over the firmware's menu. One that mounts it without unmounting first (or two at
 # once) leaves it mounted twice, one over the other: the page still shows the menu, but /tmp/menuTree.js can then no
 # longer be renamed over, so no addon's menu change sticks. So every mount is removed (all of the same shared copy)
-# and it's mounted once.
+# and it's mounted once; only root's own menu file is mounted.
+menu_unmount() { mr=0; while [ $mr -lt 8 ] && umount "$MENUTREE" 2>/dev/null; do mr=$((mr + 1)); done; }
 menu_remount() {
-	mr=0; while [ $mr -lt 8 ] && umount "$MENUTREE" 2>/dev/null; do mr=$((mr + 1)); done
+	ours_menu || return 1
+	menu_unmount
 	mount -o bind "$TMP_MENUTREE" "$MENUTREE"
 }
 menu_mounts() { awk -v m="$MENUTREE" '$2 == m { n++ } END { print n + 0 }' "$PROC/mounts" 2>/dev/null || echo 0; }
@@ -847,7 +856,7 @@ mount_webui() {
 	# The copy other addons share. Only root's own file is trusted (anyone can create /tmp/menuTree.js first, and
 	# its content becomes the menu every router page runs); otherwise start from the firmware's, renamed into place
 	# so a planted link is replaced, never written through.
-	if ! ours_file "$TMP_MENUTREE"; then
+	if ! ours_menu; then
 		cp -f "$MENUTREE" "$TMPD/menuTree.base" && mv -f "$TMPD/menuTree.base" "$TMP_MENUTREE" || { flock -u 9; return 1; }
 	fi
 	rm -f "$TMPD"/menuTree.[0-9]*   # left by an older version when /tmp/menuTree.js couldn't be replaced (see below)
@@ -874,10 +883,13 @@ mount_webui() {
 }
 
 unmount_webui() {
-	page=$(cat "$ADDON_DIR/webui_page" 2>/dev/null)
+	tmpd; page=$(cat "$ADDON_DIR/webui_page" 2>/dev/null)
 	webui_lock || return 1
-	if ours_file "$TMP_MENUTREE"; then
-		sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$TMPD/menuTree.$$" && menu_put "$TMPD/menuTree.$$"
+	if ours_menu; then   # the edited copy replaces the menu only if it came out whole: its lines, less ours, and its last line
+		new="$TMPD/menuTree.$$"; n0=$(wc -l < "$TMP_MENUTREE"); k=$(grep -c "tabName: \"$TITLE\"" "$TMP_MENUTREE")
+		if sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$new" 2>/dev/null && [ "$(wc -l < "$new")" -eq $((n0 - k)) ] \
+			&& [ "$(tail -n 1 "$new")" = "$(tail -n 1 "$TMP_MENUTREE")" ]; then menu_put "$new"
+		else rm -f "$new"; log "menu entry not removed: the edited copy didn't come out whole (/tmp full?)"; fi
 		menu_remount
 	fi
 	[ -n "$page" ] && is_ours "$page" && rm -f "$WWW_USER/$page" "$WWW_USER/${page%.asp}.title"
@@ -890,18 +902,35 @@ unmount_webui() {
 hook_add() {   # file line
 	f="$SCRIPTS_DIR/$1"
 	[ -s "$f" ] || printf '#!/bin/sh\n' > "$f"   # missing or empty
-	head -1 "$f" | grep -q '^#!' || sed -i '1i #!/bin/sh' "$f"
-	hook_del "$1"
-	# the file is rewritten in place (cat >), so it keeps its owner and mode; ENVIRON, so awk reads the line as it is
-	L="$2 # $NAME" awk 'NR == 1 { print; print ENVIRON["L"]; next } { print }' "$f" > "$f.$$" && cat "$f.$$" > "$f"
-	rm -f "$f.$$"
+	hook_put "$f" "$2 # $NAME"
 	chmod 755 "$f"
 }
-
 hook_del() {   # only lines this addon wrote: they run our script and end with our tag (older versions' lines start with it)
 	f="$SCRIPTS_DIR/$1"
-	[ -f "$f" ] && sed -i "\\|^$SCRIPT .*# $NAME\$|d; \\|^case \"\$2\" in $NAME\*) $SCRIPT .*# $NAME\$|d" "$f"
+	[ -f "$f" ] && hook_put "$f"
 	return 0
+}
+# A hook file without Arteria's lines, and with the line given (if any) right after #!/bin/sh (added if missing); Windows line
+# endings dropped (the router can't run a file that has them). The new file is made in full and checked (its line count)
+# before it's written over the old one in place (cat >, so it keeps its owner and mode); a copy of the old one is kept until
+# the written file matches, and put back if it doesn't: a full JFFS never leaves it cut short, other addons' lines lost.
+# ENVIRON, so awk reads the lines as they are.
+HOOK_AWK='function ours(l) { t = "# " ENVIRON["N"]; return substr(l, length(l) - length(t) + 1) == t && (index(l, ENVIRON["S"] " ") == 1 || index(l, "case \"$2\" in " ENVIRON["N"] "*) " ENVIRON["S"] " ") == 1) }
+	{ sub(/\r$/, "") }
+	NR == 1 { if (ENVIRON["L"] != "") { if ($0 ~ /^#!/) { print; n++; $0 = "" } else { print "#!/bin/sh"; n++ } print ENVIRON["L"]; n++; if ($0 == "") next }
+		else if ($0 !~ /^#!/) { print "#!/bin/sh"; n++ } }
+	ours($0) { next }
+	{ print; n++ }
+	END { if (ENVIRON["C"] != "") { printf "%d\n", n > ENVIRON["C"] } }'
+hook_put() {   # file [line]
+	hp_n="$1.$$"; hp_o="$1.o$$"; hp_c="$1.c$$"
+	S="$SCRIPT" N="$NAME" L="$2" C="$hp_c" awk "$HOOK_AWK" "$1" > "$hp_n" 2>/dev/null
+	if [ -s "$hp_c" ] && [ "$(wc -l < "$hp_n")" -eq "$(cat "$hp_c")" ] && cp -p "$1" "$hp_o" 2>/dev/null && cmp -s "$1" "$hp_o"; then
+		if ! { cat "$hp_n" > "$1" && cmp -s "$hp_n" "$1"; } 2>/dev/null; then
+			cat "$hp_o" > "$1" 2>/dev/null; log "couldn't rewrite $1 (JFFS full?): left as it was"
+		fi
+	elif ! cmp -s "$1" "$hp_n" 2>/dev/null; then log "couldn't rewrite $1 (JFFS full?): left as it was"; fi
+	rm -f "$hp_n" "$hp_o" "$hp_c"
 }
 
 startup() {
@@ -975,7 +1004,7 @@ node_try() {   # ip [pin] [command]   pin: also trust and pin the identity that 
 	tmpd; ssh_home_init; o="$TMPD/try.$$"; TRY_ERR=""; TRY_HOSTKEY=0; TRY_NEW=0; TRY_FP=""; TRY_OUT=""; y=""; [ "$2" = pin ] && y=-y
 	b=$(ssh_batch)
 	if [ -z "$b" ] && has_tty; then TRY_ERR="this firmware's SSH client can't try a key without offering a password"; return 2; fi
-	(HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "${3:-echo arteria-ok}") \
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $b $y -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "${3:-echo arteria-ok}") \
 		< /dev/null > "$o" 2>&1 &
 	wait_pid $! 8
 	grep -q '^arteria-ok' "$o" 2>/dev/null; rc=$?
@@ -1000,9 +1029,10 @@ scrub() { sed 's/[0-9]\{1,3\}\(\.[0-9]\{1,3\}\)\{3\}/IP/g; s/[0-9A-Fa-f]\{2\}\(:
 # long that takes. The page counts a node as answering while its output keeps up with its own pace, up to a round every
 # 30 s, so a node slower than that shows as "not answering" even though key login works.
 node_probe() {   # ip [trace-file] -> PROBE_MSG, PROBE_CRASH (1: something crashed there); 0 if a round came back
-	tmpd; ssh_home_init; o="$TMPD/probe.$$"; PROBE_MSG=""; PROBE_CRASH=0; TRACE_AT=""
+	tmpd; ssh_home_init; o="$TMPD/probe.$$"; PROBE_MSG=""; PROBE_CRASH=0; TRACE_AT=""; WHY_BAD=0
 	t0=$(now)
-	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1)") < /dev/null > "$o" 2>&1 &
+	# ulimit -f, as for the page's sessions: a node that floods its output can't fill the router's RAM (about 1 MB at most)
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1)") < /dev/null > "$o" 2>&1 &
 	wait_pid $! 30; late=$?
 	t=$(( $(now) - t0 )); [ $t -ge 1 ] || t=1
 	if grep -q '^#E' "$o" 2>/dev/null; then
@@ -1030,12 +1060,14 @@ node_probe() {   # ip [trace-file] -> PROBE_MSG, PROBE_CRASH (1: something crash
 # device count. Devices on a skipped interface mean the uplink was guessed wrong on that node. Interface names only.
 node_why() {   # ip -> WHY_MSG
 	wo="$TMPD/why.$$"
-	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1 why)") < /dev/null > "$wo" 2>&1 &
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1 why)") < /dev/null > "$wo" 2>&1 &
 	wait_pid $! 30
-	WHY_MSG=$(awk '$1 == "W" && $3 ~ /^[A-Za-z0-9._-]+$/ && $5 ~ /^[0-9]+$/ {
+	WHY_MSG=$(awk 'n < 32 && $1 == "W" && $3 ~ /^[A-Za-z0-9._-]+$/ && length($3) <= 16 && $5 ~ /^[0-9]+$/ && length($5) <= 6 { n++
 		if ($2 == "read") r = r (r ? ", " : "") $3 " " $5
-		else if ($2 == "skip" && $4 ~ /^(listed|sta|wet|psta|psr)$/) s = s (s ? ", " : "") $3 " " $5 ($4 == "listed" ? "" : " (" $4 " mode)") }
-		END { printf "devices on each interface it reads: %s; on each it skips as the uplink: %s", (r ? r : "none"), (s ? s : "none") }' "$wo")
+		else if ($2 == "skip" && $4 == "listed") { s = s (s ? ", " : "") $3 " " $5; if ($5 > 0) bad = 1 }
+		else if ($2 == "skip" && $4 ~ /^(sta|wet|psta|psr)$/) s = s (s ? ", " : "") $3 " (" $4 " mode, its uplink)" }
+		END { printf "%sdevices on each interface it reads: %s; on each it skips as the uplink: %s", (bad ? "!" : ""), (r ? r : "none"), (s ? s : "none") }' "$wo" | cut -c1-600)
+	WHY_BAD=0; case "$WHY_MSG" in !*) WHY_BAD=1; WHY_MSG=${WHY_MSG#!} ;; esac   # devices on an interface taken for the uplink
 	grep -Eq "$CRASH_RE" "$wo" 2>/dev/null && WHY_MSG="$WHY_MSG; something crashed while counting them"
 	rm -f "$wo"
 }
@@ -1045,7 +1077,7 @@ node_why() {   # ip -> WHY_MSG
 CRASH_RE='Segmentation fault|Illegal instruction|Bus error'
 node_trace() {   # ip file -> 0 if something crashed on the node; TRACE_AT: the command it was running
 	tmpd; o="$TMPD/trace.$$"; TRACE_AT=""
-	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1 trace | sed 's| 2>/dev/null||g')") < /dev/null > "$o" 2>&1 &
+	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1 trace | sed 's| 2>/dev/null||g')") < /dev/null > "$o" 2>&1 &
 	wait_pid $! 30
 	tr -cd '\012\040-\176' < "$o" | scrub | cut -c1-200 | head -n 400 > "$2"
 	rm -f "$o"
@@ -1576,12 +1608,13 @@ dr_fix()  { if [ "$DR_FX" = 1 ]; then say "  [DONE] $*: fixed"; DR_D=$((DR_D + 1
 dr_hook() {   # file line what
 	f="$SCRIPTS_DIR/$1"
 	if grep -q "$(printf '\r')" "$f" 2>/dev/null; then   # saved by a Windows editor: "#!/bin/sh\r" isn't a shell, so the router can't run it
-		[ "$DR_FX" = 1 ] && sed -i 's/\r$//' "$f"
+		[ "$DR_FX" = 1 ] && hook_add "$1" "$2"   # rewritten without them (and with Arteria's line first)
 		dr_fix "$1 has Windows line endings, so the router can't run it (none of the lines in it run)"
 	fi
-	cur=$(grep -cxF "$2 # $NAME" "$f" 2>/dev/null); cur=${cur:-0}
-	all=$(grep -c "# $NAME\$" "$f" 2>/dev/null); all=${all:-0}
-	if [ "$cur" = 1 ] && [ "$all" = 1 ] && [ -x "$f" ] && [ "$(sed -n 2p "$f")" = "$2 # $NAME" ]; then dr_ok "$1: Arteria's line, once, first ($3)"
+	cf="$TMPD/hook.$$"; sed 's/\r$//' "$f" > "$cf" 2>/dev/null   # its lines, without Windows line endings (that's said above)
+	cur=$(grep -cxF "$2 # $NAME" "$cf" 2>/dev/null); cur=${cur:-0}
+	all=$(grep -c "# $NAME\$" "$cf" 2>/dev/null); all=${all:-0}
+	if [ "$cur" = 1 ] && [ "$all" = 1 ] && [ -x "$f" ] && [ "$(sed -n 2p "$cf")" = "$2 # $NAME" ]; then dr_ok "$1: Arteria's line, once, first ($3)"
 	else
 		if [ "$all" = 0 ]; then w="$1 has no line of Arteria's, so $3 doesn't happen"
 		elif [ "$cur" = 0 ]; then w="$1 has an older line of Arteria's (an older version's, or one left by going back to 1.0.0)"
@@ -1592,13 +1625,14 @@ dr_hook() {   # file line what
 		[ "$DR_FX" = 1 ] && hook_add "$1" "$2"
 		dr_fix "$w"
 	fi
-	o=$(grep -v "# $NAME\$" "$f" 2>/dev/null | grep -c "$NAME"); o=${o:-0}
+	o=$(grep -v "# $NAME\$" "$cf" 2>/dev/null | grep -c "$NAME"); o=${o:-0}
+	rm -f "$cf"
 	[ "$o" -gt 0 ] && dr_info "$1: $o more line(s) mention $NAME but aren't Arteria's own (yours?), left alone"
 	return 0
 }
 # The router's system log, oldest first: /tmp/syslog.log and the one before it, or scribe's (syslog-ng's) when it keeps its own.
 log_files() {
-	for f in "$ROOT/tmp/syslog.log-1" "$ROOT/tmp/syslog.log"; do [ -s "$f" ] && printf '%s\n' "$f"; done
+	for f in "$ROOT/tmp/syslog.log-1" "$ROOT/tmp/syslog.log"; do [ -s "$f" ] && ours_file "$f" && printf '%s\n' "$f"; done   # /tmp: root's own only
 	f="$ROOT/opt/var/log/messages"; [ -s "$f" ] && [ ! -L "$f" ] && printf '%s\n' "$f"
 	return 0
 }
@@ -1612,7 +1646,8 @@ log_requests() {   # [lines]
 hook_waiters() {
 	sed 's/\r$//' "$SCRIPTS_DIR/service-event" 2>/dev/null | awk -v me="# $NAME" 'NR == 1 && /^#!/ { next } /^[ \t]*(#|$)/ { next }
 		substr($0, length($0) - length(me) + 1) == me { next }
-		/\// && $0 !~ /&[ \t]*($|;|#|fi([ \t]|$)|esac)/ { print substr($0, 1, 100) }'
+		/\// && $0 !~ /&[ \t]*($|;|#|fi([ \t]|$)|esac)/ { for (i = 1; i < NF; i++) if ($i !~ /^[A-Za-z_][A-Za-z0-9_]*=/) break
+			n = split($i, a, "/"); p = a[n]; gsub(/[^A-Za-z0-9._+-]/, "", p); print "line " NR ": " substr(p, 1, 40) }'   # its program's name only: the rest can hold passwords, tokens
 }
 # What the page does when it opens, end to end: a service request (start_arteria), the router's service-event hook, the
 # sampler starting, and its first samples. Then it stops sampling again, as the page does when it closes.
@@ -1668,12 +1703,15 @@ dr_lock() {
 	for q in /proc/[0-9]*; do
 		for d in "$q"/fd/*; do
 			[ "$(readlink "$d" 2>/dev/null)" = "$l" ] || continue
-			hp="$hp ${q#/proc/}"; hc="$hc; $(tr '\000' ' ' < "$q/cmdline" 2>/dev/null | cut -c1-60)"; break
+			hp="$hp ${q#/proc/}"; hc="$hc; $(tr '\000' ' ' < "$q/cmdline" 2>/dev/null | awk 'NR == 1 { n = split($1, a, "/"); p = a[n]; if (p ~ /^(ba|a|)sh$/ && $2 != "") { n = split($2, a, "/"); p = p " " a[n] } print p }' | tr -cd '\040-\176' | cut -c1-40)"; break
 		done
 	done
-	if [ "$DR_FX" = 1 ]; then
-		for q in $hp; do case "$(tr '\000' ' ' < "/proc/$q/cmdline" 2>/dev/null)" in *"$NAME"*|*dbclient*) kill "$q" 2>/dev/null ;; esac; done
-		dr_wait 3 dr_lock_free
+	if [ "$DR_FX" = 1 ]; then   # only something Arteria started has its private lock (in its own folder) open: all of them go
+		kill $hp 2>/dev/null
+		if ! dr_wait 3 dr_lock_free; then
+			dr_warn "something still holds the sampler's lock, so the page can't start sampling${hc:+ (${hc#; })}, and stopping it didn't free it: a reboot does"
+			return 0
+		fi
 	fi
 	dr_fix "something still holds the sampler's lock, so the page can't start sampling${hc:+ (${hc#; })}"
 }
@@ -1694,8 +1732,10 @@ doctor() {   # [fix]
 		dr_fix "$n file(s) an older or development version left in $ADDON_DIR"
 	else dr_ok "no files left by older versions"; fi
 	mm=$(menu_mounts)
-	if [ "$mm" -gt 1 ]; then
-		[ "$DR_FX" = 1 ] && webui_lock && { menu_remount; flock -u 9; }
+	if [ "$mm" -gt 1 ] && ! ours_menu; then dr_warn "the router's menu is mounted $mm times, one over another, and $TMP_MENUTREE isn't root's own menu file: not touching it"
+	elif [ "$mm" -gt 1 ] && [ "$DR_FX" = 1 ] && ! { webui_lock && { menu_remount; flock -u 9; [ "$(menu_mounts)" = 1 ]; }; }; then
+		dr_warn "the router's menu is mounted $mm times, one over another, and it couldn't be mounted once now: a reboot fixes it"
+	elif [ "$mm" -gt 1 ]; then
 		dr_fix "the router's menu is mounted $mm times, one over another (an addon mounted it again without unmounting it first), so addons' menu changes can fail (\"Device or resource busy\")"
 	fi
 	say ""
@@ -1750,7 +1790,8 @@ doctor() {   # [fix]
 				dr_warn "$nm: something crashed on the node running Arteria's script${TRACE_AT:+, at: $TRACE_AT}"
 			elif [ $rc -eq 0 ]; then
 				case "$PROBE_MSG" in *too\ slow*) dr_warn "$nm: key login works, and Arteria's script $PROBE_MSG" ;;
-					*) dr_ok "$nm: key login works, and Arteria's script $PROBE_MSG" ;; esac
+					*) if [ "$WHY_BAD" = 1 ]; then dr_warn "$nm: key login works, but Arteria's script $PROBE_MSG: its devices are on an interface it took for the uplink. Please post this line"
+					else dr_ok "$nm: key login works, and Arteria's script $PROBE_MSG"; fi ;; esac
 			else dr_warn "$nm: key login works, but Arteria's script failed there: ${PROBE_MSG#reading its devices failed: }"; fi
 			[ -s "$TMPD/trace.n" ] && { echo "== $nm"; cat "$TMPD/trace.n"; } >> "$TMPD/node-trace.txt"
 			rm -f "$TMPD/trace.n"

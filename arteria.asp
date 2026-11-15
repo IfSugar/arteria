@@ -8,7 +8,7 @@
 <link rel="shortcut icon" href="images/favicon.png"/>
 <link rel="icon" href="images/favicon.png"/>
 <title>Arteria</title>
-<!-- arteria-version: 2.0.0 (must match VERSION in arteria.sh) -->
+<!-- arteria-version: 2.1.0 (must match VERSION in arteria.sh) -->
 <link rel="stylesheet" type="text/css" href="index_style.css"/>
 <link rel="stylesheet" type="text/css" href="form_style.css"/>
 <script type="text/javascript" src="/js/jquery.js"></script>
@@ -269,7 +269,7 @@
    Only initial() (called by <body onload>) and the Arteria object (used by the page's buttons) are global. */
 (function () {
 'use strict';
-var VERSION = '2.0.0';
+var VERSION = '2.1.0';
 var BASE = '/ext/arteria/';
 var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', WARN = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';   /* ACC follows the router's theme (theme()) */
 /* Packets: one CSS class per bucket (b0 = busiest). As throughput rises on a log scale, packets grow
@@ -898,7 +898,7 @@ function dbm(v, none) { return v !== null && v !== undefined && v !== '' ? v + '
    of Guest Network Pro's): the router's radios' own interfaces carry the main ones, and a network with a main one's name is one
    too, wherever it is served (some setups serve a main network on wl0.1 and the like). */
 function netName(d, ifn) {
-	var nets = d.nets || [], main = {}, n = null;
+	var nets = d.nets || [], main = Object.create(null), n = null;   /* no inherited keys: a network called "toString" is a name like any other */
 	nets.forEach(function (x) { if (x[2] === 1) main[x[1]] = 1; if (x[0] === ifn) n = x; });
 	return n && n[1] && !main[n[1]] ? String(n[1]) : '';
 }
@@ -1007,8 +1007,16 @@ function buildNet(d) {
 		if (node.state === 'ok' && node.up.length && node.bhRows.length && !node.wiredPort) {   /* on a Wi-Fi backhaul (an unused uplink radio reads 0) */
 			var ud = 0, uu = 0;
 			node.up.forEach(function (r) { ud += +r[1]; uu += +r[2]; });
-			var nb = measure('nu:' + node.mac, nt, ud, uu);
-			if (nb.ok) { node.bh = nb; node.bhOwn = true; }
+			var nb = measure('nu:' + node.mac, nt, ud, uu), rb = node.bh;
+			/* A check against the router's count: if the node's stays at nothing while the router counts over 1 Mb/s on this
+			   backhaul for three of the node's rounds in a row, the node isn't counting its real uplink, and the router's count is
+			   used. Rounds, not samples: a node slower than the page sends its figures a round later, which the check must allow. */
+			A.nuBad = A.nuBad || {}; A.nuAt = A.nuAt || {};
+			if (A.nuAt[node.mac] !== nt) {
+				A.nuAt[node.mac] = nt;
+				A.nuBad[node.mac] = nb.ok && nb.sdn + nb.sup < 0.05 && rb.sdn + rb.sup > 1 ? (A.nuBad[node.mac] || 0) + 1 : 0;
+			}
+			if (nb.ok && A.nuBad[node.mac] < 3) { node.bh = nb; node.bhOwn = true; }
 		}
 		if (node.state === 'ok') {
 			node.rows.forEach(function (r) {
@@ -2238,7 +2246,8 @@ function pickStands(list, n, prevKey) {   /* the n busiest, keeping devices that
 	return keep;
 }
 /* More nodes than the map has zones: the busiest get one, and the others are named on the tray, where their devices wait. A
-   node keeps its zone, in the same place, unless one without a zone is 3x busier (and over 1 Mb/s): at most one swap every
+   node keeps its zone, in the same place, unless one without a zone is 3x busier (and over 1 Mb/s), or it is offline and one
+   without a zone isn't: at most one swap every
    20 s, so nodes don't trade places. Picked again once the first rates are known (before them every node looks idle). */
 function pickNodes(nodes, n) {
 	if (nodes.length <= n) { A.nodeZones = null; return nodes.slice(); }
@@ -2250,7 +2259,8 @@ function pickNodes(nodes, n) {
 	if (rest.length && Date.now() - (A.nodeSwapAt || 0) > 20000) {
 		var w = 0;
 		for (i = 1; i < n; i++) if (nb(z[i]) < nb(z[w])) w = i;
-		if (nb(rest[0]) > 3 * Math.max(nb(z[w]), 0) + 1) { z[w] = rest[0]; A.nodeSwapAt = Date.now(); }
+		/* an offline node gives way to any node that's online */
+		if ((nb(z[w]) < 0 && nb(rest[0]) >= 0) || nb(rest[0]) > 3 * Math.max(nb(z[w]), 0) + 1) { z[w] = rest[0]; A.nodeSwapAt = Date.now(); }
 	}
 	A.nodeZones = A.gotAny ? z.map(function (x) { return x.mac; }) : null;
 	return z;
@@ -3101,10 +3111,11 @@ function readoutFor(net) {
 	} else if (isMore(id) && hiddenSet(net)) {
 		var hz = hiddenSet(net), t = hz.devs, sd = 0, su = 0;
 		t.forEach(function (dv) { sd += dv.dn; su += dv.up; });
-		d = { icon: 'more', badge: 'Grouped', name: trayName(t, hz.nodes), link: t.length + ' quieter devices, grouped' };
+		d = { icon: 'more', badge: 'Grouped', name: trayName(t, hz.nodes), link: t.length ? t.length + ' quieter devices, grouped' : 'Nodes with no room on the map' };
 		dn = sd; up = su; sdn = pct(dn, net.total.dn) + '% of all download'; sup = pct(up, net.total.up) + '% of all upload';
-		k1 = 'Busiest'; v1 = t.length ? t.slice().sort(function (a, b) { return busy(b) - busy(a); })[0].name : '—'; k2 = 'Devices'; v2 = String(t.length);
-		path = rname + ' → ' + t.length + ' devices'; note = 'Listed on the right, busiest first. Pick one to trace it.' + (hz.nodes.length ? ' ' + noZoneText(hz) : '');
+		k1 = 'Busiest'; v1 = t.length ? t.slice().sort(function (a, b) { return busy(b) - busy(a); })[0].name : '—';
+		k2 = t.length || !hz.nodes.length ? 'Devices' : 'Nodes'; v2 = String(t.length || !hz.nodes.length ? t.length : hz.nodes.length);
+		path = t.length || !hz.nodes.length ? rname + ' → ' + t.length + ' devices' : rname + ' → ' + hz.nodes.map(function (n) { return n.name; }).join(', '); note = (t.length ? 'Listed on the right, busiest first. Pick one to trace it.' + (hz.nodes.length ? ' ' : '') : '') + (hz.nodes.length ? noZoneText(hz) : '');
 	} else if (id && id.indexOf('node:') === 0 && net.byId[id]) {
 		var n = net.byId[id];
 		d = { icon: FORM_ICON[formOf(n.model, 'tower').form] || 'mesh', badge: 'AiMesh node', name: n.name, link: n.online ? (n.wiredPort ? 'Wired backhaul' : bandName(n.bhBand) + ' wireless backhaul') : 'Offline' };
@@ -3332,7 +3343,7 @@ function renderSide(net) {
 function renderMore(hs) {
 	var box = $('arMoreList'), ord = A.moreOrd;
 	A.moreKey = hs.key;
-	$('arMoreTitle').textContent = hs.title + ' · ' + hs.devs.length + ' devices';
+	$('arMoreTitle').textContent = hs.title + ' · ' + (hs.devs.length || !(hs.nodes && hs.nodes.length) ? hs.devs.length + ' devices' : trayName([], hs.nodes).slice(1));
 	var nt = $('arMoreNote'), why = noZoneText(hs);
 	nt.className = why ? 'ar-more-note' : 'ar-more-note hide';
 	if (nt.textContent !== why) nt.textContent = why;

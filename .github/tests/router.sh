@@ -120,9 +120,13 @@ cat > "$B/rc" <<EOF
 [ "\$1" = port_status ] || exit 0
 p() { printf ' phy_port_id=%s, label_name=%s, cap=2, cap_name=LAN, max_rate=1000, ifname=%s, state=%s, link_rate=%s, duplex=full, tx_packets=1, rx_packets=1, tx_bytes=1, rx_bytes=1, crc_errors=0\\n' "\$@" >&2; }
 p 4 W0 eth0 up 1000
+[ -f "$t/rc-usb-first" ] && printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
 if [ -f "$t/ax88u" ]; then p 3 L1 eth4 down 0; p 2 L2 eth3 down 0; p 1 L3 eth2 down 0; p 0 L4 eth1 down 0; p 8 L5 eth5 down 0; p 9 L6 eth5 down 0; p 10 L7 eth5 up 100; p 11 L8 eth5 down 0
 else p 3 L1 eth4 down 0; p 2 L2 eth3 down 0; p 1 L3 eth2 down 0; p 0 L4 eth1 down 0; p 7 L5 eth5 up 2500; fi
-printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
+[ -f "$t/rc-usb-first" ] || printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
+# the AiMesh nodes' ports, which the firmware prints after the router's own (here in the same format; their L1 is a node's eth1)
+[ -f "$t/rc-nodes" ] && { p 0 W0 eth4 up 1000; p 1 L1 eth1 up 1000; p 2 L2 eth2 up 1000; }
+exit 0
 EOF
 # 'service start_x', as the router's rc runs it: service-event, with "start" and "x"
 printf '#!%s sh\na=${1%%%%_*}; exec "%s" sh "%s/jffs/scripts/service-event" "$a" "${1#*_}"\n' "$bb" "$bb" "$R" > "$B/service"
@@ -346,6 +350,16 @@ links = {l[0]: l for l in s['links']}
 assert links['eth5'] == ['eth5', 1, 100, '7'], links['eth5']   # its own link (2500) says nothing about the ports
 assert links['eth1'] == ['eth1', 0, -1], links['eth1']
 EOF
+# The firmware's port map with a USB port (and its device line) before the LAN ports, and the AiMesh nodes' ports after the
+# router's own: the router's ports are numbered as before, and a node's port never counts as one of the router's
+touch "$t/ax88u" "$t/rc-usb-first" "$t/rc-nodes"; runa sample > "$t/sample-88n.json" 2>/dev/null || true; rm -f "$t/ax88u" "$t/rc-usb-first" "$t/rc-nodes"
+python3 - "$t/sample-88n.json" <<'EOF' && ok "port map: a USB port before the LAN ports, and the nodes' ports after the router's, change nothing" || fail=1
+import json, sys
+s = json.load(open(sys.argv[1]))
+assert s['plab'] == {'eth4': '1', 'eth3': '2', 'eth2': '3', 'eth1': '4', 'eth5': '5-8'}, s['plab']
+links = {l[0]: l for l in s['links']}
+assert links['eth1'] == ['eth1', 0, -1], links['eth1']   # the node's L1 on its own eth1 is up; the router's LAN 4 isn't
+EOF
 # dual WAN: the second WAN (a USB modem here) is sampled too, and named in the sample
 echo "wan usb" > "$t/dualwan"; runa sample > "$t/sample-dw.json" 2>/dev/null || true; rm -f "$t/dualwan"
 python3 - "$t/sample-dw.json" "$t/sample.json" <<'EOF' && ok "dual WAN: the second WAN's interface is sampled and named; without it, nothing changes" || fail=1
@@ -541,7 +555,7 @@ else bad "nodes test, a node on an Ethernet backhaul:"; cat "$t/nt.out" "$t/node
 # A node whose firmware names the interfaces its devices are on as possible uplinks: it reads 0 devices, and nodes test says
 # which interfaces it read and skipped, with the devices on each (interface names only)
 touch "$t/node-all-listed" "$t/node-not-ap"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-all-listed" "$t/node-not-ap"
-grep -q "reads 0 device(s), one round takes about [0-9]* s (devices on each interface it reads: none; on each it skips as the uplink: eth1 1 (psr mode), wl0.1 1, eth2 1, wl1.1 2)$" "$t/nt.out" \
+grep -q "reads 0 device(s), one round takes about [0-9]* s (devices on each interface it reads: none; on each it skips as the uplink: eth1 (psr mode, its uplink), wl0.1 1, eth2 1, wl1.1 2)$" "$t/nt.out" \
 	&& ! grep -Eqi '([0-9A-F]{2}:){5}' "$t/nt.out" \
 	&& ok "nodes test: a node that reads 0 devices names the interfaces it read and skipped as the uplink, with the devices on each" \
 	|| { bad "nodes test, a node that reads 0 devices:"; cat "$t/nt.out"; }
@@ -819,9 +833,29 @@ hook start arteria; hb_made() { [ -f "$R/tmp/arteria/heartbeat" ]; }; waitfor 5 
 hb_made && ok "the hook passes the page's request on" || bad "the hook didn't pass 'start arteria' on"
 hook start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
 grep -qi "key login works\|Node(s) without the key" "$t/install.out" && ok "install checks node access" || { bad "install didn't check the nodes:"; cat "$t/install.out"; }
+# /tmp/menuTree.js hard-linked to a root-only file elsewhere in /tmp (/tmp/etc's, say): it isn't edited or mounted as the menu,
+# and the file it's linked to keeps its content and mode; the menu is made again from the firmware's
+printf 'root:SECRET:0:0\n' > "$R/tmp/hl-secret"; chmod 600 "$R/tmp/hl-secret"; ln -f "$R/tmp/hl-secret" "$R/tmp/menuTree.js"
+runi startup > "$t/hl.out" 2>&1 || true
+if [ "$(cat "$R/tmp/hl-secret")" = "root:SECRET:0:0" ] && [ "$(stat -c %a "$R/tmp/hl-secret")" = 600 ] && [ "$(stat -c %h "$R/tmp/hl-secret")" = 1 ] \
+	&& grep -q 'tabName: "Arteria"' "$R/tmp/menuTree.js" && ! grep -q SECRET "$R/tmp/menuTree.js"; then
+	ok "a /tmp/menuTree.js hard-linked to another file is replaced with the firmware's menu, never edited, the other file untouched"
+else bad "a hard-linked menu copy:"; cat "$t/hl.out"; ls -l "$R/tmp/hl-secret" "$R/tmp/menuTree.js"; fi
+rm -f "$R/tmp/hl-secret"
+# A menu copy that can't be replaced at all (not even with its mounts off): it is left exactly as it was, never cut short,
+# and Arteria says so
+cp "$R/tmp/menuTree.js" "$t/menu.keep"; rm -f "$B/mv"
+printf '#!%s sh\nfor a; do l=$a; done\ncase "$l" in */tmp/menuTree.js) echo "mv: can'"'"'t rename '"'"'$1'"'"': Read-only file system" >&2; exit 1 ;; esac\nexec "%s" mv "$@"\n' "$bb" "$bb" > "$B/mv"; chmod +x "$B/mv"
+sed -i '/tabName: "Arteria"/d' "$R/tmp/menuTree.js"; cp "$R/tmp/menuTree.js" "$t/menu.before-ro"
+runi startup > "$t/ro.out" 2>&1 || true
+rm -f "$B/mv"; ln -s "$bb" "$B/mv"
+if cmp -s "$R/tmp/menuTree.js" "$t/menu.before-ro" && grep -q "Couldn't update the menu" "$t/ro.out" && [ "$(menu_mounts)" = 1 ]; then
+	ok "a menu copy that can't be replaced is left exactly as it was, mounted once, and Arteria says so"
+else bad "a menu copy that can't be replaced:"; cat "$t/ro.out"; diff "$t/menu.before-ro" "$R/tmp/menuTree.js" | head -5; fi
+cp "$t/menu.keep" "$R/tmp/menuTree.js"
 # The menu mounted twice, one over the other: as on the router, /tmp/menuTree.js can't be renamed over then ("Device or
-# resource busy"). The menu is written into it instead, nothing is left behind in /tmp/arteria, nothing alarming is
-# printed, and it's mounted once again afterwards, so the next change is renamed into place as usual
+# resource busy"). The mounts come off, the menu is renamed into place, nothing is left behind in /tmp/arteria, nothing
+# alarming is printed, and it's mounted once again afterwards, so the next change is renamed into place as usual
 [ "$(menu_mounts)" = 1 ] || bad "install should leave the menu mounted once, not $(menu_mounts) times"
 stack_menu
 rm -f "$B/mv"
@@ -959,7 +993,8 @@ if grep -q "^  \[FIX \] service-event: Arteria's line isn't first" "$t/doc.out" 
 else bad "doctor, a line before Arteria's:"; cat "$t/doc.out"; fi
 # Windows line endings: the router can't run the file at all
 sed -i 's/$/\r/' "$se"; doc || true
-grep -q "^  \[FIX \] service-event has Windows line endings" "$t/doc.out" && { doc fix || true; ! grep -q "$(printf '\r')" "$se"; } \
+grep -q "^  \[FIX \] service-event has Windows line endings" "$t/doc.out" && ! grep -q "service-event has no line of Arteria's\|aren't Arteria's own" "$t/doc.out" \
+	&& { doc fix || true; ! grep -q "$(printf '\r')" "$se"; } \
 	&& ok "doctor: a hook file with Windows line endings is found, and fixed" || { bad "doctor, CRLF:"; cat "$t/doc.out"; }
 # Something left holding the sampler's lock: every sampler the page starts gives up at once, and says why
 ( exec "$bb" sh -c 'flock 9; while :; do sleep 1; done' arteria-lock-holder 9>"$R/tmp/arteria/sampler.lock" ) & holder=$!
@@ -967,8 +1002,33 @@ sleep 0.5; AR_DR_WAIT=3 doc || true
 if grep -q "^  \[FIX \] something still holds the sampler's lock" "$t/doc.out" && grep -q "no samples came within 3 s" "$t/doc.out" && grep -q 'another sampler holds' "$t/doc.out"; then
 	AR_DR_WAIT=5 doc fix || true
 	kill -0 $holder 2>/dev/null && { bad "doctor fix left the lock holder running"; kill $holder; } || ok "doctor: a process left holding the sampler's lock is found, with the sampler's own error, and doctor fix ends it"
+	grep -q "while :" "$t/doc.out" && bad "doctor showed the lock holder's whole command line (only its program should show)"
 else bad "doctor, lock held:"; cat "$t/doc.out"; kill $holder 2>/dev/null; fi
 wait $holder 2>/dev/null || true
+# A hook file whose rewrite comes out cut short (a full JFFS): it's put back as it was, with the other programs' lines, and
+# the system log says so
+printf '#!/bin/sh\n/some/other/script event "$@" &\n/some/third/script "$@" &\n' > "$se"; cp "$se" "$t/se.before"
+mv "$B/cat" "$t/cat.real" 2>/dev/null || rm -f "$B/cat"
+printf '#!%s sh\ncase "$1" in */service-event.[0-9]*) [ -f "%s/cat-short" ] && { head -c 12 "$1"; exit 1; } ;; esac\nexec "%s" cat "$@"\n' "$bb" "$t" "$bb" > "$B/cat"; chmod +x "$B/cat"
+touch "$t/cat-short"; doc fix || true; rm -f "$t/cat-short" "$B/cat"; ln -s "$bb" "$B/cat"
+if cmp -s "$se" "$t/se.before" && grep -q "couldn't rewrite .*service-event (JFFS full?): left as it was" "$t/syslog" && ! ls "$R/jffs/scripts" | grep -q '\.[oc]*[0-9]'; then
+	ok "a hook file whose rewrite comes out cut short is put back as it was, other programs' lines kept"
+else bad "a hook rewrite cut short:"; cat "$se"; tail -3 "$t/syslog"; ls "$R/jffs/scripts"; fi
+doc fix || true   # and then put right
+# What doctor and debug show of things outside Arteria: another program's line in service-event by its program only (the rest
+# can hold a password), and no system log that isn't root's own file (a link planted in /tmp)
+printf '/opt/bin/ddns-update -u me:S3cretPass https://dyn.example.invalid/update\nTOKEN=x wget -qO- https://dyn.example.invalid/u?token=SECRETTOKEN123\n' >> "$se"
+printf 'arteria PLANTED-LOG-LINE\n' > "$t/planted.log"; ln -sf "$t/planted.log" "$R/tmp/syslog.log-1"
+AR_DR_WAIT=2 doc || true; run debug > "$t/debug3.out" 2>&1 || true
+sed -i '/S3cretPass/d; /SECRETTOKEN/d' "$se"; rm -f "$R/tmp/syslog.log-1"
+if grep -q 'line [0-9]*: ddns-update$' "$t/doc.out" && grep -q 'line [0-9]*: wget$' "$t/doc.out" && ! grep -q 'S3cretPass\|SECRETTOKEN\|dyn\.example' "$t/doc.out" "$t/debug3.out" \
+	&& ! grep -q PLANTED "$t/doc.out" "$t/debug3.out"; then
+	ok "doctor names another program waiting in service-event by its program only, and reads no system log planted in /tmp"
+else bad "doctor/debug, outside lines:"; grep -n 'ddns\|S3cret\|PLANTED\|line [0-9]*:' "$t/doc.out" "$t/debug3.out"; fi
+# A node whose devices are on interfaces it takes for its uplink: doctor warns, and asks for the line
+touch "$t/node-all-listed" "$t/node-not-ap"; doc || true; rm -f "$t/node-all-listed" "$t/node-not-ap"
+grep -q "^  \[WARN\] node 1 (RP-AX56): key login works, but Arteria's script reads 0 device(s).*its devices are on an interface it took for the uplink" "$t/doc.out" \
+	&& ok "doctor warns when a node's devices are on an interface it takes for the uplink" || { bad "doctor, devices on the uplink:"; cat "$t/doc.out"; }
 touch "$t/node-cut-crash"; doc || true; rm -f "$t/node-cut-crash"
 if grep -q "^  \[WARN\] node 1 (RP-AX56): something crashed on the node running Arteria's script, at: cut " "$t/doc.out" \
 	&& grep -q '^== node 1 (RP-AX56)' "$R/tmp/arteria/node-trace.txt" && ! grep -qi '192\.168\|02:CC' "$t/doc.out" "$R/tmp/arteria/node-trace.txt"; then

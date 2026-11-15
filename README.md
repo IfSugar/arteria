@@ -59,7 +59,9 @@ Reading these counters doesn't disturb Wi-Fi or change any setting.
 
 ## Install
 
-Over SSH on the router (needs Asuswrt-Merlin on a Broadcom model; no Entware or USB drive):
+**With amtm** (version 7.2 or later; if yours is older, enter **u** in amtm first): run `amtm` and choose **ar Arteria**. amtm runs the same installer as below.
+
+**Or over SSH** on the router (needs Asuswrt-Merlin on a Broadcom model; no Entware or USB drive):
 
 ```sh
 d=/tmp/arteria-install; rm -rf "$d" && mkdir -m 700 "$d" && curl -fsL --retry 3 "https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh" -o "$d/arteria.sh" && sh "$d/arteria.sh" install; rm -rf "$d"
@@ -164,7 +166,9 @@ To remove everything: `arteria.sh uninstall`. If the web UI ever looks wrong, a 
 
 ## amtm
 
-Arteria follows amtm's conventions for third-party scripts: with no arguments in a terminal the script shows its menu; `amtmupdate check` exits 0 when amtm may update it (1 when you turned that off with menu option 7 or `AMTM_UPDATE=off`), and `amtmupdate` installs the latest release, prints two lines and exits 0, or 1 if the update failed.
+Arteria is in amtm, the Asuswrt-Merlin Terminal Menu, since amtm 7.2, as **ar**: amtm installs it, **ar** then opens Arteria's menu, and amtm's update check and its automatic script updates cover it. To keep amtm from updating Arteria, turn that off with menu option 7 (or `AMTM_UPDATE=off`); `arteria.sh update` still works.
+
+For amtm's module, Arteria follows amtm's conventions for third-party scripts: with no arguments in a terminal the script shows its menu; `amtmupdate check` exits 0 when amtm may update it (1 when you turned that off with menu option 7 or `AMTM_UPDATE=off`), and `amtmupdate` installs the latest release, prints two lines and exits 0, or 1 if the update failed.
 
 | | |
 |---|---|
@@ -177,7 +181,7 @@ Arteria follows amtm's conventions for third-party scripts: with no arguments in
 
 Something not working? `arteria.sh doctor` looks for the known problems and says what fixes each; `doctor fix` fixes the ones it can. It also sends a request like the page's and says whether it reaches Arteria and samples follow, which is what a page stuck on *Connecting…* needs to know. Found a bug, or run Arteria on another router? [Open an issue](https://github.com/IfSugar/arteria/issues/new/choose) or post in the [SNBForums thread](https://www.snbforums.com/threads/arteria-v1-0-0-2026-nov-12-a-live-animated-map-of-your-networks-traffic-aimesh-aware.98274/); the issue form asks for `check` and `debug`.
 
-**Security reviews.** Each release was reviewed by separate AI reviewers (Claude) that hadn't written the code, looking for bugs, regressions and security problems, and showing each finding on a stand-in router and in a browser; what they found was fixed (1.0.0: [pull request #15](https://github.com/IfSugar/arteria/pull/15); 2.0.0: [pull request #27](https://github.com/IfSugar/arteria/pull/27)). No human security expert has reviewed it yet; if you know Merlin or shell security well, a review is very welcome. Please report security problems privately: see the [security policy](.github/SECURITY.md).
+**Security reviews.** Each release was reviewed by separate AI reviewers (Claude) that hadn't written the code, looking for bugs, regressions and security problems, and showing each finding on a stand-in router and in a browser; what they found was fixed (1.0.0: [pull request #15](https://github.com/IfSugar/arteria/pull/15); 2.0.0: [pull request #27](https://github.com/IfSugar/arteria/pull/27); 2.1.0: [pull request #40](https://github.com/IfSugar/arteria/pull/40)). No human security expert has reviewed it yet; if you know Merlin or shell security well, a review is very welcome. Please report security problems privately: see the [security policy](.github/SECURITY.md).
 
 ## License
 
