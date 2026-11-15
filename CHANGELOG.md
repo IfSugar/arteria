@@ -25,6 +25,7 @@ Fixes for what the SNBForums thread reported after 2.0.0, a page that follows RO
 
 ### Doctor and debug
 
+- **`nodes test` explains a node that reads 0 devices.** It lists the node's interfaces it reads and the ones it skips as the node's uplink, with the devices on each, and `doctor` does the same. Devices on a skipped interface mean Arteria took the wrong interface for the uplink on that node.
 - **`doctor` tests what the page does when it opens.** It sends the same request as the page, `start_arteria`, and says whether it reached Arteria and how long it took, and whether samples followed. It then stops sampling again. When something goes wrong it shows:
   - the router's system log lines about requests it delayed or dropped while busy with another one;
   - the sampler's own errors, which used to go nowhere;
