@@ -784,6 +784,16 @@ hook start arteria; hb_made() { [ -f "$R/tmp/arteria/heartbeat" ]; }; waitfor 5 
 hb_made && ok "the hook passes the page's request on" || bad "the hook didn't pass 'start arteria' on"
 hook start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
 grep -qi "key login works\|Node(s) without the key" "$t/install.out" && ok "install checks node access" || { bad "install didn't check the nodes:"; cat "$t/install.out"; }
+# Something has mounted a file over /tmp/menuTree.js, so it can't be renamed over ("Device or resource busy"): the menu is
+# written into it instead, nothing is left behind in /tmp/arteria, and nothing alarming is printed
+rm -f "$B/mv"
+printf '#!%s sh\nfor a; do l=$a; done\ncase "$l" in */tmp/menuTree.js) echo "mv: can'"'"'t rename '"'"'$1'"'"': Device or resource busy" >&2; exit 1 ;; esac\nexec "%s" mv "$@"\n' "$bb" "$bb" > "$B/mv"; chmod +x "$B/mv"
+sed -i '/tabName: "Arteria"/d' "$R/tmp/menuTree.js"
+runi startup > "$t/busy.out" 2>&1 || true
+rm -f "$B/mv"; ln -s "$bb" "$B/mv"
+if [ "$(grep -c 'tabName: "Arteria"' "$R/tmp/menuTree.js")" = 1 ] && ! ls "$R/tmp/arteria" | grep -q '^menuTree\.[0-9]' && ! grep -q "can't rename\|Couldn't" "$t/busy.out"; then
+	ok "a menu copy that can't be replaced (a file mounted over it) is written into instead, with nothing left behind"
+else bad "menu copy that can't be replaced:"; cat "$t/busy.out"; ls "$R/tmp/arteria"; grep -c Arteria "$R/tmp/menuTree.js"; fi
 
 # ---- 5: update and update dev install only a whole download of the right version --------------
 # A stand-in curl serves GitHub's addresses from $t/srv: the latest release's tag, branches, raw files.
@@ -857,7 +867,7 @@ else bad "update dev fix/menu:"; cat "$t/upd.out" "$t/curl.log"; fi
 # back to a release from a development version: the same number is installed again, and install takes the mark away
 printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"; release 9.9.10 9.9.10
 upd update || true
-if grep -q "Updating" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
+if grep -q "Updating 9.9.10 (development version: fix/menu @ 0123456, installed .*) -> 9.9.10, the release" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
 	ok "update: from a development version back to the release, the mark is gone"
 else bad "update after update dev:"; cat "$t/upd.out"; fi
 # doctor: the known problems, found, then fixed. What going back to 1.0.0 leaves (its own hook line next to today's), a
