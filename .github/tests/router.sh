@@ -89,6 +89,9 @@ cat > "$B/wl" <<EOF
 [ "\$1" = -i ] && { ifc=\$2; shift 2; }
 case "\$1" in
 	isup) echo 1 ;;
+	# access point (1) or client (0): the node's eth2 is its Wi-Fi uplink, unless a test puts the node on an Ethernet backhaul;
+	# node-not-ap: none of the node's interfaces is an access point
+	ap) if [ -f "$t/node-not-ap" ]; then echo 0; elif [ "\$ifc" = eth2 ] && [ ! -f "$t/node-wired" ]; then echo 0; else echo 1; fi ;;
 	assoclist) awk -v i="\$ifc" '\$1 == i { print "assoclist", \$2 }' "$F/assoc" ;;
 	sta_info)
 		awk -v i="\$ifc" -v m="\$2" -v now="\$(date +%s)" '\$1 == i && \$2 == m {
@@ -235,7 +238,8 @@ case "\$1 \$2" in
 	'commit '*) ;;
 	*) case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
 		sta_phy_ifnames) echo eth2 ;;   # its 5 GHz radio's own interface is its uplink to the router (a Wi-Fi backhaul)
-		sta_ifnames) [ -f "$t/node-all-listed" ] && echo "eth1 wl0.1 wl1.1" ;;   # a node that names its devices' interfaces as uplinks
+		sta_ifnames) [ -f "$t/node-all-listed" ] && echo "eth1 wl0.1 wl1.1"
+			[ -f "$t/node-wired" ] && echo "eth1 eth2" ;;   # an Ethernet backhaul: its radios are still named as possible uplinks
 		wl0_mode) [ -f "$t/node-all-listed" ] && echo psr ;; esac ;;
 esac
 EOF
@@ -270,6 +274,7 @@ esac
 # A node script: like the real dbclient this stays this process (Arteria stops a session by its pid, and checks that the pid is a
 # dbclient), and stopping it ends the node's side. AR_NODE_SESSION marks the node's side, so a test can see that it's gone.
 if [ -f "$t/node-hostile" ]; then env AR_NODE_SESSION="$t" "$bb" sh "$t/node-hostile" < /dev/null &   # a node that sends anything but counters
+elif [ -f "$t/node-tee" ]; then env AR_NODE_SESSION="$t" PATH="$N:$B" "$bb" sh -c "\$1" < /dev/null | tee "$t/node-last.out" &   # what the node sent
 else env AR_NODE_SESSION="$t" PATH="$N:$B" "$bb" sh -c "\$1" < /dev/null &
 fi
 c=\$!
@@ -518,9 +523,15 @@ run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
 grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection" "$t/nt.out" \
 	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+# A node on an Ethernet backhaul (an RT-AC86U, a ZenWiFi XD6): its firmware still names its radios' own interfaces as possible
+# uplinks, but they are access points with the node's devices on them. They're read, and none of them is reported as the uplink.
+touch "$t/node-wired" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-wired" "$t/node-tee"
+if grep -q "reads 5 device(s), one round takes about [0-9]* s$" "$t/nt.out" && grep -q '^#E' "$t/node-last.out" && ! grep -q '^U ' "$t/node-last.out"; then
+	ok "nodes test: a node on an Ethernet backhaul reads the devices on its radios, which its firmware names as possible uplinks"
+else bad "nodes test, a node on an Ethernet backhaul:"; cat "$t/nt.out" "$t/node-last.out"; fi
 # A node whose firmware names the interfaces its devices are on as possible uplinks: it reads 0 devices, and nodes test says
 # which interfaces it read and skipped, with the devices on each (interface names only)
-touch "$t/node-all-listed"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-all-listed"
+touch "$t/node-all-listed" "$t/node-not-ap"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-all-listed" "$t/node-not-ap"
 grep -q "reads 0 device(s), one round takes about [0-9]* s (devices on each interface it reads: none; on each it skips as the uplink: eth1 1 (psr mode), wl0.1 1, eth2 1, wl1.1 2)$" "$t/nt.out" \
 	&& ! grep -Eqi '([0-9A-F]{2}:){5}' "$t/nt.out" \
 	&& ok "nodes test: a node that reads 0 devices names the interfaces it read and skipped as the uplink, with the devices on each" \
