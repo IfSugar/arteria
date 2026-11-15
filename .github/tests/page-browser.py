@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4']
+SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd']
 fails = []
 
 
@@ -53,6 +53,18 @@ LABEL_OVERLAPS = '''() => {
 }'''
 
 
+# labels that cover another device's drawing
+LABEL_COVERS = '''() => {
+    const objs = [...document.querySelectorAll('#ar g[data-obj]')].map(g => [g.getAttribute('data-obj'), g.getBoundingClientRect()]);
+    let n = 0;
+    document.querySelectorAll('#ar .ar-lb').forEach(b => {
+        const r = b.firstElementChild.getBoundingClientRect(), id = b.getAttribute('data-id');
+        objs.forEach(([oid, o]) => { if (oid !== id && o.width && r.left < o.right - 2 && o.left + 2 < r.right && r.top < o.bottom - 2 && o.top + 2 < r.bottom) n++; });
+    });
+    return n;
+}'''
+
+
 async def ready(pg):   # two samples in: rates, stands and the tray are known
     await pg.wait_for_function("window.Arteria && Arteria.state.gotAny && Arteria.state.net", timeout=20000)
     await pg.wait_for_timeout(300)
@@ -69,7 +81,7 @@ async def scenario(b, scn, port):
         await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
         await ready(pg)
         small = await pg.evaluate(STAGE)
-        tag = scn.ljust(8)
+        tag = scn.ljust(10)
         if scn == 'mesh4':   # four nodes and two zones: the busiest two get them, and the tray and its list name the other two
             await pg.wait_for_timeout(2200)   # a few samples in: the busiest nodes are known
             lb = await pg.evaluate("(document.querySelector('#arMapLabels .ar-lb[data-id=\"more\"]') || {}).innerText || ''")
@@ -99,6 +111,12 @@ async def scenario(b, scn, port):
         await pg.evaluate("Arteria.pick(null)")
         await pg.click('#arBig'); await pg.wait_for_timeout(400)
         lbov_big = await pg.evaluate(LABEL_OVERLAPS)
+        cover_big = await pg.evaluate(LABEL_COVERS)
+        if scn == 'nodecrowd':   # a crowded floor in a smaller window, where labels have the least room
+            await pg.set_viewport_size({'width': 1456, 'height': 832}); await pg.wait_for_timeout(900)
+            lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS)
+            await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
+        check(cover_big == 0, tag + 'expanded view: labels don\'t cover other devices (%d)' % cover_big)
         if scn == 'crowd':   # a smaller window, where a crowd of labels has the least room
             await pg.set_viewport_size({'width': 1280, 'height': 720}); await pg.wait_for_timeout(700)
             lbov_big += await pg.evaluate(LABEL_OVERLAPS)
@@ -141,15 +159,7 @@ async def scenario(b, scn, port):
             return Math.max(Math.abs(x1 - x0), Math.abs(x2 - x0));
         }''')
         # a device's label doesn't cover another device's drawing (on a crowded floor, one may have to)
-        cover = await pg.evaluate('''() => {
-            const objs = [...document.querySelectorAll('#ar g[data-obj]')].map(g => [g.getAttribute('data-obj'), g.getBoundingClientRect()]);
-            let n = 0;
-            document.querySelectorAll('#ar .ar-lb').forEach(b => {
-                const r = b.firstElementChild.getBoundingClientRect(), id = b.getAttribute('data-id');
-                objs.forEach(([oid, o]) => { if (oid !== id && o.width && r.left < o.right - 2 && o.left + 2 < r.right && r.top < o.bottom - 2 && o.top + 2 < r.bottom) n++; });
-            });
-            return n;
-        }''')
+        cover = await pg.evaluate(LABEL_COVERS)
         # labels never sit on one another
         lbov = await pg.evaluate(LABEL_OVERLAPS)
         # a label's rates (2.1M, 47k, 1.25G) fit inside it
@@ -179,7 +189,7 @@ async def scenario(b, scn, port):
         check(out == 0, tag + 'Tab stays inside the expanded view')
         check(after == small, tag + 'closing the expanded view puts the stage back as it was')
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
-        check(cover <= (1 if scn in ('bulbs', 'busy', 'hostile', 'newer') else 0), tag + 'labels don\'t cover other devices (%d)' % cover)
+        check(cover == 0, tag + 'labels don\'t cover other devices (%d)' % cover)
         check(not spill, tag + 'every label\'s rates fit inside it' + ('' if not spill else ' (%s)' % ', '.join(spill[:4])))
         check(still is not None and still < 0.5, tag + 'the totals keep their place as the numbers change (%s px)' % still)
         check(lbov == 0 and lbov_big == 0, tag + 'labels don\'t sit on one another (%d in the page\'s view, %d expanded)' % (lbov, lbov_big))
@@ -563,8 +573,9 @@ async def start_theme_motion(b, port, port_rog):
         await pg.wait_for_timeout(4500)
         lives = await (await pg.request.get('http://127.0.0.1:%d/_lives' % port)).json()
         gaps = [round(b2 - a2, 2) for a2, b2 in zip(lives, lives[1:])]
-        # under 1.8 s: a second each, with room for a busy test machine (every scenario runs at once), still short of the 2 s pace
-        check(len(dg) >= 3 and max(dg) < 1.8 and len(gaps) >= 3 and min(gaps[-2:]) > 1.8,
+        # a second each until live: the gaps after the first under 1.5 s; the first includes the page's first full drawing, so it
+        # only has to be well short of the 2 s pace's two gaps
+        check(len(dg) >= 3 and max(dg[1:]) < 1.5 and dg[0] < 2.6 and len(gaps) >= 3 and min(gaps[-2:]) > 1.8,
               'start: until it is live the page asks for samples every second (%s), then every 2 s (%s)' % (dg[:4], gaps[-2:]))
         # 2. less motion asked for: the packets stand still, the legend says so; Animate starts them, and the browser remembers
         mc = await b.new_context(viewport={'width': 1300, 'height': 900}, reduced_motion='reduce')
@@ -607,7 +618,8 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798), start_theme_motion(b, 8780, 8781))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798))
+        await start_theme_motion(b, 8780, 8781)   # on its own: it times the page's first requests, which every other check would slow
         await b.close()
 
 

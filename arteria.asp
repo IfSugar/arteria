@@ -2491,8 +2491,10 @@ function textW(s, bold, size) {
 	} catch (e) { return s.length * 6.6 * (size || 11) / 11; }
 }
 function placeLabels(net, L, objs, arcs) {
-	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = 1000, rects = [], out = [];   /* a label on another label: only when there is nowhere else at all */
+	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = 1000, rects = [], out = [], meta = [];
+	var OBJ = G.big ? 150 : 90;   /* covering another device: worse than a long line, still better than hiding a label */   /* a label on another label: only when there is nowhere else at all */
 	var zones = [[0, 0, 244, 78], [SW - 266, 0, SW, 62], [0, SH - 40, 440, SH]];
+	if (G.big) zones.push([SW - 156, SH - 52, SW, SH]);   /* the zoom buttons */
 	var byId = {};
 	objs.forEach(function (o) { byId[o.id] = o; });
 	var items = [{ id: 'router', name: net.router.model || 'Router', o: byId.router }, { id: 'wan', name: 'Internet', o: byId.wan }];
@@ -2535,7 +2537,7 @@ function placeLabels(net, L, objs, arcs) {
 				cands.push({ x: ax - w / 2 + dx, y: bb[1] - 7 - HIT - dy, px: ax + dx, py: bb[1] - 12 - dy, ay: bb[1] - 2, just: 'center', d: d });
 			});
 		});
-		var best = null, bestCost = 1e9, OBJ = G.big ? 150 : 90;   /* covering another device: worse than a long line, still better than hiding a label */
+		var best = null, bestCost = 1e9;
 		cands.forEach(function (c, ci) {
 			if (ci >= near && bestCost < 30) return;   /* a near spot that covers nothing much: no need to look further */
 			var r = [c.x, c.y + 5, c.x + w, c.y + HIT - 5], cost = ci * 0.01 + (c.d || 0) * 0.12;
@@ -2549,7 +2551,49 @@ function placeLabels(net, L, objs, arcs) {
 		var x = Math.round(best.x), y = Math.round(best.y);
 		rects.push([x, y + 5, x + w, y + HIT - 5]);
 		out.push({ id: it.id, name: name, x3: it.x3 || '', x: x, y: y, w: w, just: best.just, px: best.px, py: best.py, ax: best.axr !== undefined ? best.axr : ax, ay: best.ay });
+		meta.push({ o: it.o, bb: bb, ax: ax });
 	});
+	/* One label at a time, busiest first, each near its device: on a crowded floor the last ones find every spot near them
+	   taken, and one that covers another device is the best they have, while there's room further out. So, once all are
+	   placed, a label still covering a device looks over the whole stage for a free spot, the nearest first (a longer line
+	   costs a little for every pixel), and moves there when that's better: the quietest first, twice over. */
+	for (var pass = 0; pass < 2; pass++) for (var k = out.length - 1; k >= 0; k--) {
+		var lb = out[k], m = meta[k], mine = rects[k], covers = function (r) {
+			var n = 0;
+			obb.forEach(function (e) { if (e[0] !== m.o && ov(r, e[1])) n++; });
+			return n;
+		};
+		var nowCov = covers(mine);
+		if (!nowCov) continue;
+		var bb2 = m.bb, mid2 = (bb2[1] + bb2[3]) / 2, w2 = lb.w, place = null;
+		var costAt = function (r) {
+			var c = 0;
+			if (r[0] < 4 || r[1] < 4 || r[2] > SW - 4 || r[3] > SH - 4) return 1e9;
+			for (var q = 0; q < rects.length; q++) if (q !== k && ov(r, rects[q])) return 1e9;   /* never on another label */
+			c += covers(r) * OBJ;
+			zones.forEach(function (z) { if (ov(r, z)) c += 60; });
+			return c;
+		};
+		var curCost = nowCov * OBJ + Math.sqrt(Math.pow(lb.px - lb.ax, 2) + Math.pow(lb.py - lb.ay, 2)) * 0.12;
+		for (var gy = 8; gy <= SH - HIT - 8; gy += 12) for (var gx = 8; gx <= SW - w2 - 8; gx += 16) {
+			var r2 = [gx, gy + 5, gx + w2, gy + HIT - 5], c2;
+			/* where its line meets it: the side facing the device */
+			var g;
+			if (r2[1] > bb2[3]) g = { px: Math.min(Math.max(m.ax, gx + 12), gx + w2 - 12), py: gy + 5, ax: m.ax, ay: bb2[3] + 2, just: 'center' };
+			else if (r2[3] < bb2[1]) g = { px: Math.min(Math.max(m.ax, gx + 12), gx + w2 - 12), py: gy + HIT - 5, ax: m.ax, ay: bb2[1] - 2, just: 'center' };
+			else if (gx > bb2[2]) g = { px: gx + 4, py: Math.min(Math.max(mid2, gy + 12), gy + HIT - 12), ax: bb2[2] + 1, ay: mid2, just: 'flex-start' };
+			else if (gx + w2 < bb2[0]) g = { px: gx + w2 - 4, py: Math.min(Math.max(mid2, gy + 12), gy + HIT - 12), ax: bb2[0] - 1, ay: mid2, just: 'flex-end' };
+			else continue;   /* on its own device */
+			c2 = costAt(r2);
+			if (c2 >= 1e9) continue;
+			c2 += Math.sqrt(Math.pow(g.px - g.ax, 2) + Math.pow(g.py - g.ay, 2)) * 0.12;
+			if (c2 < curCost - 1 && (!place || c2 < place.c)) place = { c: c2, x: gx, y: gy, g: g };
+		}
+		if (place) {
+			lb.x = place.x; lb.y = place.y; lb.px = place.g.px; lb.py = place.g.py; lb.ax = place.g.ax; lb.ay = place.g.ay; lb.just = place.g.just;
+			rects[k] = [place.x, place.y + 5, place.x + w2, place.y + HIT - 5];
+		}
+	}
 	return out;
 }
 
