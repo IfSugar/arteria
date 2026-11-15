@@ -756,19 +756,24 @@ menu_insert() {   # file line
 	fi
 }
 
-# Puts the edited menu ($1, in our folder) in place of /tmp/menuTree.js and removes $1. Renamed into place; but where
-# something has mounted a file over /tmp/menuTree.js it can't be renamed over ("Device or resource busy"), so the menu
-# is written into it instead. Fails (menu unchanged) when neither works.
+# Puts the edited menu ($1, in our folder) in place of /tmp/menuTree.js and removes $1. Renamed into place; but while
+# the menu is mounted more than once, one mount over another (see menu_remount), /tmp/menuTree.js can't be renamed
+# over ("Device or resource busy"), so the menu is written into it instead. Fails (menu unchanged) when neither works.
 menu_put() {
 	mv -f "$1" "$TMP_MENUTREE" 2>/dev/null || cat "$1" > "$TMP_MENUTREE" 2>/dev/null
 	[ ! -f "$1" ] || cmp -s "$1" "$TMP_MENUTREE"
 	set -- $? "$1"; rm -f "$2"; return $1
 }
 
+# Every addon mounts the shared copy over the firmware's menu. One that mounts it without unmounting first (or two at
+# once) leaves it mounted twice, one over the other: the page still shows the menu, but /tmp/menuTree.js can then no
+# longer be renamed over, so no addon's menu change sticks. So every mount is removed (all of the same shared copy)
+# and it's mounted once.
 menu_remount() {
-	umount "$MENUTREE" 2>/dev/null
+	mr=0; while [ $mr -lt 8 ] && umount "$MENUTREE" 2>/dev/null; do mr=$((mr + 1)); done
 	mount -o bind "$TMP_MENUTREE" "$MENUTREE"
 }
+menu_mounts() { awk -v m="$MENUTREE" '$2 == m { n++ } END { print n + 0 }' "$PROC/mounts" 2>/dev/null || echo 0; }
 
 is_ours() { [ "$(cat "$WWW_USER/${1%.asp}.title" 2>/dev/null)" = "$TITLE" ]; }
 
@@ -1645,8 +1650,10 @@ doctor() {   # [fix]
 		[ "$DR_FX" = 1 ] && rm -f "$KEY.new.pub" "$ADDON_DIR/discovered" "$ADDON_DIR/fingerbank" "$ADDON_DIR/fingerbank_key"
 		dr_fix "$n file(s) an older or development version left in $ADDON_DIR"
 	else dr_ok "no files left by older versions"; fi
-	if awk -v m="$TMP_MENUTREE" '$2 == m { f = 1 } END { exit !f }' "$PROC/mounts" 2>/dev/null; then
-		dr_info "something has mounted a file over $TMP_MENUTREE, the menu copy addons share, so it can't be replaced: Arteria writes into it instead"
+	mm=$(menu_mounts)
+	if [ "$mm" -gt 1 ]; then
+		[ "$DR_FX" = 1 ] && webui_lock && { menu_remount; flock -u 9; }
+		dr_fix "the router's menu is mounted $mm times, one over another (an addon mounted it again without unmounting it first), so addons' menu changes can fail (\"Device or resource busy\")"
 	fi
 	say ""
 	say "The page's files"
