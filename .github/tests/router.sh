@@ -91,7 +91,8 @@ case "\$1" in
 	isup) echo 1 ;;
 	# access point (1) or client (0): the node's eth2 is its Wi-Fi uplink, unless a test puts the node on an Ethernet backhaul;
 	# node-not-ap: none of the node's interfaces is an access point
-	ap) if [ -f "$t/node-not-ap" ]; then echo 0; elif [ "\$ifc" = eth2 ] && [ ! -f "$t/node-wired" ]; then echo 0; else echo 1; fi ;;
+	ap) if [ -f "$t/node-not-ap" ]; then echo 0; elif [ "\$ifc" = eth2 ] && [ ! -f "$t/node-wired" ]; then echo 0
+		elif [ "\$ifc" = eth1 ] && [ -f "$t/node-dpsta" ]; then echo 0; else echo 1; fi ;;
 	assoclist) awk -v i="\$ifc" '\$1 == i { print "assoclist", \$2 }' "$F/assoc" ;;
 	sta_info)
 		awk -v i="\$ifc" -v m="\$2" -v now="\$(date +%s)" '\$1 == i && \$2 == m {
@@ -237,9 +238,10 @@ case "\$1 \$2" in
 	'set sshd_authkeys='*) printf '%s' "\${2#sshd_authkeys=}" > "$t/node-authkeys" ;;
 	'commit '*) ;;
 	*) case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
-		sta_phy_ifnames) echo eth2 ;;   # its 5 GHz radio's own interface is its uplink to the router (a Wi-Fi backhaul)
+		sta_phy_ifnames) [ -f "$t/node-dpsta" ] && echo dpsta || echo eth2 ;;   # its 5 GHz radio's own interface is its uplink to the router (a Wi-Fi backhaul)
+		dpsta_ifnames) [ -f "$t/node-dpsta" ] && echo "eth1 eth2" ;;   # a node that joins both radios' uplinks into one interface, dpsta
 		sta_ifnames) [ -f "$t/node-all-listed" ] && echo "eth1 wl0.1 wl1.1"
-			[ -f "$t/node-wired" ] && echo "eth1 eth2" ;;   # an Ethernet backhaul: its radios are still named as possible uplinks
+			[ -f "$t/node-wired" ] || [ -f "$t/node-dpsta" ] && echo "eth1 eth2" ;;   # an Ethernet backhaul: its radios are still named as possible uplinks
 		wl0_mode) [ -f "$t/node-all-listed" ] && echo psr ;; esac ;;
 esac
 EOF
@@ -286,7 +288,8 @@ for f in "$B"/* "$N"/*; do [ -L "$f" ] || chmod +x "$f"; done   # the stand-ins;
 
 echo 'enable -n test [ printf echo' > "$t/no-builtins.sh"
 # the node's own /proc/net/dev: its uplink (eth2, a client of the router) with its counters
-mkdir -p "$t/node-proc/net"; printf 'Inter-|   Receive\n face |bytes    packets\n  eth2: 7340032 5000 0 0 0 0 0 0 1048576 3000 0 0 0 0 0 0\n  eth1: 99 1 0 0 0 0 0 0 99 1 0 0 0 0 0 0\n' > "$t/node-proc/net/dev"
+# (dpsta, which joins both radios' uplinks on a node that has it, counts what they count)
+mkdir -p "$t/node-proc/net"; printf 'Inter-|   Receive\n face |bytes    packets\n  eth2: 7340032 5000 0 0 0 0 0 0 1048576 3000 0 0 0 0 0 0\n  eth1: 99 1 0 0 0 0 0 0 99 1 0 0 0 0 0 0\n dpsta: 7340131 5001 0 0 0 0 0 0 1048675 3001 0 0 0 0 0 0\n' > "$t/node-proc/net/dev"
 export AR_NODE_PROC="$t/node-proc"
 run()  { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" BASH_ENV="$t/no-builtins.sh" "$bash_bin" "$script" "$@"; }
 runa() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$script" "$@"; }
@@ -523,6 +526,12 @@ run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
 grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection" "$t/nt.out" \
 	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+# A node that joins both radios' uplinks into one interface, dpsta (an RP-AX56): each packet is counted on dpsta and on its radio,
+# so its uplink is dpsta alone, or its backhaul reads double
+touch "$t/node-dpsta" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-dpsta" "$t/node-tee"
+if grep -q "reads 3 device(s), one round takes about [0-9]* s$" "$t/nt.out" && [ "$(grep '^U ' "$t/node-last.out")" = "U dpsta 7340131 1048675" ]; then
+	ok "a node whose radios' uplinks are joined into one interface (dpsta) counts its uplink once, on dpsta"
+else bad "a node with dpsta:"; cat "$t/nt.out" "$t/node-last.out"; fi
 # A node on an Ethernet backhaul (an RT-AC86U, a ZenWiFi XD6): its firmware still names its radios' own interfaces as possible
 # uplinks, but they are access points with the node's devices on them. They're read, and none of them is reported as the uplink.
 touch "$t/node-wired" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-wired" "$t/node-tee"
