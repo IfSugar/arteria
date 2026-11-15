@@ -328,7 +328,9 @@ sta_json() {
 # The script the page runs on each node, sent as the SSH command itself: the node's login shell runs it, as it would run it
 # typed in a terminal there. (Sent to "sh -s" instead, it crashed on some stock-firmware nodes, whose sh also refuses -x.)
 # It reads the node's own Wi-Fi interfaces, never its uplink: on a node with a Wi-Fi backhaul, the radio's own interface is a
-# client of the router (sta_phy_ifnames, or a client mode), and the node's devices are on wl0.1-style interfaces.
+# client of the router (a client mode, or named in sta_phy_ifnames/sta_ifnames), and the node's devices are on wl0.1-style
+# interfaces. A node on an Ethernet backhaul still names its radios in those lists, but they are access points with the node's
+# devices on them (an RT-AC86U, a ZenWiFi XD6): so a named interface counts as the uplink only while it isn't an access point.
 # Each round also reports the uplink's own byte counters ("U ifname rx tx"), read in the same round as its devices': the page
 # shows the node's part of Flow from those, so the node's backhaul and its devices always add up, even while a download that
 # just started is reaching the router's figures a round before the node's (a node with a wired backhaul sends none).
@@ -346,9 +348,9 @@ t() { [ -z "$T" ] || echo "+ $*" >&2; }
 [ -z "$T" ] || { t busybox; v=$(busybox 2>&1 | head -n 1); t "shell: $0, /bin/sh is $(readlink /bin/sh 2>/dev/null), ${v%% multi-call*}"; }
 t nvram get sta_phy_ifnames sta_ifnames
 S=" $(nvram get sta_phy_ifnames) $(nvram get sta_ifnames) "
-U="$S"
 L=""
 K=""
+Z=" "
 for u in 0 1 2 3; do
 	t nvram get wl${u}_ifname
 	f=$(nvram get wl${u}_ifname); [ -n "$f" ] || continue
@@ -356,12 +358,19 @@ for u in 0 1 2 3; do
 	b=$(nvram get wl${u}_nband)
 	case "$b" in 2) b=2.4 ;; 1) b=5 ;; 4) b=6 ;; *) b=0 ;; esac
 	m=$(nvram get wl${u}_mode)
-	case "$m" in sta|wet|psta|psr) U="$U$f "; K="$K $f:$m"; f="" ;; esac
+	case "$m" in sta|wet|psta|psr) Z="$Z$f "; K="$K $f:$m"; f="" ;; esac
 	for x in $f $(nvram get wl${u}_vifs); do
-		case "$S" in *" $x "*) K="$K $x:listed"; continue ;; esac
+		case "$S" in *" $x "*)
+			t wl -i $x ap
+			case "$(wl -i "$x" ap 2>/dev/null)" in *1*) ;; *) K="$K $x:listed"; continue ;; esac ;;
+		esac
 		L="$L $x:$b"
 	done
 done
+# the uplink: the named interfaces that aren't read (access points), and the radios in a client mode
+U=" "
+for x in $S; do case " $L " in *" $x:"*) ;; *) U="$U$x " ;; esac; done
+U="$U${Z# }"
 t "reads:$L, uplink:$U"
 if [ -n "$W" ]; then
 	for p in $L; do echo "W read ${p%%:*} - $(wl -i "${p%%:*}" assoclist 2>/dev/null | wc -l)"; done
