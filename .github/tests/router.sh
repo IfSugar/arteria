@@ -234,7 +234,9 @@ case "\$1 \$2" in
 	'set sshd_authkeys='*) printf '%s' "\${2#sshd_authkeys=}" > "$t/node-authkeys" ;;
 	'commit '*) ;;
 	*) case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
-		sta_phy_ifnames) echo eth2 ;; esac ;;   # its 5 GHz radio's own interface is its uplink to the router (a Wi-Fi backhaul)
+		sta_phy_ifnames) echo eth2 ;;   # its 5 GHz radio's own interface is its uplink to the router (a Wi-Fi backhaul)
+		sta_ifnames) [ -f "$t/node-all-listed" ] && echo "eth1 wl0.1 wl1.1" ;;   # a node that names its devices' interfaces as uplinks
+		wl0_mode) [ -f "$t/node-all-listed" ] && echo psr ;; esac ;;
 esac
 EOF
 cat > "$B/dbclient" <<EOF
@@ -516,6 +518,13 @@ run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
 grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection" "$t/nt.out" \
 	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+# A node whose firmware names the interfaces its devices are on as possible uplinks: it reads 0 devices, and nodes test says
+# which interfaces it read and skipped, with the devices on each (interface names only)
+touch "$t/node-all-listed"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-all-listed"
+grep -q "reads 0 device(s), one round takes about [0-9]* s (devices on each interface it reads: none; on each it skips as the uplink: eth1 1 (psr mode), wl0.1 1, eth2 1, wl1.1 2)$" "$t/nt.out" \
+	&& ! grep -Eqi '([0-9A-F]{2}:){5}' "$t/nt.out" \
+	&& ok "nodes test: a node that reads 0 devices names the interfaces it read and skipped as the uplink, with the devices on each" \
+	|| { bad "nodes test, a node that reads 0 devices:"; cat "$t/nt.out"; }
 touch "$t/node-cut-crash"; rm -f "$R/tmp/arteria/node-trace.txt"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-cut-crash"
 tr="$R/tmp/arteria/node-trace.txt"
 grep -q "something on the node crashed running: cut .* (what it ran is in .*/node-trace.txt, without addresses)$" "$t/nt.out" \

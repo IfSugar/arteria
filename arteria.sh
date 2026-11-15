@@ -334,10 +334,12 @@ sta_json() {
 # just started is reaching the router's figures a round before the node's (a node with a wired backhaul sends none).
 # With "trace" it runs one round and says on stderr what it runs before each command ("+ wl -i ... assoclist"), so a command
 # that crashes on the node is named (nodes test, doctor), without needing the node's sh to support -x.
+# With "why" it reads no counters: it prints each interface it reads and each one it skips as the uplink (and why), with how
+# many devices each has ("W read wl0.1 - 3", "W skip eth6 psr 1"), for a node that reads 0 devices (node_why).
 NODE_MARK="# arteria node script"
 NODE_PROC="${AR_NODE_PROC:-/proc}"   # AR_NODE_PROC: test hook only (a stand-in node's /proc)
-write_node_script() {   # [rounds] [trace]   rounds default: 30 minutes' worth (the page's session); 'nodes test' runs one
-	printf '%s\nI=%s\nN=%s\nT=%s\nP=%s\n' "$NODE_MARK" "$INTERVAL" "${1:-$((1800 / INTERVAL))}" "${2:+1}" "$NODE_PROC"
+write_node_script() {   # [rounds] [trace|why]   rounds default: 30 minutes' worth (the page's session); 'nodes test' runs one
+	printf '%s\nI=%s\nN=%s\nT=%s\nW=%s\nP=%s\n' "$NODE_MARK" "$INTERVAL" "${1:-$((1800 / INTERVAL))}" "$( [ "$2" = trace ] && echo 1)" "$( [ "$2" = why ] && echo 1)" "$NODE_PROC"
 	printf "A='%s'\n" "$STA_AWK"
 	cat <<'EOF'
 t() { [ -z "$T" ] || echo "+ $*" >&2; }
@@ -346,19 +348,26 @@ t nvram get sta_phy_ifnames sta_ifnames
 S=" $(nvram get sta_phy_ifnames) $(nvram get sta_ifnames) "
 U="$S"
 L=""
+K=""
 for u in 0 1 2 3; do
 	t nvram get wl${u}_ifname
 	f=$(nvram get wl${u}_ifname); [ -n "$f" ] || continue
 	t nvram get wl${u}_nband wl${u}_mode wl${u}_vifs
 	b=$(nvram get wl${u}_nband)
 	case "$b" in 2) b=2.4 ;; 1) b=5 ;; 4) b=6 ;; *) b=0 ;; esac
-	case "$(nvram get wl${u}_mode)" in sta|wet|psta|psr) U="$U$f "; f="" ;; esac
+	m=$(nvram get wl${u}_mode)
+	case "$m" in sta|wet|psta|psr) U="$U$f "; K="$K $f:$m"; f="" ;; esac
 	for x in $f $(nvram get wl${u}_vifs); do
-		case "$S" in *" $x "*) continue ;; esac
+		case "$S" in *" $x "*) K="$K $x:listed"; continue ;; esac
 		L="$L $x:$b"
 	done
 done
 t "reads:$L, uplink:$U"
+if [ -n "$W" ]; then
+	for p in $L; do echo "W read ${p%%:*} - $(wl -i "${p%%:*}" assoclist 2>/dev/null | wc -l)"; done
+	for p in $K; do echo "W skip ${p%%:*} ${p#*:} $(wl -i "${p%%:*}" assoclist 2>/dev/null | wc -l)"; done
+	exit 0
+fi
 r() {
 	for p in $L; do
 		x=${p%%:*}; b=${p#*:}
@@ -978,8 +987,10 @@ node_probe() {   # ip [trace-file] -> PROBE_MSG, PROBE_CRASH (1: something crash
 	wait_pid $! 30; late=$?
 	t=$(( $(now) - t0 )); [ $t -ge 1 ] || t=1
 	if grep -q '^#E' "$o" 2>/dev/null; then
-		PROBE_MSG="reads $(grep -c '^S ' "$o") device(s), one round takes about $t s"
+		nd=$(grep -c '^S ' "$o")
+		PROBE_MSG="reads $nd device(s), one round takes about $t s"
 		[ $t -gt 30 ] && PROBE_MSG="$PROBE_MSG: too slow, the page shows it as not answering"
+		[ "$nd" = 0 ] && { node_why "$1"; PROBE_MSG="$PROBE_MSG ($WHY_MSG)"; }
 		rc=0
 	elif [ $late = 1 ]; then PROBE_MSG="reading its devices took over 30 s"; rc=1
 	else
@@ -995,6 +1006,19 @@ node_probe() {   # ip [trace-file] -> PROBE_MSG, PROBE_CRASH (1: something crash
 		PROBE_MSG="$PROBE_MSG; something on the node crashed${TRACE_AT:+ running: $TRACE_AT} (what it ran is in $tf, without addresses)"
 	fi
 	return $rc
+}
+# A node that reads 0 devices: which of its interfaces the script reads and which it skips as the uplink, with each one's
+# device count. Devices on a skipped interface mean the uplink was guessed wrong on that node. Interface names only.
+node_why() {   # ip -> WHY_MSG
+	wo="$TMPD/why.$$"
+	(HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1 why)") < /dev/null > "$wo" 2>&1 &
+	wait_pid $! 30
+	WHY_MSG=$(awk '$1 == "W" && $3 ~ /^[A-Za-z0-9._-]+$/ && $5 ~ /^[0-9]+$/ {
+		if ($2 == "read") r = r (r ? ", " : "") $3 " " $5
+		else if ($2 == "skip" && $4 ~ /^(listed|sta|wet|psta|psr)$/) s = s (s ? ", " : "") $3 " " $5 ($4 == "listed" ? "" : " (" $4 " mode)") }
+		END { printf "devices on each interface it reads: %s; on each it skips as the uplink: %s", (r ? r : "none"), (s ? s : "none") }' "$wo")
+	grep -Eq "$CRASH_RE" "$wo" 2>/dev/null && WHY_MSG="$WHY_MSG; something crashed while counting them"
+	rm -f "$wo"
 }
 # One round of the node's script, traced (each command named before it runs), with every command's errors shown (the page's
 # own run hides wl's): a command that crashes on the node is named. The trace goes to a file for a bug report, without

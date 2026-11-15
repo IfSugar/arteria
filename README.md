@@ -1,6 +1,6 @@
 # Arteria for Asuswrt-Merlin
 
-A live, animated map of how traffic flows through your home network: from the internet, through your router and its AiMesh nodes, to every device. Written on an RT-AX86U (3004.388.x) with an AiMesh node, and reported working on the RT-BE88U, GT-AX6000, GT-AX11000 Pro, ZenWiFi Pro XT12, RT-AX88U, GT-BE98 Pro and RT-BE92U. `arteria.sh check` tells you whether your router can run it before anything is installed.
+A live, animated map of how traffic flows through your home network: from the internet, through your router and its AiMesh nodes, to every device. Written on an RT-AX86U (3004.388.x) with an AiMesh node, and reported working on the RT-BE88U, GT-AX6000, GT-AX11000 Pro, ZenWiFi Pro XT12, RT-AX88U, GT-BE98 Pro, RT-BE92U and DSL-AX82U. `arteria.sh check` tells you whether your router can run it before anything is installed.
 
 It only works while you're looking: sampling starts when you open its page and stops when you close it. No cron jobs, no background service, nothing written to flash while it runs, and it backs off by itself when the router is busy.
 
@@ -105,7 +105,7 @@ The router only knows each node's backhaul total. To show the devices on a node,
 - **Key login only, never a password.** Each node's SSH identity is pinned, and `nodekey` sends a password only to a node whose fingerprint you confirmed there. If a node's identity changes, the page says so and `nodekey` asks before trusting the new one.
 - **Nodes that don't take passwords** (*Allow Password Login* off): `nodekey` puts the key in the router's list only. A node loads that list when it starts, so reboot the node (AiMesh page), then run `nodes test`.
 - **Nodes with ASUS's own firmware** take only the first key of the router's list; `nodekey` warns you when another key is already listed.
-- **Check it** with `arteria.sh nodes test`: key login, which key works, and one round of the page's script on each node (how many devices, how long). If something crashes on a node, it saves a trace (no addresses) for a bug report. A node that's slow still counts as answering, at its own pace.
+- **Check it** with `arteria.sh nodes test`: key login, which key works, and one round of the page's script on each node (how many devices, how long). If something crashes on a node, it saves a trace (no addresses) for a bug report. If a node reads 0 devices, it lists the node's interfaces it reads and the ones it skips as the uplink, with the devices on each. A node that's slow still counts as answering, at its own pace.
 
 Nothing on a node changes except the one line in its authorized keys. To stop reading nodes, set `NODES=off` in the config.
 
