@@ -41,7 +41,13 @@ grep -v '^#' "$here/merlin-applets.txt" | while IFS= read -r a; do
 done
 for a in logger mount umount uname; do rm -f "$B/$a"; done
 printf '#!%s sh\nshift 2; echo "$*" >> "%s/syslog"\n' "$bb" "$t" > "$B/logger"
-printf '#!%s sh\nexit 0\n' "$bb" > "$B/mount"; cp "$B/mount" "$B/umount"
+# mount and umount keep a /proc/mounts as the kernel does: mounts at one place stack, and umount removes the top one
+printf '#!%s sh\nfor a; do l=$a; done\necho "tmpfs $l tmpfs rw,relatime 0 0" >> "%s/proc/mounts"\n' "$bb" "$t" > "$B/mount"
+printf '#!%s sh\nf=%s/proc/mounts\ngrep -q " $1 " "$f" 2>/dev/null || { echo "umount: $1: not mounted" >&2; exit 1; }\nawk -v m="$1" '"'"'{ l[NR] = $0; if ($2 == m) k = NR } END { for (i = 1; i <= NR; i++) if (i != k) print l[i] }'"'"' "$f" > "$f.n"\ncat "$f.n" > "$f"\n' "$bb" "$t" > "$B/umount"
+chmod +x "$B/mount" "$B/umount"
+menu_mounts() { grep -c " $R/www/require/modules/menuTree.js " "$t/proc/mounts" 2>/dev/null; }
+# another addon mounts the menu again without unmounting it first
+stack_menu() { echo "tmpfs $R/www/require/modules/menuTree.js tmpfs rw,relatime 0 0" >> "$t/proc/mounts"; }
 printf '#!%s sh\n[ "$1" = -o ] && echo ASUSWRT-Merlin || echo Linux\n' "$bb" > "$B/uname"
 
 # ---- the router ------------------------------------------------------------------------------
@@ -784,6 +790,21 @@ hook start arteria; hb_made() { [ -f "$R/tmp/arteria/heartbeat" ]; }; waitfor 5 
 hb_made && ok "the hook passes the page's request on" || bad "the hook didn't pass 'start arteria' on"
 hook start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
 grep -qi "key login works\|Node(s) without the key" "$t/install.out" && ok "install checks node access" || { bad "install didn't check the nodes:"; cat "$t/install.out"; }
+# The menu mounted twice, one over the other: as on the router, /tmp/menuTree.js can't be renamed over then ("Device or
+# resource busy"). The menu is written into it instead, nothing is left behind in /tmp/arteria, nothing alarming is
+# printed, and it's mounted once again afterwards, so the next change is renamed into place as usual
+[ "$(menu_mounts)" = 1 ] || bad "install should leave the menu mounted once, not $(menu_mounts) times"
+stack_menu
+rm -f "$B/mv"
+printf '#!%s sh\nfor a; do l=$a; done\ncase "$l" in */tmp/menuTree.js) [ "$(grep -c " %s " "%s")" -gt 1 ] && { echo "mv: can'"'"'t rename '"'"'$1'"'"': Device or resource busy" >&2; exit 1; } ;; esac\nexec "%s" mv "$@"\n' "$bb" "$R/www/require/modules/menuTree.js" "$t/proc/mounts" "$bb" > "$B/mv"; chmod +x "$B/mv"
+sed -i '/tabName: "Arteria"/d' "$R/tmp/menuTree.js"
+runi startup > "$t/busy.out" 2>&1 || true
+sed -i '/tabName: "Arteria"/d' "$R/tmp/menuTree.js"
+runi startup > "$t/busy2.out" 2>&1 || true
+rm -f "$B/mv"; ln -s "$bb" "$B/mv"
+if [ "$(grep -c 'tabName: "Arteria"' "$R/tmp/menuTree.js")" = 1 ] && ! ls "$R/tmp/arteria" | grep -q '^menuTree\.[0-9]' && ! grep -q "can't rename\|Couldn't" "$t/busy.out" "$t/busy2.out" && [ "$(menu_mounts)" = 1 ]; then
+	ok "the menu mounted twice over itself: written in place, nothing left behind, and mounted once again"
+else bad "menu mounted twice over itself:"; cat "$t/busy.out" "$t/busy2.out"; ls "$R/tmp/arteria"; grep -c Arteria "$R/tmp/menuTree.js"; menu_mounts; fi
 
 # ---- 5: update and update dev install only a whole download of the right version --------------
 # A stand-in curl serves GitHub's addresses from $t/srv: the latest release's tag, branches, raw files.
@@ -857,7 +878,7 @@ else bad "update dev fix/menu:"; cat "$t/upd.out" "$t/curl.log"; fi
 # back to a release from a development version: the same number is installed again, and install takes the mark away
 printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"; release 9.9.10 9.9.10
 upd update || true
-if grep -q "Updating" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
+if grep -q "Updating 9.9.10 (development version: fix/menu @ 0123456, installed .*) -> 9.9.10, the release" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
 	ok "update: from a development version back to the release, the mark is gone"
 else bad "update after update dev:"; cat "$t/upd.out"; fi
 # doctor: the known problems, found, then fixed. What going back to 1.0.0 leaves (its own hook line next to today's), a
@@ -889,6 +910,14 @@ if [ $rc = 0 ] && [ $fixed = 1 ] && grep -q 'Nothing wrong found' "$t/doc.out" &
 	&& grep -q "^  \[ OK \] a request like the page's reached Arteria in [0-9]* s, and its first samples came [0-9]* s later$" "$t/doc.out"; then
 	ok "doctor fix: one hook line, today's (others' lines kept), files tidied, permissions tightened, the session stopped; the page's requests work"
 else bad "doctor fix:"; cat "$t/doc.out"; grep -n . "$R/jffs/scripts/service-event"; ls -la "$W"; fi
+# The menu mounted twice, one over the other: doctor says so, and doctor fix mounts it once
+stack_menu; doc || true
+if grep -q "^  \[FIX \] the router's menu is mounted 2 times, one over another" "$t/doc.out"; then
+	doc fix || true
+	if [ "$(menu_mounts)" = 1 ] && grep -q "^  \[DONE\] the router's menu is mounted 2 times.*: fixed$" "$t/doc.out"; then
+		ok "doctor: the menu mounted twice over itself is found, and doctor fix mounts it once"
+	else bad "doctor fix, menu mounted twice:"; cat "$t/doc.out"; menu_mounts; fi
+else bad "doctor didn't find the menu mounted twice:"; cat "$t/doc.out"; fi
 # A line before Arteria's that ends service-event: the page's requests never reach it. doctor says so (after a short wait here)
 # and moves Arteria's line first; then the requests work.
 printf '#!/bin/sh\nexit 0\ncase "$2" in arteria*) %s/jffs/addons/arteria/arteria.sh service_event "$@" & ;; esac # arteria\n' "$R" > "$se"

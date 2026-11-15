@@ -756,10 +756,24 @@ menu_insert() {   # file line
 	fi
 }
 
+# Puts the edited menu ($1, in our folder) in place of /tmp/menuTree.js and removes $1. Renamed into place; but while
+# the menu is mounted more than once, one mount over another (see menu_remount), /tmp/menuTree.js can't be renamed
+# over ("Device or resource busy"), so the menu is written into it instead. Fails (menu unchanged) when neither works.
+menu_put() {
+	mv -f "$1" "$TMP_MENUTREE" 2>/dev/null || cat "$1" > "$TMP_MENUTREE" 2>/dev/null
+	[ ! -f "$1" ] || cmp -s "$1" "$TMP_MENUTREE"
+	set -- $? "$1"; rm -f "$2"; return $1
+}
+
+# Every addon mounts the shared copy over the firmware's menu. One that mounts it without unmounting first (or two at
+# once) leaves it mounted twice, one over the other: the page still shows the menu, but /tmp/menuTree.js can then no
+# longer be renamed over, so no addon's menu change sticks. So every mount is removed (all of the same shared copy)
+# and it's mounted once.
 menu_remount() {
-	umount "$MENUTREE" 2>/dev/null
+	mr=0; while [ $mr -lt 8 ] && umount "$MENUTREE" 2>/dev/null; do mr=$((mr + 1)); done
 	mount -o bind "$TMP_MENUTREE" "$MENUTREE"
 }
+menu_mounts() { awk -v m="$MENUTREE" '$2 == m { n++ } END { print n + 0 }' "$PROC/mounts" 2>/dev/null || echo 0; }
 
 is_ours() { [ "$(cat "$WWW_USER/${1%.asp}.title" 2>/dev/null)" = "$TITLE" ]; }
 
@@ -808,13 +822,17 @@ mount_webui() {
 	if ! ours_file "$TMP_MENUTREE"; then
 		cp -f "$MENUTREE" "$TMPD/menuTree.base" && mv -f "$TMPD/menuTree.base" "$TMP_MENUTREE" || { flock -u 9; return 1; }
 	fi
+	rm -f "$TMPD"/menuTree.[0-9]*   # left by an older version when /tmp/menuTree.js couldn't be replaced (see below)
 	new="$TMPD/menuTree.$$"   # in our own folder: a name in /tmp could be a link someone planted
 	sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$new"
 	before=$(wc -l < "$new")
 	entry="{url: \"$am_webui_page\", tabName: \"$TITLE\"},"
 	menu_insert "$new" "$entry"
 	if [ -n "$where" ] && [ "$(grep -c "tabName: \"$TITLE\"" "$new")" = "$added" ] && [ "$(wc -l < "$new")" -eq $((before + added)) ]; then
-		mv -f "$new" "$TMP_MENUTREE"
+		if ! menu_put "$new"; then
+			say "Couldn't update the menu ($TMP_MENUTREE can't be changed), so it was left as it was. Open http://$(nvram get lan_ipaddr)/$am_webui_page instead."
+			log "menu not updated: $TMP_MENUTREE can't be replaced or written"
+		fi
 		menu_remount
 		echo "$where" > "$TMPD/menu_where"
 	else
@@ -831,7 +849,7 @@ unmount_webui() {
 	page=$(cat "$ADDON_DIR/webui_page" 2>/dev/null)
 	webui_lock || return 1
 	if ours_file "$TMP_MENUTREE"; then
-		sed -i "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE"
+		sed "/tabName: \"$TITLE\"/d" "$TMP_MENUTREE" > "$TMPD/menuTree.$$" && menu_put "$TMPD/menuTree.$$"
 		menu_remount
 	fi
 	[ -n "$page" ] && is_ours "$page" && rm -f "$WWW_USER/$page" "$WWW_USER/${page%.asp}.title"
@@ -1437,7 +1455,8 @@ update() {   # [force]  fetch the latest release from GitHub and reinstall over 
 		return 0
 	fi
 	get_page "$rel" "the latest release"
-	say "Updating $VERSION -> $new (settings and node access are kept)"
+	# the same number again only replaces a development version (update dev): say so
+	say "Updating $VERSION$( [ -f "$BUILD_FILE" ] && printf ' (%s)' "$(build_text)") -> $new$( [ -f "$BUILD_FILE" ] && printf ', the release') (settings and node access are kept)"
 	install_dl
 }
 
@@ -1631,6 +1650,11 @@ doctor() {   # [fix]
 		[ "$DR_FX" = 1 ] && rm -f "$KEY.new.pub" "$ADDON_DIR/discovered" "$ADDON_DIR/fingerbank" "$ADDON_DIR/fingerbank_key"
 		dr_fix "$n file(s) an older or development version left in $ADDON_DIR"
 	else dr_ok "no files left by older versions"; fi
+	mm=$(menu_mounts)
+	if [ "$mm" -gt 1 ]; then
+		[ "$DR_FX" = 1 ] && webui_lock && { menu_remount; flock -u 9; }
+		dr_fix "the router's menu is mounted $mm times, one over another (an addon mounted it again without unmounting it first), so addons' menu changes can fail (\"Device or resource busy\")"
+	fi
 	say ""
 	say "The page's files"
 	d=$(web_dir)
