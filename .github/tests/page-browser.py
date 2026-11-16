@@ -106,6 +106,13 @@ async def scenario(b, scn, port):
                   and picked['name'] == 'Backup NAS' and 'through a switch' in picked['link'] and picked['on'] and picked['list'],
                   tag + ': a switch lists its four devices by name; one picked shows its details, the switch stays lit and the list open (%s; %s)' % (lst, picked['link']))
             check(pi == 'Hall|wired|Hall LAN|true|false' and guest == 'Guests', tag + ': a device on the node\'s LAN port is the node\'s; a node\'s guest network is named (%s, %s)' % (pi, guest))
+            # pipes are cables, arcs are Wi-Fi: the node (on an Ethernet backhaul) and its wired device by pipe, its Wi-Fi devices by arc
+            kinds = await pg.evaluate("""() => { const L = Arteria.state.layout, node = L.nodes[0].node;
+                const k = id => { const e = document.querySelector('#arMapScene [data-lane="' + id + '|dn"]'); return e ? (e.classList.contains('t') ? 'pipe' : 'arc') : 'none'; };
+                const devs = L.devs.filter(x => x.dev.node === node);
+                return { node: k(node.id), wired: devs.filter(x => x.dev.link === 'wired').map(x => k(x.dev.id)), wifi: devs.filter(x => x.dev.link === 'wifi').map(x => k(x.dev.id)) }; }""")
+            check(kinds['node'] == 'pipe' and kinds['wired'] and all(k == 'pipe' for k in kinds['wired']) and kinds['wifi'] and all(k == 'arc' for k in kinds['wifi']),
+                  tag + ': a node on an Ethernet backhaul and its wired device are drawn as pipes, its Wi-Fi devices as arcs (%s)' % kinds)
             await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
             await pg.evaluate("Arteria.pick(null)")
         # the page's view: Flow, the list, Details, the report
