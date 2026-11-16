@@ -619,6 +619,113 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	});
 	ok(out.join(' ') === '3+1 2+2', 'on the map: the quietest nodes without a zone, their devices on the tray, and the tray says how many nodes', out.join(' '));
 	A.nodeZones = null; A.nodeSwapAt = 0;
+	// a node with one busy-ish camera (1.5 Mb/s) has the zone; one with 18 quiet devices (0.3 Mb/s) takes it: traffic doesn't
+	// decide between them, devices do. A download (3x and over 1 Mb/s) still beats any number of devices.
+	{
+		const dz = (k, sdn, n) => Object.assign(mk(k, sdn), { devs: Array.from({ length: n }, (_, i) => ({ id: 'X' + k + i, st: 'ok' })) });
+		const cam = dz(1, 1.5, 1), lounge = dz(2, 0.3, 18), dl = dz(3, 40, 1);
+		A.nodeZones = ['02:10:00:00:00:C1']; A.nodeSwapAt = 0;
+		const a = names(T.pickNodes([cam, lounge], 1));
+		A.nodeZones = ['02:10:00:00:00:C2']; A.nodeSwapAt = 0;
+		const b = names(T.pickNodes([lounge, dl], 1));
+		A.nodeZones = ['02:10:00:00:00:C2']; A.nodeSwapAt = 0;
+		const c = names(T.pickNodes([lounge, dz(4, 0.1, 12)], 1));   /* 12 devices aren't over twice 18: it keeps its zone */
+		A.nodeZones = null; A.nodeSwapAt = 0;
+		const d = names(T.pickNodes([dz(5, 0, 2), dz(6, 0, 9), dz(7, 0, 4)], 2));   /* nothing measured yet (the page just opened): most devices first */
+		ok(a === 'Node 2' && b === 'Node 3' && c === 'Node 2' && d === 'Node 6,Node 7', 'zones: when traffic doesn\'t decide, the node with many more devices gets one; a download still wins', [a, b, c, d].join(' | '));
+		A.nodeZones = null; A.nodeSwapAt = 0;
+	}
+}
+
+// ---- 22. a switch on a LAN port: one device with the port's figures, and the devices behind it, each named and pickable, with no
+// figures of their own; picking the switch or one of them opens the list of its devices, and one of them is traced to the switch
+{
+	A.names = AR.parseNames({ custom: '<Game PC>00:00:5E:00:53:A1>0>0>><Backup NAS>00:00:5E:00:53:A2>0>4>>' });
+	['p:eth1', 'p:eth2'].forEach(k => { delete A.prev[k]; delete A.sm[k]; });
+	const sw = (up, tx) => AR.buildNet(smp({ up: up, ports: ['eth1', 'eth2'], links: [['eth0', 1, 1000], ['eth1', 1, 1000], ['eth2', 1, 1000]],
+		macs: [['eth1', '00:00:5E:00:53:A1'], ['eth1', '00:00:5E:00:53:A2'], ['eth1', '00:00:5E:00:53:A3'], ['eth2', '00:00:5E:00:53:A4']],
+		ifs: [['eth0', '1', '1'], ['eth1', '1000', String(tx)], ['eth2', '0', '0']] }));
+	sw('9000.0', 1000); const n = sw('9002.0', 1000 + 2.5e6);
+	const s = n.byId['port:eth1'], b = s && s.behind || [], one = n.byId['00:00:5E:00:53:A4'];
+	const names = b.map(d => d.name).join(','), inDevs = n.devs.filter(d => d.sw).length;
+	const pickable = b.every(d => n.byId[d.id] === d && d.st === 'shared' && d.sw === s && d.link === 'wired' && d.portLabel === 'LAN 1');
+	A.sel = 'port:eth1'; const hsS = T.hiddenSet(n);
+	A.sel = '00:00:5E:00:53:A2'; const hsD = T.hiddenSet(n), ch = T.chainOf(n, A.sel), ro = T.readoutFor(n);
+	const kinds = b.map(d => d.kind).join(',');
+	A.sel = null;
+	ok(s && s.kind === 'switch' && s.count === 3 && Math.abs(s.dn - 10) < 0.01 && names === 'Backup NAS,Device …53:A3,Game PC' && kinds.indexOf('nas') >= 0 && pickable && !inDevs && one && !one.behind
+		&& n.clients === 4 && hsS && hsS.open && hsS.devs === b && hsS.key === 'port:eth1' && hsD && hsD.devs === b && ch.join() === 'port:eth1'
+		&& ro.dnN === '—' && /through a switch/.test(ro.d.link) && /all 3 together/.test(ro.note) && ro.path === 'RT-AX86U → switch → Backup NAS',
+		'a switch: the port\'s figures on one device, its devices named in its list (no figures of their own), each one traced to it',
+		JSON.stringify({ names, kinds, dn: s && s.dn, inDevs, clients: n.clients, ch, link: ro.d.link, note: ro.note }));
+	const cells = T.detailsFor(n, n.byId['00:00:5E:00:53:A1']), cell = cells.filter(c => c[0] === 'Behind')[0];
+	const rep = T.buildReport(n).split('\n').filter(l => / wired /.test(l)).length;
+	ok(cell && cell[1] === 'a switch · 3 devices' && rep === 4, 'a device behind a switch: its details say so, and the device report lists each one', (cell && cell[1]) + ', ' + rep + ' wired rows');
+	A.names = AR.parseNames({});
+}
+
+// ---- 23. a node's wired ports, read on the node: a device on one is the node's (its zone, its Flow group, its backhaul), measured
+// on the node's port counters; a port that is down, or that leads back into the network (an address of the router's, of a node's,
+// or of a Wi-Fi device), shows nothing; and a device on the node's guest network is named with it
+{
+	const N = '02:10:00:00:00:F0', bh = '02:10:00:00:00:F1';
+	const nn = (up, nup, tx) => AR.buildNet(smp({ up: up, own: ['00:00:5E:00:53:FC'], nets: [['eth6', 'Home', 1], ['eth7', 'Home', 1]],
+		sta: [['eth7', '5', bh, String(1e6 + tx), '1000', -55, 864, 864, 100, 0, 'ax', 2, 80], ['eth7', '5', '00:00:5E:00:53:F9', '1', '1', -50, 600, 600, 100, 0, 'ax', 2, 80]],
+		nodes: [{ mac: N, ip: '192.168.50.15', model: 'RT-AX86U', alias: 'Den', sta: bh, state: 'ok', up: nup,
+			c: [['wl1.1', '5', '00:00:5E:00:53:F2', '1000', '1000', -50, 600, 600, 100, 0, 'ax', 2, 80], ['wl1.2', '5', '00:00:5E:00:53:F3', '1000', '1000', -50, 600, 600, 100, 0, 'ax', 2, 80]],
+			w: [['eth3', 1, 1000, '500', String(1000 + tx)], ['eth4', 0, 0, '0', '0'], ['eth1', 1, 1000, '9', '9'], ['eth2', 1, 1000, '9', '9'], ['eth5', 1, 100, '9', '9']],
+			m: [['eth3', '00:00:5E:00:53:F4'], ['eth1', '00:00:5E:00:53:FC'], ['eth2', '00:00:5E:00:53:F9'], ['eth5', bh]],
+			n: [['eth1', 'Home', 1], ['wl1.1', 'Home', 0], ['wl1.2', 'Guests "x"', 0]] }] }));
+	nn('9100.0', '600.0', 0); const n = nn('9102.0', '602.0', 4e6), node = n.nodes[0];
+	const pi = n.byId['00:00:5E:00:53:F4'], ports = n.devs.filter(d => d.node === node && d.link === 'wired').map(d => d.port).join(',');
+	const g = T.flowGroups(n), lan = g.filter(x => x.id === 'lan')[0], ng = g.filter(x => x.id === node.id)[0];
+	const keepG = T.G(); T.useGeom(T.geomBig(1184, 790, 1)); A.nodeZones = null;
+	let onMap = '';
+	try { const L = T.mapLayout(n); onMap = L.wired.map(x => x.dev.id).join(',') + '|' + L.devs.filter(x => x.dev.node === node).map(x => x.dev.id).sort().join(','); } catch (e) { onMap = 'ERROR ' + e.message; }
+	T.useGeom(keepG);
+	const net = m => (n.byId[m] || {}).net;
+	ok(pi && pi.node === node && pi.link === 'wired' && pi.portLabel === 'Den LAN' && Math.abs(pi.dn - 16) < 0.01 && ports === 'eth3' && node.devs.indexOf(pi) >= 0
+		&& !lan && ng && ng.devs.indexOf(pi) >= 0 && onMap.split('|')[0] === '' && onMap.split('|')[1].indexOf(pi.id) >= 0,
+		'a node\'s wired device: in its zone and its Flow group, on its port counters; ports that are down or lead back into the network show nothing',
+		JSON.stringify({ ports, dn: pi && pi.dn, label: pi && pi.portLabel, lan: !!lan, onMap }));
+	ok(net('00:00:5E:00:53:F3') === 'Guests "x"' && net('00:00:5E:00:53:F2') === '' && net('00:00:5E:00:53:F9') === '',
+		'a node\'s guest network is named for its devices; a main network on the node (the router\'s name) isn\'t', [net('00:00:5E:00:53:F3'), net('00:00:5E:00:53:F2')].join(' | '));
+}
+
+// ---- 24. several nodes behind one router port (a switch; Living room wired behind Kitchen): the port counts them all together. Each
+// node that is read shows its own count, Kitchen without what it passes on to Living room; one that isn't read gets the rest; the
+// whole network counts the port once. A node wired behind a Wi-Fi node, not read, gets the port of the node in front as its backhaul.
+{
+	const K = '02:10:00:00:01:10', LR = '02:10:00:00:01:20', MB = '02:10:00:00:01:30', B = 250000;   /* bytes in 2 s for 1 Mb/s */
+	const sh = (k, mbRead) => AR.buildNet(smp({ up: (9500 + 2 * k).toFixed(1), ports: ['eth1'], links: [['eth0', 1, 1000], ['eth1', 1, 1000]],
+		ifs: [['eth0', '1', '1'], ['eth1', '1000', String(1000 + k * 60 * B)]], macs: [['eth1', K], ['eth1', LR], ['eth1', MB]],
+		nodes: [
+			{ mac: K, ip: '192.168.50.21', model: 'RT-AX86U', alias: 'Kitchen', sta: '', state: 'ok', up: (1000 + 2 * k).toFixed(1), c: [],
+				u: [['eth0', String(1000 + k * 40 * B), '1000']], w: [['eth4', 1, 1000, '1000', String(1000 + k * 25 * B)]], m: [['eth4', LR]] },
+			{ mac: LR, ip: '192.168.50.22', model: 'RT-AX86U', alias: 'Living room', sta: '', state: 'ok', up: (2000 + 2 * k).toFixed(1), c: [],
+				u: [['eth0', String(1000 + k * 25 * B), '1000']] },
+			mbRead ? { mac: MB, ip: '192.168.50.23', model: 'RT-AX86U', alias: 'Master', sta: '', state: 'ok', up: (3000 + 2 * k).toFixed(1), c: [], u: [['eth0', String(1000 + k * 20 * B), '1000']] }
+				: { mac: MB, ip: '192.168.50.23', model: 'RT-AX86U', alias: 'Master', sta: '', state: 'nokey', up: null, c: [] }] }));
+	sh(0, true); const n = sh(1, true), by = a => n.nodes.filter(x => x.name === a)[0];
+	const f = x => x.bh.dn.toFixed(1);
+	const got = [f(by('Kitchen')), f(by('Living room')), f(by('Master')), n.total.dn.toFixed(1)].join(' ');
+	const lr = by('Living room');
+	A.sel = lr.id; const ro = T.readoutFor(n); A.sel = null;
+	ok(got === '15.0 25.0 20.0 60.0' && lr.via === by('Kitchen') && lr.viaWired && ro.path === 'RT-AX86U → Kitchen → Living room' && /Wired backhaul · through Kitchen/.test(ro.d.link),
+		'nodes behind one port: each its own figure (Kitchen without Living room, wired behind it), the port counted once in the whole network', got + ' | ' + ro.path + ' | ' + ro.d.link);
+	sh(2, false); const n2 = sh(3, false);
+	ok(n2.nodes.filter(x => x.name === 'Master')[0].bh.dn.toFixed(1) === '20.0' && n2.total.dn.toFixed(1) === '60.0',
+		'a node that isn\'t read, behind the same port: what the port carries beyond the others', n2.nodes.map(x => x.name + ' ' + x.bh.dn.toFixed(1)).join(', '));
+	// behind a node on a Wi-Fi backhaul, and not read: online, with the port of the node in front as its backhaul
+	const W = '02:10:00:00:01:40', WB = '02:10:00:00:01:41', D = '02:10:00:00:01:50';
+	const wf = k => AR.buildNet(smp({ up: (9600 + 2 * k).toFixed(1), sta: [['eth7', '5', WB, String(1000 + k * 30 * B), '1000', -55, 864, 864, 100, 0, 'ax', 2, 80]],
+		nodes: [{ mac: W, ip: '192.168.50.24', model: 'RT-AX86U', alias: 'Hall', sta: WB, state: 'ok', up: (4000 + 2 * k).toFixed(1), c: [],
+			u: [['eth6', String(1000 + k * 30 * B), '1000']], w: [['eth3', 1, 1000, '1000', String(1000 + k * 12 * B)]], m: [['eth3', D]] },
+			{ mac: D, ip: '192.168.50.25', model: 'RT-AX58U', alias: 'Den', sta: '', state: 'nokey', up: null, c: [] }] }));
+	wf(0); const n3 = wf(1), den = n3.nodes[1], hall = n3.nodes[0];
+	ok(den.online && den.via === hall && den.viaWired && den.bh.dn.toFixed(1) === '12.0' && hall.bh.dn.toFixed(1) === '18.0' && n3.total.dn.toFixed(1) === '30.0' && T.chainOf(n3, den.id)[0] === den.id,
+		'a node wired behind a Wi-Fi node, not read: online, its backhaul the port in front of it; the node in front without it',
+		[den.online, den.bh.dn.toFixed(1), hall.bh.dn.toFixed(1), n3.total.dn.toFixed(1)].join(' '));
 }
 
 process.exit(fails ? 1 : 0);

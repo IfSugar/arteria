@@ -3,7 +3,8 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, nodecrowd, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones).
+Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, nodecrowd, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones),
+wired (a switch with four devices on a LAN port, a device on the node's LAN port, a phone on the node's guest network).
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -108,6 +109,13 @@ if SCN == 'busy':
     for i in range(14):
         DEVICES.append(('02:CC:00:00:01:%02X' % i, ['Phone', 'Bulb', 'Plug', 'Tablet', 'Laptop', 'Speaker', 'Camera'][i % 7] + ' %d' % (i + 1),
                         'router' if i % 3 else 'node', '2.4' if i % 2 else '5', 0.5 + (i % 5) * 1.7, 0.1 + (i % 3) * 0.4, -50 - i))
+if SCN == 'wired':   # four devices behind one switch on LAN 1, one on the node's own LAN port, a phone on the node's guest network
+    dev('02:CC:00:00:06:01', 'Game PC', 'wired', 'eth4', 14.0, 2.0, None)
+    dev('02:CC:00:00:06:02', 'Streaming box', 'wired', 'eth4', 8.0, 0.3, None)
+    dev('02:CC:00:00:06:03', 'Backup NAS', 'wired', 'eth4', 0.4, 6.0, None)
+    dev('02:CC:00:00:06:04', 'Media NAS', 'wired', 'eth4', 3.0, 0.2, None)
+    dev('02:CC:00:00:06:05', 'Pi-hole', 'nodewired', 'eth3', 0.3, 0.2, None)
+    dev('02:CC:00:00:06:06', 'Visitor phone', 'node', '5', 1.2, 0.2, -63, ifn='wl1.2')
 if SCN == 'speedtest':   # a speed test on one laptop: a river far thicker than everything else
     DEVICES.append(('02:CC:00:00:01:40', 'Speed test laptop', 'router', '5', 880.0, 42.0, -46))
 if SCN == 'quiet':
@@ -121,7 +129,7 @@ def _doc(mac):
     if not mac.startswith('02:CC:'):
         return mac
     hi, lo = int(mac[12:14], 16), int(mac[15:17], 16)
-    return '00:00:5E:00:53:%02X' % ({0: 0x00, 1: 0x60, 2: 0x80, 3: 0xA0, 4: 0xC0, 5: 0xE0, 15: 0xF0}[hi] + lo)
+    return '00:00:5E:00:53:%02X' % ({0: 0x00, 1: 0x60, 2: 0x80, 3: 0xA0, 4: 0xC0, 5: 0xE0, 6: 0x30, 15: 0xF0}[hi] + lo)
 DEVICES = [(_doc(d[0]),) + tuple(d[1:]) for d in DEVICES]
 X = {_doc(m): x for m, x in X.items()}
 assert len(set(d[0] for d in DEVICES)) == len(DEVICES)
@@ -150,7 +158,9 @@ def sample(seq):
     sta, node_c = [], []
     nd = nu = 0.0
     for k, (mac, name, where, band, d, u, rssi) in enumerate(DEVICES):
-        if where == 'wired':
+        if where == 'nodewired':   # on the node's LAN port: in its backhaul
+            nd += d; nu += u
+        if where in ('wired', 'nodewired'):
             continue
         if where == 'node' and SCN == 'offline':
             continue
@@ -158,7 +168,7 @@ def sample(seq):
         row = ['eth7' if band == '5' else 'eth6', band, mac, counter(d, t, k, 9e9), counter(u, t, k + 50, 1e9), rssi, 864 if band == '5' else 144, 650 if band == '5' else 72,
                4000 + k * 1700, k % 5 * 40, ['ax', 'ac', 'ax', 'n'][k % 4] if band == '5' else ['n', 'ax'][k % 2], 2 if band == '5' else 1, 80 if band == '5' else 20]
         if where == 'node':
-            row[0] = 'wl1.1' if band == '5' else 'wl0.1'
+            row[0] = X.get(mac, {}).get('ifn') or ('wl1.1' if band == '5' else 'wl0.1')
             node_c.append(row)
             nd += d; nu += u
         else:
@@ -172,8 +182,11 @@ def sample(seq):
     tot_u = sum(d[5] for d in DEVICES if d[2] != 'node' or (NODE_ON and NODE_ONLINE))
     local = 38.0 if SCN not in ('quiet',) else 0.1
     ifs = [['eth0', counter(max(tot_d - local, 0.01), t, 200, 2.9e10), counter(max(tot_u - local, 0.01), t, 201, 7.8e9)]]
+    per = {}   # a port's counters: every device on it (a switch's) together
     for (mac, name, where, port, d, u, rssi) in wired:
-        ifs.append([port, counter(u, t, 210 + hash(port) % 7, 7.8e7), counter(d, t, 211 + hash(port) % 7, 4.6e8)])
+        pd, pu = per.get(port, (0.0, 0.0)); per[port] = (pd + d, pu + u)
+    for k, (port, (d, u)) in enumerate(sorted(per.items())):
+        ifs.append([port, counter(u, t, 210 + int(port[3:]), 7.8e7), counter(d, t, 211 + int(port[3:]), 4.6e8)])
     for p in ('eth1', 'eth2', 'eth3') + (() if any(d[3] == 'eth4' for d in DEVICES) else ('eth4',)):
         ifs.append([p, '0', '0'])
     ifs.append(['wds0.0.1', '670308', '19215137'])
@@ -183,6 +196,11 @@ def sample(seq):
         nodes.append({'mac': NODE, 'ip': '192.168.50.10', 'model': 'RP-AX56', 'alias': 'Hall', 'sta': '02:10:00:00:00:81 02:10:00:00:00:84',
                       'state': NODE_STATE if NODE_ONLINE else 'down', 'up': ('%.2f' % (35054.41 + t)) if NODE_STATE == 'ok' and NODE_ONLINE else None,
                       'c': node_c if NODE_STATE == 'ok' and NODE_ONLINE else []})
+        nw = [d for d in DEVICES if d[2] == 'nodewired']
+        if nw and NODE_STATE == 'ok' and NODE_ONLINE:   # its LAN port (eth3) and its uplink's port (eth0, a Wi-Fi backhaul: down), and its networks
+            nodes[0].update({'w': [['eth0', 0, 0, '0', '0'], ['eth3', 1, 1000, counter(sum(d[5] for d in nw), t, 240, 5e7), counter(sum(d[4] for d in nw), t, 241, 3e8)]],
+                             'm': [['eth3', d[0]] for d in nw],
+                             'n': [['eth1', 'Home', 1], ['wl0.1', 'Home', 0], ['wl1.1', 'Home', 0], ['wl1.2', 'Guests', 0]]})
     if SCN == 'mesh4':   # three more nodes, each with one device: Office busy, Loft a little, Garage idle
         for k, (alias, rate) in enumerate([('Office', 30.0), ('Garage', 0.2), ('Loft', 8.0)], 1):
             bh = '02:10:00:00:00:A%d' % k
@@ -193,7 +211,8 @@ def sample(seq):
     return {'v': 1, 'seq': seq, 'up': '%.2f' % up, 'epoch': int(time.time()), 'ms': 41, 'router': {'model': 'RT-AX86U', 'fw': '3004.388.13_0', 'load': '1.39'},
             'interval': 2, 'nodes_mode': 'on', 'wan': 'eth0', 'ports': ['eth4', 'eth3', 'eth2', 'eth1', 'eth5'], 'own': OWN,
             'links': [['eth0', 1, 1000], ['eth4', 1 if any(d[3] == 'eth4' for d in DEVICES) else 0, 1000 if any(d[3] == 'eth4' for d in DEVICES) else -1], ['eth3', 0, -1], ['eth2', 0, -1], ['eth1', 0, -1], ['eth5', 1, 2500]],
-            'macs': [[d[3], d[0]] for d in wired], 'ifs': ifs, 'sta': sta, 'nodes': nodes}
+            'macs': [[d[3], d[0]] for d in wired], 'ifs': ifs, 'sta': sta, 'nodes': nodes,
+            'nets': [['eth6', 'Home', 1], ['eth7', 'Home', 1], ['wl0.1', 'Guests', 0], ['wl1.1', 'Guests', 0]]}
 
 
 def names():
