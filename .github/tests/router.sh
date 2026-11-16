@@ -242,6 +242,8 @@ case "\$1 \$2" in
 	'set sshd_authkeys='*) printf '%s' "\${2#sshd_authkeys=}" > "$t/node-authkeys" ;;
 	'commit '*) ;;
 	*) case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
+		lan_ifnames) echo "eth3 eth1 eth2 wl0.1 wl1.1" ;; wan_ifnames) echo eth0 ;;   # a LAN port, its radios; its WAN port (its uplink on an Ethernet backhaul)
+		wl0_ssid|wl1_ssid|wl0.1_ssid) echo 'Home "net"' ;; wl1.1_ssid) echo 'Guest <net>' ;;   # the main network, and a guest one on wl1.1
 		sta_phy_ifnames) [ -f "$t/node-dpsta" ] && echo dpsta || echo eth2 ;;   # its 5 GHz radio's own interface is its uplink to the router (a Wi-Fi backhaul)
 		dpsta_ifnames) [ -f "$t/node-dpsta" ] && echo "eth1 eth2" ;;   # a node that joins both radios' uplinks into one interface, dpsta
 		sta_ifnames) [ -f "$t/node-all-listed" ] && echo "eth1 wl0.1 wl1.1"
@@ -249,6 +251,23 @@ case "\$1 \$2" in
 		wl0_mode) [ -f "$t/node-all-listed" ] && echo psr ;; esac ;;
 esac
 EOF
+# The node's bridge: the router (and a device of the router's) behind its uplink, its 5 GHz radio's own interface (eth2) on a Wi-Fi
+# backhaul or its WAN port (eth0) on an Ethernet one, and a device on its LAN port eth3 (two, behind a switch, when a test says so)
+cat > "$N/brctl" <<EOF
+#!$bb sh
+case "\$1 \$2" in
+	'showstp br0') printf 'br0\n bridge id\neth0 (1)\n port id\neth3 (2)\neth1 (3)\neth2 (4)\nwl0.1 (5)\nwl1.1 (6)\n' ;;
+	'showmacs br0') u=4; [ -f "$t/node-wired" ] && u=1
+		printf 'port no\tmac addr\t\tis local?\tageing timer\n  %s\t00:00:5e:00:53:fc\tno\t\t   0.10\n  %s\t02:cc:00:00:00:01\tno\t\t   0.30\n' \$u \$u
+		printf '  2\t02:cc:00:00:00:31\tno\t\t   1.20\n  5\t02:cc:00:00:00:11\tno\t\t   0.50\n  3\t02:10:00:00:00:80\tyes\t\t   0.00\n'
+		[ -f "$t/node-switch" ] && printf '  2\t02:cc:00:00:00:32\tno\t\t   2.00\n' ;;
+esac
+exit 0
+EOF
+mkdir -p "$t/node-sys/class/net/eth0/brport" "$t/node-sys/class/net/eth3/brport" "$t/node-sys/class/net/br0/bridge"   # both ports in its bridge
+echo 0 > "$t/node-sys/class/net/eth0/carrier"; echo -1 > "$t/node-sys/class/net/eth0/speed"   # up only on an Ethernet backhaul
+echo 1 > "$t/node-sys/class/net/eth3/carrier"; echo 1000 > "$t/node-sys/class/net/eth3/speed"
+export AR_NODE_SYS="$t/node-sys"
 cat > "$B/dbclient" <<EOF
 #!$bb sh
 # a node that accepts only the router's Arteria key
@@ -293,7 +312,7 @@ for f in "$B"/* "$N"/*; do [ -L "$f" ] || chmod +x "$f"; done   # the stand-ins;
 echo 'enable -n test [ printf echo' > "$t/no-builtins.sh"
 # the node's own /proc/net/dev: its uplink (eth2, a client of the router) with its counters
 # (dpsta, which joins both radios' uplinks on a node that has it, counts what they count)
-mkdir -p "$t/node-proc/net"; printf 'Inter-|   Receive\n face |bytes    packets\n  eth2: 7340032 5000 0 0 0 0 0 0 1048576 3000 0 0 0 0 0 0\n  eth1: 99 1 0 0 0 0 0 0 99 1 0 0 0 0 0 0\n dpsta: 7340131 5001 0 0 0 0 0 0 1048675 3001 0 0 0 0 0 0\n' > "$t/node-proc/net/dev"
+mkdir -p "$t/node-proc/net"; printf 'Inter-|   Receive\n face |bytes    packets\n  eth2: 7340032 5000 0 0 0 0 0 0 1048576 3000 0 0 0 0 0 0\n  eth1: 99 1 0 0 0 0 0 0 99 1 0 0 0 0 0 0\n dpsta: 7340131 5001 0 0 0 0 0 0 1048675 3001 0 0 0 0 0 0\n  eth0: 8000 80 0 0 0 0 0 0 9000 90 0 0 0 0 0 0\n  eth3: 524288 400 0 0 0 0 0 0 3145728 2100 0 0 0 0 0 0\n' > "$t/node-proc/net/dev"
 export AR_NODE_PROC="$t/node-proc"
 run()  { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" BASH_ENV="$t/no-builtins.sh" "$bash_bin" "$script" "$@"; }
 runa() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$script" "$@"; }
@@ -456,6 +475,10 @@ c = {r[2]: r for r in n['c']}
 assert set(c) >= {'02:CC:00:00:00:11', '02:CC:00:00:00:12', '02:CC:00:00:00:13'}, c
 assert c['02:CC:00:00:00:12'][0] == 'wl1.1' and c['02:CC:00:00:00:12'][1] == '5', c
 assert n['u'] == [['eth2', '7340032', '1048576']], n['u']   # its uplink's own counters, read in the same round
+w = {r[0]: r for r in n['w']}   # its wired ports: its LAN port, with its counters; its WAN port, down (a Wi-Fi backhaul)
+assert w['eth3'] == ['eth3', 1, 1000, '524288', '3145728'] and w['eth0'][1] == 0 and set(w) == {'eth0', 'eth3'}, n['w']
+assert n['m'] == [['eth3', '02:CC:00:00:00:31']], n['m']   # the device on its LAN port; the router and its devices are behind its uplink
+assert ['wl1.1', 'Guest <net>', 0] in n['n'] and ['eth1', 'Home "net"', 1] in n['n'] and ['wl0.1', 'Home "net"', 0] in n['n'] and len(n['n']) == 3, n['n']
 assert c['02:CC:00:00:00:11'][1] == '2.4', c
 assert float(n['up']) > 0, n['up']
 names = json.load(open(sys.argv[2]))
@@ -489,6 +512,20 @@ no_session() { ! pgrep -f "$B/dbclient" > /dev/null 2>&1 && ! grep -qsa "AR_NODE
 waitfor 6 no_session
 no_session && ok "node session ends with the sampler" || { bad "the node session outlived the page:"; pgrep -af "$B/dbclient"; }
 rm -rf "$R/tmp/arteria" "$W"
+# A node on an Ethernet backhaul, in a page's session: the port it learned the router's address on is its uplink, sent with the
+# uplink rows (its own count of its backhaul, for when several nodes are behind one of the router's ports), not as a wired port
+echo 1 > "$t/node-sys/class/net/eth0/carrier"; echo 1000 > "$t/node-sys/class/net/eth0/speed"; touch "$t/node-wired"
+runi service_event start arteria
+waitfor 12 node_read
+python3 - "$W/live.htm" <<'EOF' && ok "a node on an Ethernet backhaul sends its wired uplink's own counters, and its LAN port's device" || fail=1
+import json, sys
+n = json.load(open(sys.argv[1]))['nodes'][0]
+assert n['state'] == 'ok', n['state']
+assert n['u'] == [['eth0', '8000', '9000']], n['u']
+assert n['m'] == [['eth3', '02:CC:00:00:00:31']] and [r[0] for r in n['w']] == ['eth3'], (n['m'], n['w'])
+EOF
+runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
+rm -f "$t/node-wired"; echo 0 > "$t/node-sys/class/net/eth0/carrier"; echo -1 > "$t/node-sys/class/net/eth0/speed"; rm -rf "$R/tmp/arteria" "$W"
 
 # A hostile node: rows with bad fields, markup, junk on stderr, and a flood. Only valid rows reach the page,
 # the files stay small (the session is cut at about 1 MB, then trimmed), and the sample is still valid JSON.
@@ -532,8 +569,8 @@ rm -f "$t/node-hostile"; rm -rf "$R/tmp/arteria" "$W"
 # nodes test: key login, then one round of the page's own node script: how many devices, how long. A node where that
 # round fails (the session drops) says so, with addresses and user names taken out of the message.
 run nodes test > "$t/nt.out" 2>&1 || true
-grep -q "key login OK (Arteria's key), reads [0-9][0-9]* device(s), one round takes about [0-9][0-9]* s$" "$t/nt.out" \
-	&& ok "nodes test: key login, then the node's devices read by the page's own script, with the time it takes" \
+grep -q "key login OK (Arteria's key), reads [0-9][0-9]* device(s), one round takes about [0-9][0-9]* s; 1 more on its wired ports$" "$t/nt.out" \
+	&& ok "nodes test: key login, then the node's devices read by the page's own script (and the ones on its LAN ports), with the time it takes" \
 	|| { bad "nodes test:"; cat "$t/nt.out"; }
 printf 'echo "dbclient: Connection to admin@192.168.50.10:2222 exited: Remote closed the connection" >&2\nexit 1\n' > "$t/node-hostile"
 run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
@@ -543,27 +580,35 @@ grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Con
 # A node that joins both radios' uplinks into one interface, dpsta (an RP-AX56): each packet is counted on dpsta and on its radio,
 # so its uplink is dpsta alone, or its backhaul reads double
 touch "$t/node-dpsta" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-dpsta" "$t/node-tee"
-if grep -q "reads 3 device(s), one round takes about [0-9]* s$" "$t/nt.out" && [ "$(grep '^U ' "$t/node-last.out")" = "U dpsta 7340131 1048675" ]; then
+if grep -q "reads 3 device(s), one round takes about [0-9]* s; 1 more on its wired ports$" "$t/nt.out" && [ "$(grep '^U ' "$t/node-last.out")" = "U dpsta 7340131 1048675" ]; then
 	ok "a node whose radios' uplinks are joined into one interface (dpsta) counts its uplink once, on dpsta"
 else bad "a node with dpsta:"; cat "$t/nt.out" "$t/node-last.out"; fi
 # A node on an Ethernet backhaul (an RT-AC86U, a ZenWiFi XD6): its firmware still names its radios' own interfaces as possible
 # uplinks, but they are access points with the node's devices on them. They're read, and none of them is reported as the uplink.
+echo 1 > "$t/node-sys/class/net/eth0/carrier"; echo 1000 > "$t/node-sys/class/net/eth0/speed"
 touch "$t/node-wired" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-wired" "$t/node-tee"
-if grep -q "reads 5 device(s), one round takes about [0-9]* s$" "$t/nt.out" && grep -q '^#E' "$t/node-last.out" && ! grep -q '^U ' "$t/node-last.out"; then
+echo 0 > "$t/node-sys/class/net/eth0/carrier"; echo -1 > "$t/node-sys/class/net/eth0/speed"
+if grep -q "reads 5 device(s), one round takes about [0-9]* s; 1 more on its wired ports$" "$t/nt.out" && grep -q '^#E' "$t/node-last.out" && ! grep -q '^U ' "$t/node-last.out"; then
 	ok "nodes test: a node on an Ethernet backhaul reads the devices on its radios, which its firmware names as possible uplinks"
 else bad "nodes test, a node on an Ethernet backhaul:"; cat "$t/nt.out" "$t/node-last.out"; fi
+# Its uplink there is its WAN port, where its bridge learned the router's address: that port isn't read as one with devices on it,
+# but named as its uplink, and its counters are the node's own count of its backhaul
+if grep -q '^L eth3 1 1000$' "$t/node-last.out" && grep -q '^M eth3 02:CC:00:00:00:31$' "$t/node-last.out" && ! grep -q '^[LM] eth0' "$t/node-last.out" \
+	&& [ "$(grep -c '^M ' "$t/node-last.out")" = 1 ] && grep -q '^X eth0$' "$t/node-last.out" && grep -q '^C eth0 8000 9000$' "$t/node-last.out"; then
+	ok "a node on an Ethernet backhaul: its LAN port's device is read; the port leading to the router (with the router's address) is its uplink"
+else bad "a node's wired ports on an Ethernet backhaul:"; grep '^[LCMX] ' "$t/node-last.out"; fi
 # A node whose firmware names the interfaces its devices are on as possible uplinks: it reads 0 devices, and nodes test says
 # which interfaces it read and skipped, with the devices on each (interface names only)
 touch "$t/node-all-listed" "$t/node-not-ap"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-all-listed" "$t/node-not-ap"
-grep -q "reads 0 device(s), one round takes about [0-9]* s (devices on each interface it reads: none; on each it skips as the uplink: eth1 (psr mode, its uplink), wl0.1 1, eth2 1, wl1.1 2)$" "$t/nt.out" \
+grep -q "reads 0 device(s), one round takes about [0-9]* s (devices on each interface it reads: none; on each it skips as the uplink: eth1 (psr mode, its uplink), wl0.1 1, eth2 1, wl1.1 2); 1 more on its wired ports$" "$t/nt.out" \
 	&& ! grep -Eqi '([0-9A-F]{2}:){5}' "$t/nt.out" \
 	&& ok "nodes test: a node that reads 0 devices names the interfaces it read and skipped as the uplink, with the devices on each" \
 	|| { bad "nodes test, a node that reads 0 devices:"; cat "$t/nt.out"; }
 touch "$t/node-cut-crash"; rm -f "$R/tmp/arteria/node-trace.txt"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-cut-crash"
 tr="$R/tmp/arteria/node-trace.txt"
 grep -q "something on the node crashed running: cut .* (what it ran is in .*/node-trace.txt, without addresses)$" "$t/nt.out" \
-	&& grep -q '^+ cut ' "$tr" && grep -q 'Segmentation fault' "$tr" && ! grep -qi '02:CC\|192\.168' "$tr" \
-	&& ok "nodes test: when something crashes on the node, what it ran is saved, without addresses" || { bad "nodes test, a crash on the node:"; cat "$t/nt.out"; head -n 20 "$tr" 2>/dev/null; }
+	&& grep -q '^+ cut ' "$tr" && grep -q 'Segmentation fault' "$tr" && ! grep -qi '02:CC\|192\.168' "$tr" && ! grep -q 'Home\|Guest' "$tr" \
+	&& ok "nodes test: when something crashes on the node, what it ran is saved, without addresses or network names" || { bad "nodes test, a crash on the node:"; cat "$t/nt.out"; head -n 20 "$tr" 2>/dev/null; }
 printf 'echo "#B 1"\necho "Segmentation fault" >&2\nexit 139\n' > "$t/node-hostile"
 rm -rf "$R/tmp/arteria" "$W"; runi service_event start arteria
 node_crash() { grep -q '"state":"crash"' "$W/live.htm" 2>/dev/null; }

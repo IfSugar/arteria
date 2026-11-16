@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd']
+SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd', 'wired']
 fails = []
 
 
@@ -91,6 +91,23 @@ async def scenario(b, scn, port):
             check('+2 nodes' in lb and note.startswith('No room on the map for Garage (1 device) and Loft (1 device).') and zones == 'Hall,Office',
                tag + ': four nodes: the busiest two get zones, the tray and its list name the other two (' + zones + ')')
             await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+        if scn == 'wired':   # a switch lists its devices, one of them picked is traced to the switch; a node's wired device and guest network
+            sw = await pg.evaluate("(Arteria.state.net.devs.find(d => d.behind) || {}).id || ''")
+            await pg.click('#arMapLabels .ar-lb[data-id="%s"]' % sw); await pg.wait_for_timeout(300)
+            lst = await pg.evaluate("[...document.querySelectorAll('#arMoreList button .nm')].map(e => e.textContent).join(',')")
+            title = await pg.evaluate("document.getElementById('arMoreTitle').textContent")
+            await pg.click('#arMoreList button'); await pg.wait_for_timeout(300)
+            picked = await pg.evaluate("""(sw) => ({ link: document.getElementById('arRoLink').textContent, name: document.getElementById('arRoName').textContent,
+                on: document.querySelector('#arMapLabels .ar-lb[data-id="' + sw + '"]').classList.contains('on'), list: !document.getElementById('arMore').classList.contains('hide') })""", sw)
+            pi = await pg.evaluate("""() => { const d = Arteria.state.net.devs.find(x => x.name === 'Pi-hole') || {}, g = Arteria._t.flowGroups(Arteria.state.net);
+                return [d.node && d.node.name, d.link, d.portLabel, g.some(x => x.node && x.devs.indexOf(d) >= 0), g.some(x => x.id === 'lan' && x.devs.indexOf(d) >= 0)].join('|'); }""")
+            guest = await pg.evaluate("(Arteria.state.net.devs.find(d => d.name === 'Visitor phone') || {}).net || ''")
+            check(sw == 'port:eth4' and lst == 'Backup NAS,Game PC,Media NAS,Streaming box' and title.startswith('Switch on LAN 1 · 4 devices')
+                  and picked['name'] == 'Backup NAS' and 'through a switch' in picked['link'] and picked['on'] and picked['list'],
+                  tag + ': a switch lists its four devices by name; one picked shows its details, the switch stays lit and the list open (%s; %s)' % (lst, picked['link']))
+            check(pi == 'Hall|wired|Hall LAN|true|false' and guest == 'Guests', tag + ': a device on the node\'s LAN port is the node\'s; a node\'s guest network is named (%s, %s)' % (pi, guest))
+            await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
+            await pg.evaluate("Arteria.pick(null)")
         # the page's view: Flow, the list, Details, the report
         await pg.click('#arTabFlow'); await pg.wait_for_timeout(250)
         await pg.click('#arTabMap'); await pg.wait_for_timeout(250)

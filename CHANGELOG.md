@@ -2,6 +2,17 @@
 
 What changed in each release of Arteria. The release workflow copies a version's section into its GitHub release notes, so write for people running the addon.
 
+## Unreleased
+
+### Fixes
+
+- **Devices behind a switch are listed by name.** A port has one counter, so a switch still shows as one device, *Switch on LAN 3*, with the port's figures. Picking it now lists the devices behind it, named and recognised like any other. Pick one for its details (IP, MAC, maker…) or to rename it; its traffic is the switch's, as the port can't tell them apart. They were only counted (*4 devices*) before.
+- **Wired devices on AiMesh nodes show.** A device on a node's LAN port (a Pi-hole, say), or behind a switch there, didn't show at all: the node was read for its Wi-Fi devices only. The node now also reads its LAN ports and the addresses its bridges learned on them, as the router does with its own, and those devices stand in the node's zone, with their own figures from the node's port counters. The port that leads back to the router (a wired backhaul) is left out. The port is named after the node (*Hall LAN*), as Arteria doesn't know its printed number. `nodes test` says how many it found (*1 more on its wired ports*).
+- **Guest networks are named on nodes too.** A device on a node's guest network (or another of Guest Network Pro's networks) shows that network's name, as it already did on the router.
+- **Nodes behind one router port show their own traffic.** Several nodes behind one of the router's ports (on a switch, or one node wired behind another) each showed that port's whole total. They all looked equally busy, so the map's zones went to the first ones in the list, and the whole network counted the port once for each of them. A node that is read now counts its own wired uplink, as it already did a Wi-Fi one: it finds it by the router's address on it. A node wired behind another is taken out of the figure of the node in front, and its readout says which node it's behind. A node that isn't read gets what the port carries beyond the others, and the whole network counts the port once.
+- **A node wired behind a node on a Wi-Fi backhaul shows when it isn't read.** It's on none of the router's ports or radios, so unless it was read over SSH it showed as offline. It now shows, with the port of the node in front of it as its backhaul.
+- **A node with many devices gets a zone on the map.** With more nodes than the map has zones, the busiest got them, so a node with one camera that uploads now and then kept a zone from a node with 18 quiet devices. Traffic still decides when one node is much busier (3 times, and over 1 Mb/s). Otherwise the node with many more devices (over twice as many) gets the zone, and when the page opens, before any traffic is measured, the nodes with the most devices get them.
+
 ## 2.1.0
 
 Fixes for what the SNBForums thread reported after 2.0.0: AiMesh nodes that crashed while Arteria read them, a page that took seconds to go live, a menu that stopped updating, and ports out of order on the RT-AX88U. Also a page that follows ROG and TUF routers' colours, room for more nodes than the map has zones, and four devices drawn anew. Arteria is now in amtm (7.2 and later) as **ar**. Thanks to everyone in the thread who tested development versions and posted their output.

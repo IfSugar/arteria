@@ -342,15 +342,24 @@ sta_json() {
 # counts each packet on dpsta and on the radio it came in on: its uplink is dpsta alone, or the backhaul reads double.
 # Each round also reports the uplink's own byte counters ("U ifname rx tx"), read in the same round as its devices': the page
 # shows the node's part of Flow from those, so the node's backhaul and its devices always add up, even while a download that
-# just started is reaching the router's figures a round before the node's (a node with a wired backhaul sends none).
+# just started is reaching the router's figures a round before the node's. A wired uplink is found among its wired ports
+# (below), and named with "X ifname": its counters are the node's own count of its backhaul, which matters when several nodes
+# are behind one of the router's ports (a switch, or a node wired behind another), as that port counts them all together.
 # With "trace" it runs one round and says on stderr what it runs before each command ("+ wl -i ... assoclist"), so a command
 # that crashes on the node is named (nodes test, doctor), without needing the node's sh to support -x.
+# Each round also names the network on each interface it reads ("N wl0.1 0 name": 1 for a radio's own interface), so the page
+# can name a guest network on the node as it does on the router, and reads the node's wired ports as the router reads its own:
+# each LAN port's link and counters ("L eth3 1 1000", "C eth3 rx tx") and the addresses its bridges learned on it
+# ("M eth3 MAC"). The port its bridge learned one of the router's own addresses on (R) leads to the router (a wired backhaul):
+# that one is left out, with everything else on the network behind it.
 # With "why" it reads no counters: it prints each interface it reads and each one it skips as the uplink (and why), with how
 # many devices each has ("W read wl0.1 - 3", "W skip eth6 psr 1"), for a node that reads 0 devices (node_why).
 NODE_MARK="# arteria node script"
 NODE_PROC="${AR_NODE_PROC:-/proc}"   # AR_NODE_PROC: test hook only (a stand-in node's /proc)
+NODE_SYS="${AR_NODE_SYS:-/sys}"      # AR_NODE_SYS: test hook only (a stand-in node's /sys)
 write_node_script() {   # [rounds] [trace|why]   rounds default: 30 minutes' worth (the page's session); 'nodes test' runs one
 	printf '%s\nI=%s\nN=%s\nT=%s\nW=%s\nP=%s\n' "$NODE_MARK" "$INTERVAL" "${1:-$((1800 / INTERVAL))}" "$( [ "$2" = trace ] && echo 1)" "$( [ "$2" = why ] && echo 1)" "$NODE_PROC"
+	printf 'Q=%s\nR=" %s"\n' "$NODE_SYS" "$(own_macs | tr '\n' ' ')"   # R: the router's own addresses, MACs only
 	printf "A='%s'\n" "$STA_AWK"
 	cat <<'EOF'
 if [ -n "$T" ]; then t() { echo "+ $*" >&2; }; else t() { :; }; fi   # decided once: no "[" run for each command
@@ -360,6 +369,8 @@ S=" $(nvram get sta_phy_ifnames) $(nvram get sta_ifnames) "
 L=""
 K=""
 Z=" "
+Y=" "
+G=""
 for u in 0 1 2 3; do
 	t nvram get wl${u}_ifname
 	f=$(nvram get wl${u}_ifname); [ -n "$f" ] || continue
@@ -367,13 +378,19 @@ for u in 0 1 2 3; do
 	b=$(nvram get wl${u}_nband)
 	case "$b" in 2) b=2.4 ;; 1) b=5 ;; 4) b=6 ;; *) b=0 ;; esac
 	m=$(nvram get wl${u}_mode)
+	v=$(nvram get wl${u}_vifs)
+	Y="$Y$f $v "
 	case "$m" in sta|wet|psta|psr) Z="$Z$f "; K="$K $f:$m"; f="" ;; esac
-	for x in $f $(nvram get wl${u}_vifs); do
+	for x in $f $v; do
 		case "$S" in *" $x "*)
 			t wl -i $x ap
 			case "$(wl -i "$x" ap 2>/dev/null)" in *1*) ;; *) K="$K $x:listed"; continue ;; esac ;;
 		esac
 		L="$L $x:$b"
+		if [ "$x" = "$f" ]; then c=1; k=wl${u}_ssid; else c=0; k=${x}_ssid; fi
+		t nvram get $k
+		G="$G
+N $x $c $(nvram get "$k")"
 	done
 done
 # the uplink: the named interfaces that aren't read (access points), and the radios in a client mode
@@ -389,6 +406,15 @@ case "$U" in *" dpsta "*)
 	U="$V" ;;
 esac
 t "reads:$L, uplink:$U"
+# its wired ports: the ports in its bridges (its LAN ports, and its WAN port, which a node bridges too) that aren't a Wi-Fi
+# interface or its Wi-Fi uplink, when it has brctl to say who is on each. A port can be in a bridge as itself or by a VLAN on it.
+E=" "
+t nvram get lan_ifnames wan_ifnames
+for p in $(nvram get lan_ifnames) $(nvram get wan_ifnames); do
+	case "$Y$U$E" in *" $p "*) continue ;; esac
+	for d in "$Q/class/net/$p/brport" "$Q/class/net/$p".*/brport; do [ -d "$d" ] && { E="$E$p "; break; }; done
+done
+if [ "$E" != " " ]; then t brctl show; brctl show > /dev/null 2>&1 || E=" "; fi
 if [ -n "$W" ]; then
 	for p in $L; do echo "W read ${p%%:*} - $(wl -i "${p%%:*}" assoclist 2>/dev/null | wc -l)"; done
 	for p in $K; do echo "W skip ${p%%:*} ${p#*:} $(wl -i "${p%%:*}" assoclist 2>/dev/null | wc -l)"; done
@@ -407,13 +433,33 @@ r() {
 		done
 	done
 }
+q() {   # each wired port's link ("L port carrier Mb/s"), then each address a bridge learned on one ("port MAC")
+	for p in $E; do echo "L $p $(cat "$Q/class/net/$p/carrier" 2>/dev/null || echo 0) $(cat "$Q/class/net/$p/speed" 2>/dev/null || echo 0)"; done
+	for d in "$Q"/class/net/*/bridge; do
+		[ -d "$d" ] || continue
+		d=${d%/bridge}; d=${d##*/}
+		t brctl showstp $d
+		k=$(brctl showstp "$d" 2>/dev/null | sed -n 's/^\([A-Za-z0-9.]*\) (\([0-9]*\))$/\2 \1/p' | tr '\n' ';')
+		t brctl showmacs $d
+		brctl showmacs "$d" 2>/dev/null | awk -v k="$k" 'BEGIN { n = split(k, a, ";"); for (i = 1; i <= n; i++) { split(a[i], b, " "); P[b[1]] = b[2] } }
+			NR > 1 && $3 == "no" && $2 ~ /^[0-9A-Fa-f:]+$/ { p = P[$1]; sub(/\.[0-9]+$/, "", p); if (p != "") print p, toupper($2) }'
+	done
+}
 n=0
 while [ $n -lt $N ]; do
 	t cut -d' ' -f1 /proc/uptime
 	echo "#B $(cut -d' ' -f1 /proc/uptime)"
 	t awk $P/net/dev
-	awk -v w="$U" 'NR > 2 { sub(/^[ \t]+/, ""); i = index($0, ":"); if (!i) next; n = substr($0, 1, i - 1); split(substr($0, i + 1), f, " ")
-		if (index(w, " " n " ")) print "U", n, f[1], f[9] }' $P/net/dev
+	awk -v w="$U" -v e="$E" 'NR > 2 { sub(/^[ \t]+/, ""); i = index($0, ":"); if (!i) next; n = substr($0, 1, i - 1); split(substr($0, i + 1), f, " ")
+		if (index(w, " " n " ")) print "U", n, f[1], f[9]; else if (index(e, " " n " ")) print "C", n, f[1], f[9] }' $P/net/dev
+	[ -z "$G" ] || printf '%s\n' "${G#?}"
+	# the wired ports, each address once and at most 64 a port; none for a port with one of the router's addresses on it, which
+	# is named instead ("X port"): it is the node's wired uplink, and its counters (C) are the node's own count of its backhaul
+	[ "$E" = " " ] || q | awk -v e="$E" -v r="$R" '$1 == "L" { if (index(e, " " $2 " ")) { l[++nl] = $2 " " ($3 == 1 ? 1 : 0) " " ($4 ~ /^[0-9]+$/ ? $4 : 0) } next }
+		index(e, " " $1 " ") { if (index(r, " " $2 " ")) x[$1] = 1; else if (!($2 in s) && c[$1] < 64) { s[$2] = 1; c[$1]++; m[++nm] = $1 " " $2 } }
+		END { for (i = 1; i <= nl; i++) { split(l[i], a, " "); if (!(a[1] in x)) print "L", l[i] }
+			for (i = 1; i <= nm; i++) { split(m[i], a, " "); if (!(a[1] in x)) print "M", m[i] }
+			for (p in x) print "X", p }'
 	if [ -n "$T" ]; then o=$(r); t awk; printf '%s\n' "$o" | awk "$A"; else r | awk "$A"; fi   # traced: the reading, then the awk
 	echo "#E"
 	n=$((n + 1)); [ $n -lt $N ] && sleep $I
@@ -507,15 +553,30 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 	return 0
 }
 
-# The last complete block a node sent, as JSON: "up":"<node uptime>","c":[rows].
+# The last complete block a node sent, as JSON: "up":"<node uptime>","c":[rows],"u":[its uplink's counters],
+# "w":[its wired ports: ifname, carrier, Mb/s, rx, tx],"m":[[port, MAC] learned on them],"n":[[ifname, network name, main]].
 # Only rows between a "#B" and its "#E" count: the file can be emptied in the middle of a block. At most 512 rows a
-# block (a node serves far fewer clients): a hostile node can't make every sample cost seconds of CPU.
+# block (a node serves far fewer clients), 8 ports, 128 addresses and 16 networks: a hostile node can't make every sample
+# cost seconds of CPU. A network name is any text up to 64 bytes, escaped for JSON (and a "<" later, by write_atomic).
 NODE_AWK="$ROWS_AWK"'
-/^#B / { cur = ""; cc = 0; cu = ""; uc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
+function je(s) { gsub(/[[:cntrl:]]/, "", s); gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return s }
+function nm(s) { return s ~ /^[A-Za-z0-9._-]+$/ && length(s) <= 16 }
+/^#B / { cur = ""; cc = 0; cu = ""; uc = 0; cw = ""; wc = 0; cl = ""; lc = 0; cm = ""; mc = 0; cn = ""; nc = 0; cx = ""; xc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
+open && xc < 4 && /^X / && NF == 2 && nm($2) { cx = cx $2 ";"; xc++; next }
 open && cc < 512 && /^S / && $2 ~ /^[A-Za-z0-9.]+$/ && $3 ~ /^[0-9.]+$/ && $4 ~ /^[0-9A-Fa-f:]+$/ { cur = cur (cc++ ? "," : "") row(); next }
-open && uc < 8 && /^U / && NF == 4 && $2 ~ /^[A-Za-z0-9._-]+$/ && length($2) <= 16 && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && length($3) <= 20 && length($4) <= 20 { cu = cu (uc++ ? "," : "") "[\"" $2 "\",\"" $3 "\",\"" $4 "\"]"; next }
-/^#E/ { if (open) { last = cur; lu = cu; lup = cup; done = 1 } open = 0; next }
-END { if (done) printf "\"up\":\"%s\",\"c\":[%s],\"u\":[%s]", lup, last, lu; else printf "\"up\":null,\"c\":[],\"u\":[]" }'
+open && uc < 8 && /^U / && NF == 4 && nm($2) && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && length($3) <= 20 && length($4) <= 20 { cu = cu (uc++ ? "," : "") "[\"" $2 "\",\"" $3 "\",\"" $4 "\"]"; next }
+open && wc < 8 && /^C / && NF == 4 && nm($2) && $3 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ && length($3) <= 20 && length($4) <= 20 { cw = cw $2 " " $3 " " $4 ";"; wc++; next }
+open && lc < 8 && /^L / && NF == 4 && nm($2) && $3 ~ /^[01]$/ && $4 ~ /^[0-9]+$/ && length($4) <= 6 { cl = cl $2 " " $3 " " ($4 + 0) ";"; lc++; next }
+open && mc < 128 && /^M / && NF == 3 && nm($2) && $3 ~ /^[0-9A-F:]+$/ && length($3) == 17 { cm = cm (mc++ ? "," : "") "[\"" $2 "\",\"" $3 "\"]"; next }
+open && nc < 16 && /^N / && nm($2) && $3 ~ /^[01]$/ { s = $0; sub(/^N [^ ]+ [01] ?/, "", s); if (length(s) <= 64) cn = cn (nc++ ? "," : "") "[\"" $2 "\",\"" je(s) "\"," $3 "]"; next }
+/^#E/ { if (open) { last = cur; lu = cu; lw = cw; ll = cl; lm = cm; ln = cn; lx = cx; lup = cup; done = 1 } open = 0; next }
+END {
+	if (!done) { printf "\"up\":null,\"c\":[],\"u\":[],\"w\":[],\"m\":[],\"n\":[]"; exit }
+	j = split(lw, a, ";"); for (i = 1; i <= j; i++) if (split(a[i], b, " ") == 3) K[b[1]] = b[2] "\",\"" b[3]   # (k is a function: ROWS_AWK)
+	w = ""; j = split(ll, a, ";"); for (i = 1; i <= j; i++) if (split(a[i], b, " ") == 3 && (b[1] in K)) w = w (w == "" ? "" : ",") "[\"" b[1] "\"," b[2] "," b[3] ",\"" K[b[1]] "\"]"
+	# a wired uplink (X): its counters join the uplink rows, like those of a Wi-Fi uplink
+	j = split(lx, a, ";"); for (i = 1; i <= j; i++) if (a[i] in K) lu = lu (lu == "" ? "" : ",") "[\"" a[i] "\",\"" K[a[i]] "\"]"
+	printf "\"up\":\"%s\",\"c\":[%s],\"u\":[%s],\"w\":[%s],\"m\":[%s],\"n\":[%s]", lup, last, lu, w, lm, ln }'
 
 nodes_json() {
 	c=0
@@ -525,7 +586,7 @@ nodes_json() {
 		[ $c -gt 0 ] && printf ','; c=1
 		printf '{"mac":"%s","ip":"%s","model":"%s","alias":"%s","sta":"%s","state":"%s",' \
 			"$mac" "$ip" "$(js "$model")" "$(js "$(node_alias "$mac")")" "$(node_stas "$mac")" "$(node_state "$f")"
-		if [ -s "$f.out" ] || [ -s "$f.last" ]; then cat "$f.last" "$f.out" 2>/dev/null | awk "$NODE_AWK"; else printf '"up":null,"c":[],"u":[]'; fi
+		if [ -s "$f.out" ] || [ -s "$f.last" ]; then cat "$f.last" "$f.out" 2>/dev/null | awk "$NODE_AWK"; else printf '"up":null,"c":[],"u":[],"w":[],"m":[],"n":[]'; fi
 		printf '}'
 	done
 }
@@ -1036,14 +1097,16 @@ node_probe() {   # ip [trace-file] -> PROBE_MSG, PROBE_CRASH (1: something crash
 	wait_pid $! 30; late=$?
 	t=$(( $(now) - t0 )); [ $t -ge 1 ] || t=1
 	if grep -q '^#E' "$o" 2>/dev/null; then
-		nd=$(grep -c '^S ' "$o")
+		nd=$(grep -c '^S ' "$o"); nw=$(grep -c '^M ' "$o")
 		PROBE_MSG="reads $nd device(s), one round takes about $t s"
 		[ $t -gt 30 ] && PROBE_MSG="$PROBE_MSG: too slow, the page shows it as not answering"
 		[ "$nd" = 0 ] && { node_why "$1"; PROBE_MSG="$PROBE_MSG ($WHY_MSG)"; }
+		[ "$nw" = 0 ] || PROBE_MSG="$PROBE_MSG; $nw more on its wired ports"
 		rc=0
 	elif [ $late = 1 ]; then PROBE_MSG="reading its devices took over 30 s"; rc=1
 	else
-		e=$(grep -v -e '^#B' -e '^S ' -e '^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
+		# the last line that isn't the script's own output (a network's name, an address): what the session said when it broke
+		e=$(grep -v -e '^#B' -e '^[SUCLMN] ' -e '^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
 		PROBE_MSG="reading its devices failed${e:+: $e}"; rc=1
 	fi
 	grep -Eq "$CRASH_RE" "$o" 2>/dev/null && PROBE_CRASH=1
@@ -1079,7 +1142,7 @@ node_trace() {   # ip file -> 0 if something crashed on the node; TRACE_AT: the 
 	tmpd; o="$TMPD/trace.$$"; TRACE_AT=""
 	(ulimit -f 2048 2>/dev/null; HOME="$SSH_HOME" exec dbclient $(ssh_batch) -p "$(ssh_port)" $(key_args) "$(ssh_user)@$1" "$(write_node_script 1 trace | sed 's| 2>/dev/null||g')") < /dev/null > "$o" 2>&1 &
 	wait_pid $! 30
-	tr -cd '\012\040-\176' < "$o" | scrub | cut -c1-200 | head -n 400 > "$2"
+	grep -v '^N ' "$o" | tr -cd '\012\040-\176' | scrub | cut -c1-200 | head -n 400 > "$2"   # N: a network's name, never in a report
 	rm -f "$o"
 	grep -Eq "$CRASH_RE" "$2" || return 1
 	TRACE_AT=$(awk -v re="$CRASH_RE" '$0 ~ re { print c; exit } /^\+ / { c = substr($0, 3, 80) }' "$2")
