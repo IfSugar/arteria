@@ -763,11 +763,12 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 // ---- 26. a bond (LAN 3+4 for a NAS) is named by its ports, whatever their speed together; a port that the firmware maps (LAN 2
 // through a VLAN interface) is named by its number
 {
-	const n = AR.buildNet(smp({ up: '9900.0', ports: ['eth3', 'bond0'], plab: { eth3: '2', bond0: '3+4' }, links: [['eth0', 1, 1000], ['eth3', 1, 1000, '2'], ['bond0', 1, 5000]],
-		macs: [['eth3', '00:00:5E:00:53:E1'], ['bond0', '00:00:5E:00:53:E2']] }));
-	const lab = m => (n.byId[m] || {}).portLabel;
-	ok(lab('00:00:5E:00:53:E1') === 'LAN 2' && lab('00:00:5E:00:53:E2') === 'LAN 3+4' && n.byId['00:00:5E:00:53:E2'].speed === 5000,
-		'a bond by its ports (LAN 3+4), a mapped port by its number', [lab('00:00:5E:00:53:E1'), lab('00:00:5E:00:53:E2')].join(' | '));
+	const n = AR.buildNet(smp({ up: '9900.0', ports: ['eth3', 'bond0', 'eth1'], plab: { eth3: '2', bond0: '3+4', eth1: '5-7' },
+		links: [['eth0', 1, 1000], ['eth3', 1, 1000, '2'], ['bond0', 1, 5000], ['eth1', 1, 2500, '5,6,7']],
+		macs: [['eth3', '00:00:5E:00:53:E1'], ['bond0', '00:00:5E:00:53:E2'], ['eth1', '00:00:5E:00:53:E3'], ['eth1', '00:00:5E:00:53:E4']] }));
+	const lab = m => (n.byId[m] || {}).portLabel, sw = (n.byId['port:eth1'] || {}).name;
+	ok(lab('00:00:5E:00:53:E1') === 'LAN 2' && lab('00:00:5E:00:53:E2') === 'LAN 3+4' && n.byId['00:00:5E:00:53:E2'].speed === 5000 && sw === 'Switch on LAN 5–7',
+		'a bond by its ports (LAN 3+4), a mapped port by its number, ports sharing one link by theirs, not by its fastest one\'s speed', [lab('00:00:5E:00:53:E1'), lab('00:00:5E:00:53:E2'), sw].join(' | '));
 }
 
 process.exit(fails ? 1 : 0);
