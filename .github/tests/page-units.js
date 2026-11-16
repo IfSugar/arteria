@@ -533,7 +533,8 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	const bhNet = (up, rows) => AR.buildNet(smp({ up: up, sta: rows, nodes: [{ mac: '02:10:00:00:00:A0', ip: '192.168.50.11', model: 'BQ16', alias: 'Den',
 		sta: '02:10:00:00:00:A1 02:10:00:00:00:A2', state: 'ok', up: up, c: [] }] }));
 	const row = (mac, band, rx, tx, rssi, ptx, prx) => ['eth7', band, mac, String(tx), String(rx), rssi, ptx, prx, 100, 0, 'be', 2, 160];
-	const weak = (rows1, rows2, t) => { bhNet(t[0], rows1); const n = bhNet(t[1], rows2); return n.nodes[0].weak; };
+	const fresh = () => { A.weakHold = {}; [A.sm, A.prev].forEach(o => Object.keys(o).forEach(k => { if (k.indexOf('02:10:00:00:00:A') >= 0) delete o[k]; })); };
+	const weak = (rows1, rows2, t) => { fresh(); bhNet(t[0], rows1); const n = bhNet(t[1], rows2); return n.nodes[0].weak; };
 	// a 6 GHz backhaul at -75 dBm, idle, its last packets at 24/54 Mb/s; the 2.4 GHz link as strong as ever: not weak
 	const quiet6 = weak([row('02:10:00:00:00:A1', '6', 1000, 1000, -75, 24, 54), row('02:10:00:00:00:A2', '2.4', 1000, 1000, -44, 229, 195)],
 		[row('02:10:00:00:00:A1', '6', 1000, 1000, -75, 24, 54), row('02:10:00:00:00:A2', '2.4', 1000, 1000, -44, 229, 195)], ['7300.0', '7302.0']);
@@ -545,6 +546,17 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 		[row('02:10:00:00:00:A1', '5', 1e6 + 5e6, 1e6, -78, 144, 459), row('02:10:00:00:00:A2', '2.4', 1000, 1000, -44, 229, 195)], ['7600.0', '7602.0']);
 	ok(!quiet6 && !busyFast && busySlow && weak5, 'weak backhaul: by the link in use, not an idle link\'s last packets; 6 GHz at -75 dBm is fine',
 		JSON.stringify({ quiet6, busyFast, busySlow, weak5 }));
+	// a 5 GHz link at -73 dBm running at 864 Mb/s, busy or idle: a good link (AiMesh's "Great"); at -78 dBm and busy at 864: still fast
+	const good73 = weak([row('02:10:00:00:00:A1', '5', 1e6, 1e6, -73, 864, 864)], [row('02:10:00:00:00:A1', '5', 1e6 + 5e6, 1e6, -73, 864, 864)], ['7700.0', '7702.0']);
+	const idle73 = weak([row('02:10:00:00:00:A1', '5', 1e6, 1e6, -73, 6, 24)], [row('02:10:00:00:00:A1', '5', 1e6, 1e6, -73, 6, 24)], ['7710.0', '7712.0']);
+	const fast78 = weak([row('02:10:00:00:00:A1', '5', 1e6, 1e6, -78, 864, 720)], [row('02:10:00:00:00:A1', '5', 1e6 + 5e6, 1e6, -78, 864, 720)], ['7720.0', '7722.0']);
+	ok(!good73 && !idle73 && !fast78, 'weak backhaul: -73 dBm isn\'t weak; a low signal on a link that runs fast under traffic isn\'t either', JSON.stringify({ good73, idle73, fast78 }));
+	// near the line, from one sample to the next: the warning changes only once the new reading has held for 10 s
+	fresh();
+	const at = (up, rssi) => bhNet(up, [row('02:10:00:00:00:A1', '5', 1000, 1000, rssi, 6, 24)]).nodes[0].weak;
+	const seq = [at('7800.0', -77), at('7802.0', -77), at('7804.0', -70), at('7810.0', -70), at('7814.0', -70), at('7816.0', -77), at('7818.0', -70), at('7820.0', -77), at('7830.0', -77)];
+	ok(seq.join() === 'true,true,true,true,false,false,false,false,true', 'weak backhaul: shown at once once measured, then changed only after 10 s of the other reading', seq.join());
+	A.weakHold = {};
 }
 
 // ---- 20. a node on a Wi-Fi backhaul that counts its own uplink: its backhaul is its own count, made in the same round as its
@@ -726,6 +738,36 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	ok(den.online && den.via === hall && den.viaWired && den.bh.dn.toFixed(1) === '12.0' && hall.bh.dn.toFixed(1) === '18.0' && n3.total.dn.toFixed(1) === '30.0' && T.chainOf(n3, den.id)[0] === den.id,
 		'a node wired behind a Wi-Fi node, not read: online, its backhaul the port in front of it; the node in front without it',
 		[den.online, den.bh.dn.toFixed(1), hall.bh.dn.toFixed(1), n3.total.dn.toFixed(1)].join(' '));
+}
+
+// ---- 25. a router port a node is behind, on a switch with a PC and a NAS: they show on that port (a switch with its two
+// devices), with what the port carries beyond the node when it counts its own; when it isn't read, their traffic is in its
+// figure (not reported apart), and the whole network counts the port once either way
+{
+	const ND = '02:10:00:00:02:10', B = 250000;
+	const bz = (k, read) => AR.buildNet(smp({ up: (9800 + 2 * k).toFixed(1), ports: ['eth1'], links: [['eth0', 1, 1000], ['eth1', 1, 1000]], plab: { eth1: '2' },
+		ifs: [['eth0', '1', '1'], ['eth1', '1000', String(1000 + k * 80 * B)]], macs: [['eth1', ND], ['eth1', '00:00:5E:00:53:D1'], ['eth1', '00:00:5E:00:53:D2']],
+		nodes: [read ? { mac: ND, ip: '192.168.50.31', model: 'GT-AXE16000', alias: 'Lounge', sta: '', state: 'ok', up: (5000 + 2 * k).toFixed(1), c: [], u: [['eth0', String(1000 + k * 30 * B), '1000']] }
+			: { mac: ND, ip: '192.168.50.31', model: 'GT-AXE16000', alias: 'Lounge', sta: '', state: 'nokey', up: null, c: [] }] }));
+	['p:eth1', 'pb:eth1'].forEach(k => { delete A.prev[k]; delete A.sm[k]; });
+	bz(0, true); const n = bz(1, true), sw = n.byId['port:eth1'];
+	A.sel = 'port:eth1'; const ro = T.readoutFor(n); A.sel = null;
+	ok(sw && sw.count === 2 && sw.behind.length === 2 && sw.st === 'ok' && sw.dn.toFixed(1) === '50.0' && n.nodes[0].bh.dn.toFixed(1) === '30.0' && n.total.dn.toFixed(1) === '80.0'
+		&& sw.portLabel === 'LAN 2' && /On a switch with Lounge/.test(ro.note),
+		'a PC and a NAS on a switch with a node: on its router port, with the port\'s traffic beyond the node\'s', JSON.stringify({ dn: sw && sw.dn, node: n.nodes[0].bh.dn, total: n.total.dn, note: ro.note }));
+	bz(2, false); const n2 = bz(3, false), sw2 = n2.byId['port:eth1'];
+	ok(sw2 && sw2.count === 2 && sw2.st === 'nodata' && n2.nodes[0].bh.dn.toFixed(1) === '80.0' && n2.total.dn.toFixed(1) === '80.0',
+		'the same with the node not read: the devices show, their traffic in the node\'s figure, the port counted once', JSON.stringify({ st: sw2 && sw2.st, node: n2.nodes[0].bh.dn, total: n2.total.dn }));
+}
+
+// ---- 26. a bond (LAN 3+4 for a NAS) is named by its ports, whatever their speed together; a port that the firmware maps (LAN 2
+// through a VLAN interface) is named by its number
+{
+	const n = AR.buildNet(smp({ up: '9900.0', ports: ['eth3', 'bond0'], plab: { eth3: '2', bond0: '3+4' }, links: [['eth0', 1, 1000], ['eth3', 1, 1000, '2'], ['bond0', 1, 5000]],
+		macs: [['eth3', '00:00:5E:00:53:E1'], ['bond0', '00:00:5E:00:53:E2']] }));
+	const lab = m => (n.byId[m] || {}).portLabel;
+	ok(lab('00:00:5E:00:53:E1') === 'LAN 2' && lab('00:00:5E:00:53:E2') === 'LAN 3+4' && n.byId['00:00:5E:00:53:E2'].speed === 5000,
+		'a bond by its ports (LAN 3+4), a mapped port by its number', [lab('00:00:5E:00:53:E1'), lab('00:00:5E:00:53:E2')].join(' | '));
 }
 
 process.exit(fails ? 1 : 0);

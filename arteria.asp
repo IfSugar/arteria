@@ -885,9 +885,13 @@ function measure(key, t, d, u) { return smooth(key, rate(key, t, d, u)); }
    one reads lower for the same link: it gets until -78 dBm), or when it carries traffic (over 1 Mb/s) at under 200 Mb/s. An idle
    link's last packets are mostly control frames, sent slowly on purpose: that rate says nothing about the link. */
 function linkRate(x) { return Math.max(+x.r[6] || 0, +x.r[7] || 0); }
+/* A backhaul link is weak when it is slow carrying traffic (under 200 Mb/s), or when its signal is low (under -75 dBm, -80 on
+   6 GHz, which reads lower for the same link) and it isn't fast anyway: a link at -73 dBm running at 864 Mb/s is a good one,
+   and AiMesh calls it Great. An idle link's last packets (control frames, sent slowly) don't make it fast or slow. */
 function linkWeak(x) {
 	var r = x.r[5], p = linkRate(x), busy = x.s.sdn + x.s.sup > 1;
-	return (r !== null && r !== undefined && r !== '' && +r < (x.r[1] === '6' ? -78 : -72)) || (busy && p > 0 && p < 200);
+	var low = r !== null && r !== undefined && r !== '' && +r < (x.r[1] === '6' ? -80 : -75);
+	return (low && !(busy && p >= 600)) || (busy && p > 0 && p < 200);
 }
 
 /* ---------------------------------------------------------------- the network, from one sample */
@@ -909,6 +913,7 @@ function bandName(b) { return b === '2.4' ? '2.4 GHz' : (b === '6' ? '6 GHz' : (
    list. Ports that share one interface (the RT-AX88U's LAN 5-8) are named by the one that is up, or as a range. */
 function portLabel(d, ifn) {
 	var lk = linkOf(d, ifn), sp = lk.speed, pl = d.plab || {}, n = pl[ifn];
+	if (n && n.indexOf('+') > 0) return 'LAN ' + n;   /* a bond: its ports, whatever their speed together */
 	if (sp >= 2500) return (sp >= 10000 ? '10G' : (sp / 1000) + 'G') + ' port';
 	if (lk.upl && lk.upl.indexOf(',') < 0) return 'LAN ' + lk.upl;
 	if (n) return 'LAN ' + n.replace('-', '–');
@@ -926,7 +931,8 @@ function isIf(i) { return typeof i === 'string' && IF_RE.test(i); }
 /* the firmware's port numbers: "1", or "5-8" for an interface several ports share */
 function plab(o) {
 	var r = Object.create(null);
-	if (o && typeof o === 'object') Object.keys(o).forEach(function (k) { if (isIf(k) && /^[0-9]{1,2}(-[0-9]{1,2})?$/.test(String(o[k]))) r[k] = String(o[k]); });
+	/* "1", "5-8" (several ports behind one interface), "1+2" (a bond) */
+	if (o && typeof o === 'object') Object.keys(o).forEach(function (k) { if (isIf(k) && /^[0-9]{1,2}(-[0-9]{1,2}|(\+[0-9]{1,2}){1,7})?$/.test(String(o[k]))) r[k] = String(o[k]); });
 	return r;
 }
 function cleanSample(d) {
@@ -1103,17 +1109,31 @@ function buildNet(d) {
 		}
 		net.devs.push(dev);
 	};
+	/* addresses known to be at a node (its own, the devices on its ports, a node behind it): the router learns them all on the
+	   port the node is behind, and they are the node's, not that port's */
+	var atNode = {};
+	net.nodes.forEach(function (n) { atNode[n.mac] = 1; n.sta.forEach(function (m) { atNode[m] = 1; }); n.pmacs.forEach(function (pm) { atNode[pm[1]] = 1; }); });
 	var onPort = {};
 	(d.macs || []).forEach(function (pm) {
-		if (seen[pm[1]] || own[pm[1]] || bh[pm[1]]) return;
-		if (net.nodes.some(function (n) { return n.mac === pm[1] || n.wiredPort === pm[0]; })) return;
+		if (seen[pm[1]] || own[pm[1]] || bh[pm[1]] || atNode[pm[1]]) return;
 		(onPort[pm[0]] = onPort[pm[0]] || []).push(pm[1]);
 	});
 	(d.ports || []).forEach(function (p) {
-		var lk = linkOf(d, p), list = onPort[p] || [], pr = ifs[p];
-		if (!lk.up || net.nodes.some(function (n) { return n.wiredPort === p; })) return;
-		var s = pr ? measure('p:' + p, t, pr[2], pr[1]) : smooth('p:' + p, null);
-		wiredDev({ id: 'port:' + p, link: 'wired', port: p, portLabel: portLabel(d, p), speed: lk.speed, s: s, st: 'ok', ap: 'router' }, list);
+		var lk = linkOf(d, p), list = onPort[p] || [], pr = ifs[p], ns = byPort[p] || [];
+		if (!lk.up) return;
+		if (ns.length) {
+			/* A port a node is behind: what else is there (on a switch with the node: a PC, a NAS) shows as on that port, with what
+			   the port carries beyond the nodes, when each counts its own. Else its traffic is in the node's figure, and isn't
+			   known apart (a node that isn't read can't say which of its port's addresses are its own: those show here too). */
+			if (!list.length) return;
+			var all = ns.every(function (n) { return n.bhOwn; }), pt = portRate(p), s = zeroRate();
+			if (all) ['dn', 'up', 'sdn', 'sup'].forEach(function (k) { s[k] = Math.max(0, pt[k] - ns.reduce(function (a, n) { return a + n.bh[k]; }, 0)); });
+			s.ok = all && pt.ok;
+			wiredDev({ id: 'port:' + p, link: 'wired', port: p, portLabel: portLabel(d, p), speed: lk.speed, s: s, st: all ? 'ok' : 'nodata', ap: 'router', beside: ns }, list);
+			return;
+		}
+		var s2 = pr ? measure('p:' + p, t, pr[2], pr[1]) : smooth('p:' + p, null);
+		wiredDev({ id: 'port:' + p, link: 'wired', port: p, portLabel: portLabel(d, p), speed: lk.speed, s: s2, st: 'ok', ap: 'router' }, list);
 	});
 	/* a node's wired ports, read on the node as the router reads its own (its uplink to the router is left out there). A port
 	   with an address known elsewhere (the router's, a node's, a Wi-Fi device's) leads back into the network, not to a device of
@@ -1156,13 +1176,23 @@ function buildNet(d) {
 		if (dv.node && !dv.sw) dv.node.devs.push(dv);
 	});
 	net.devs.forEach(function (dv) { if (dv.behind) dv.behind.sort(byName); });
-	/* totals: everything the router delivered = its own clients + the nodes' backhaul, a router port with nodes behind it once */
+	/* totals: everything the router delivered = its own clients + the nodes' backhaul, a router port with nodes behind it once
+	   (the port's own count: its nodes, and anything on a switch with them) */
 	var tot = zeroRate(), add = function (r) { tot.dn += r.dn; tot.up += r.up; tot.sdn += r.sdn; tot.sup += r.sup; };
-	net.devs.forEach(function (dv) { if (!dv.node && dv.st === 'ok') add(dv); });
-	Object.keys(byPort).forEach(function (p) { add(byPort[p].length > 1 ? portRate(p) : byPort[p][0].bh); });
+	net.devs.forEach(function (dv) { if (!dv.node && !dv.beside && dv.st === 'ok') add(dv); });
+	Object.keys(byPort).forEach(function (p) { add(portRate(p)); });
 	net.nodes.forEach(function (n) {
 		if (!n.wiredPort) add(n.bh);
-		n.weak = n.online && !n.wiredPort && !!n.bhWeak;
+		/* A link near the line goes weak and back from one sample to the next: the warning changes only once the other reading
+		   has held for 10 s (on the router's clock). The first reading with the link's traffic measured shows at once. */
+		var raw = n.online && !n.wiredPort && !n.viaWired && !!n.bhWeak, wh = A.weakHold = A.weakHold || {}, h = wh[n.mac];
+		if (!h && n.bh.ok) h = wh[n.mac] = { on: raw, raw: raw, since: t };
+		if (h) {
+			if (raw !== h.raw) { h.raw = raw; h.since = t; }
+			if (h.raw !== h.on && t - h.since >= 10) h.on = h.raw;
+			if (!n.online) h.on = h.raw = false;
+		}
+		n.weak = h ? h.on : raw;
 		n.devs.sort(byName);
 		if (n.state === 'ok') {   /* what the node's clients add up to, vs the backhaul */
 			n.sum = n.devs.reduce(function (a, dv) { return a + dv.dn + dv.up; }, 0);
@@ -3286,7 +3316,11 @@ function readoutFor(net) {
 		note = dv.link === 'wired' ? (dv.count > 1 ? dv.count + ' devices share this port: their traffic is added up.'
 				: (dv.node ? 'Measured on ' + dv.node.name + '\'s port counters, read over SSH.' : 'Measured on the port counters.'))
 			: (dv.node ? 'Counted on ' + dv.node.name + ' and read over SSH.' : 'Measured from Wi-Fi client counters on the router.');
-		if (dv.st === 'nodata') { sdn = sup = 'not reported by the node'; note = dv.node ? dv.node.name + ' isn\'t reporting per-device traffic: see its backhaul total.' : ''; }
+		/* on a router port a node is behind (a switch with it): what the port carries beyond the node, or, when the node isn't
+		   read, nothing known apart from the node's figure */
+		var bn = dv.beside && dv.beside.map(function (n) { return n.name; }).join(', ');
+		if (bn && dv.st === 'ok') note = 'On a switch with ' + bn + ': the port\'s traffic beyond ' + (dv.beside.length > 1 ? 'theirs' : 'its') + '.';
+		if (dv.st === 'nodata') { sdn = sup = bn ? 'counted with ' + bn : 'not reported by the node'; note = bn ? 'On a switch with ' + bn + ': its traffic is in ' + (dv.beside.length > 1 ? 'theirs' : 'its figure') + '.' : (dv.node ? dv.node.name + ' isn\'t reporting per-device traffic: see its backhaul total.' : ''); }
 		/* behind a switch: the port counts all its devices together, so this one's own traffic isn't known */
 		if (dv.st === 'shared') { d.link = 'Wired · ' + dv.portLabel + ' · through a switch'; sdn = sup = 'counted with the switch\'s ' + dv.sw.count + ' devices'; note = 'Behind a switch: its port counts all ' + dv.sw.count + ' together.'; }
 		if (dv.st === 'off') { sdn = sup = 'offline'; note = 'Offline.'; tone = BAD; }
