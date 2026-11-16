@@ -107,8 +107,9 @@ EOF
 cat > "$B/brctl" <<EOF
 #!$bb sh
 case "\$1 \$2" in
-	'showstp br0') printf 'br0\n bridge id\neth1 (4)\n port id\neth5 (5)\neth6 (6)\neth7 (7)\nwds1.0.1 (9)\n' ;;
-	'showmacs br0') printf 'port no\tmac addr\t\tis local?\tageing timer\n  5\t02:cc:00:00:00:09\tno\t\t   0.11\n  9\t02:cc:00:00:00:11\tno\t\t   0.20\n  6\t00:00:5e:00:53:fc\tyes\t\t   0.00\n' ;;
+	'showstp br0') printf 'br0\n bridge id\neth1 (4)\n port id\neth5 (5)\neth6 (6)\neth7 (7)\nwds1.0.1 (9)\nbond0 (3)\n' ;;
+	'showmacs br0') printf 'port no\tmac addr\t\tis local?\tageing timer\n  5\t02:cc:00:00:00:09\tno\t\t   0.11\n  9\t02:cc:00:00:00:11\tno\t\t   0.20\n  6\t00:00:5e:00:53:fc\tyes\t\t   0.00\n'
+		[ -f "$t/bond" ] && printf '  3\t02:cc:00:00:00:a1\tno\t\t   0.40\n' ;;   # a NAS on LAN 3+4, bonded
 	'showstp br52') printf 'br52\n bridge id\neth3.52 (1)\n port id\nwl0.2 (2)\n' ;;
 	'showmacs br52') printf 'port no\tmac addr\t\tis local?\tageing timer\n  1\t02:cc:00:00:00:52\tno\t\t   1.10\n  1\t02:cc:00:00:00:09\tno\t\t   1.10\n' ;;
 esac
@@ -122,7 +123,8 @@ p() { printf ' phy_port_id=%s, label_name=%s, cap=2, cap_name=LAN, max_rate=1000
 p 4 W0 eth0 up 1000
 [ -f "$t/rc-usb-first" ] && printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
 if [ -f "$t/ax88u" ]; then p 3 L1 eth4 down 0; p 2 L2 eth3 down 0; p 1 L3 eth2 down 0; p 0 L4 eth1 down 0; p 8 L5 eth5 down 0; p 9 L6 eth5 down 0; p 10 L7 eth5 up 100; p 11 L8 eth5 down 0
-else p 3 L1 eth4 down 0; p 2 L2 eth3 down 0; p 1 L3 eth2 down 0; p 0 L4 eth1 down 0; p 7 L5 eth5 up 2500; fi
+else s2="down 0"; s3="down 0"; [ -f "$t/l2up" ] && s2="up 1000"; [ -f "$t/bond" ] && s3="up 1000"   # tests: LAN 2 up; LAN 3+4 bonded
+	p 3 L1 eth4 down 0; p 2 L2 eth3 \$s2; p 1 L3 eth2 \$s3; p 0 L4 eth1 \$s3; p 7 L5 eth5 up 2500; fi
 [ -f "$t/rc-usb-first" ] || printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
 # the AiMesh nodes' ports, which the firmware prints after the router's own (here in the same format; their L1 is a node's eth1)
 [ -f "$t/rc-nodes" ] && { p 0 W0 eth4 up 1000; p 1 L1 eth1 up 1000; p 2 L2 eth2 up 1000; }
@@ -139,6 +141,7 @@ Inter-|   Receive                                                |  Transmit
   eth6: 36927904 221172 0 0 0 637609 0 0 63250738 306987 445 0 0 0 0 0
   eth7: 3774351766 4653250 0 21 0 0 0 27194 14871487368 12052532 0 3262 0 0 0 0
 wds1.0.1: 962647865 2228803 0 5159 0 0 0 45379 9796037641 8283991 0 0 0 0 0 0
+  bond0: 5000000 4000 0 0 0 0 0 0 9000000 7000 0 0 0 0 0 0
     br0: 4630432670 7044139 0 0 0 0 0 0 24640308964 20233741 0 0 0 0 0 0
   usb0: 1234567890 900000 0 0 0 0 0 0 98765432 400000 0 0 0 0 0 0
 EOF
@@ -378,6 +381,25 @@ s = json.load(open(sys.argv[1]))
 assert s['plab'] == {'eth4': '1', 'eth3': '2', 'eth2': '3', 'eth1': '4', 'eth5': '5-8'}, s['plab']
 links = {l[0]: l for l in s['links']}
 assert links['eth1'] == ['eth1', 0, -1], links['eth1']   # the node's L1 on its own eth1 is up; the router's LAN 4 isn't
+EOF
+# Link aggregation: LAN 3 and 4 (eth2, eth1) bonded as bond0 for a NAS. The bridge has bond0, and learns the NAS there: one
+# port, LAN 3+4, with the bond's own link and counters. And LAN 2 (eth3) as a VLAN interface whose own link says 10 Gb/s
+# while the port map says 1000: the map's link, and its number.
+mkdir -p "$t/sys/class/net/bond0/bonding" "$t/sys/class/net/bond0/brport"; echo "eth2 eth1" > "$t/sys/class/net/bond0/bonding/slaves"
+echo 1 > "$t/sys/class/net/bond0/carrier"; echo 2000 > "$t/sys/class/net/bond0/speed"
+echo 1 > "$t/sys/class/net/eth3/carrier"; echo 10000 > "$t/sys/class/net/eth3/speed"
+touch "$t/bond" "$t/l2up"; runa sample > "$t/sample-bond.json" 2>/dev/null || true; rm -f "$t/bond" "$t/l2up"
+rm -rf "$t/sys/class/net/bond0"; echo 0 > "$t/sys/class/net/eth3/carrier"; echo -1 > "$t/sys/class/net/eth3/speed"
+python3 - "$t/sample-bond.json" <<'EOF' && ok "a bond (LAN 3+4) is one port with its NAS; a port whose own link disagrees with the port map takes the map's" || fail=1
+import json, sys
+s = json.load(open(sys.argv[1]))
+assert s['ports'] == ['eth4', 'eth3', 'bond0', 'eth5'], s['ports']
+assert s['plab'] == {'eth4': '1', 'eth3': '2', 'bond0': '3+4', 'eth5': '5'}, s['plab']
+links = {l[0]: l for l in s['links']}
+assert links['bond0'] == ['bond0', 1, 2000] and links['eth3'] == ['eth3', 1, 1000, '2'] and links['eth5'] == ['eth5', 1, 2500], links
+assert ['bond0', '02:CC:00:00:00:A1'] in s['macs'], s['macs']
+ifs = {r[0]: r for r in s['ifs']}
+assert ifs['bond0'][1:] == ['5000000', '9000000'], s['ifs']
 EOF
 # dual WAN: the second WAN (a USB modem here) is sampled too, and named in the sample
 echo "wan usb" > "$t/dualwan"; runa sample > "$t/sample-dw.json" 2>/dev/null || true; rm -f "$t/dualwan"

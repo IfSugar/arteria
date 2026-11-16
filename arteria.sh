@@ -149,12 +149,24 @@ radio_list() {
 	done
 }
 
-# Wired LAN ports: lan_ifnames without the Wi-Fi interfaces, in the router's order (LAN 1 first).
+# Link aggregation (a NAS on LAN 1 and LAN 2): the bridge has the bond, while lan_ifnames and the port map name its members.
+bonds() {   # lines "bond member member...", for each bond in a bridge
+	for s in "$SYSNET"/*/bonding/slaves; do
+		[ -r "$s" ] || continue
+		b=${s%/bonding/slaves}; b=${b##*/}
+		[ -d "$SYSNET/$b/brport" ] && printf '%s %s\n' "$b" "$(cat "$s" 2>/dev/null)"
+	done
+}
+# Wired LAN ports: lan_ifnames without the Wi-Fi interfaces, in the router's order (LAN 1 first). A bond's members are one
+# port, the bond, where its first member is: the bridge learns its devices' addresses on the bond, and counts them there.
 lan_ports() {
-	wifi=" $(radio_list | cut -d: -f1 | tr '\n' ' ') "
+	wifi=" $(radio_list | cut -d: -f1 | tr '\n' ' ') "; bm=$(bonds); out=" "
 	for p in $(nvram get lan_ifnames); do
 		case "$wifi" in *" $p "*) continue ;; esac
-		printf '%s\n' "$p"
+		b=$(printf '%s\n' "$bm" | awk -v p="$p" '{ for (i = 2; i <= NF; i++) if ($i == p) { print $1; exit } }')
+		[ -n "$b" ] && p=$b
+		case "$out" in *" $p "*) continue ;; esac
+		out="$out$p "; printf '%s\n' "$p"
 	done
 }
 
@@ -180,19 +192,21 @@ port_table() {   # lines "ifname number up Mb/s" for the LAN ports; nothing on f
 	have rc || return 0
 	# the router's own ports come first (a USB port's devices on lines of their own, usb_path=, after it); what follows, its
 	# AiMesh nodes' ports from a closed library, is left out: the parse stops at the end of the router's block, or at a port
-	# label it has already seen
-	rc port_status 2>&1 | awk 'go && !/phy_port_id=/ && !/^[ \t]*usb_path=/ { exit } /phy_port_id=/ { go = 1; l = ""; i = ""; s = ""; r = ""
+	# label it has already seen. A bond's members are named as the bond (lan_ports).
+	rc port_status 2>&1 | awk -v bm="$(bonds | awk '{ for (i = 2; i <= NF; i++) printf "%s=%s ", $i, $1 }')" '
+		BEGIN { n = split(bm, a, " "); for (k = 1; k <= n; k++) { split(a[k], b, "="); B[b[1]] = b[2] } }
+		go && !/phy_port_id=/ && !/^[ \t]*usb_path=/ { exit } /phy_port_id=/ { go = 1; l = ""; i = ""; s = ""; r = ""
 		n = split($0, f, ","); for (k = 1; k <= n; k++) { e = f[k]; gsub(/^ +| +$/, "", e); p = index(e, "="); if (!p) continue
 			key = substr(e, 1, p - 1); v = substr(e, p + 1)
 			if (key == "label_name") l = v; else if (key == "ifname") i = v; else if (key == "state") s = v; else if (key == "link_rate") r = v }
 		if (l ~ /^[A-Z][0-9]+$/) { if (l in seen) exit; seen[l] = 1 }
-		if (l ~ /^L[0-9]+$/ && i ~ /^[A-Za-z0-9._-]+$/) print i, substr(l, 2), (s == "up" ? 1 : 0), (r ~ /^[0-9]+$/ ? r : 0) }'
+		if (l ~ /^L[0-9]+$/ && i ~ /^[A-Za-z0-9._-]+$/) print ((i in B) ? B[i] : i), substr(l, 2), (s == "up" ? 1 : 0), (r ~ /^[0-9]+$/ ? r : 0) }'
 }
-# {"ifname":"numbers"}: "1" for one port, "5-8" for an interface several ports share
+# {"ifname":"numbers"}: "1" for one port, "5-8" for an interface several ports share, "1+2" for a bond
 port_labels_json() {
-	printf '%s\n' "$PTAB" | awk -v want=" $PORTS " 'NF == 4 && index(want, " " $1 " ") {
-		if (!($1 in lo) || $2 + 0 < lo[$1]) lo[$1] = $2 + 0; if (!($1 in hi) || $2 + 0 > hi[$1]) hi[$1] = $2 + 0 }
-		END { for (i in lo) printf "%s\"%s\":\"%s\"", (c++ ? "," : ""), i, (lo[i] == hi[i] ? lo[i] : lo[i] "-" hi[i]) }'
+	printf '%s\n' "$PTAB" | awk -v want=" $PORTS " -v bonds=" $BONDS " 'NF == 4 && index(want, " " $1 " ") {
+		if (!($1 in lo) || $2 + 0 < lo[$1]) lo[$1] = $2 + 0; if (!($1 in hi) || $2 + 0 > hi[$1]) hi[$1] = $2 + 0; all[$1] = all[$1] (all[$1] == "" ? "" : "+") $2 }
+		END { for (i in lo) printf "%s\"%s\":\"%s\"", (c++ ? "," : ""), i, (index(bonds, " " i " ") ? all[i] : (lo[i] == hi[i] ? lo[i] : lo[i] "-" hi[i])) }'
 }
 
 wan_if() { w=$(nvram get wan0_gw_ifname); [ -n "$w" ] || w=$(nvram get wan0_ifname); printf '%s' "$w"; }
@@ -641,9 +655,17 @@ sample_init() {
 	[ "$NODES" = on ] && NODE_LIST=$(node_list)
 	PORTS_JSON=$(printf '%s' "$PORTS" | awk '{ for (i = 1; i <= NF; i++) printf "%s\"%s\"", (i > 1 ? "," : ""), $i }')
 	NETS_JSON=$(nets_json)
+	BONDS=$(bonds | cut -d' ' -f1 | tr '\n' ' ')
 	PTAB=$(port_table); PLAB_JSON=$(port_labels_json)
-	# interfaces several ports share (the RT-AX88U's eth5): their own link says nothing about the ports, so those come from the map
-	SHARED=$(printf '%s\n' "$PTAB" | awk -v want=" $PORTS " 'NF == 4 && index(want, " " $1 " ") { n[$1]++ } END { for (i in n) if (n[i] > 1) printf "%s ", i }')
+	# interfaces several ports share (the RT-AX88U's eth5): their own link says nothing about the ports, so those come from the
+	# map. Not a bond: its own link is up while one of its members is, at their speeds together.
+	# And an interface for one port whose own link disagrees with the map's: the GT-BE98 Pro's LAN 1 is vlan4094, a VLAN
+	# interface whose own link is up at 10 Gb/s, like the internal link it is on, whatever is plugged into the port.
+	SHARED=$(printf '%s\n' "$PTAB" | awk -v want=" $PORTS " -v bonds=" $BONDS " -v sys="$SYSNET" 'NF == 4 && index(want, " " $1 " ") && !index(bonds, " " $1 " ") { n[$1]++; u[$1] = $3; r[$1] = $4 }
+		END { for (i in n) {
+			if (n[i] > 1) { printf "%s ", i; continue }
+			c = 0; s = 0; f = sys "/" i "/carrier"; if ((getline c < f) <= 0) c = 0; close(f); f = sys "/" i "/speed"; if ((getline s < f) <= 0) s = 0; close(f)
+			if ((c + 0 == 1) != (u[i] + 0 == 1) || (u[i] + 0 == 1 && r[i] + 0 > 0 && s + 0 != r[i] + 0)) printf "%s ", i } }')
 }
 
 sample_json() {   # seq ms -> one sample as JSON on stdout
