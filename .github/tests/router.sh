@@ -324,6 +324,14 @@ runa() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$sc
 mkdir -p "$R/jffs/addons/arteria"
 runa sample > "$t/sample.json" 2> "$t/sample.err" || true
 [ -s "$t/sample.err" ] && { bad "'sample' printed errors:"; cat "$t/sample.err"; }
+# BusyBox's shell opens an input file before it sees a later 2>/dev/null: "cmd < file 2>/dev/null" still prints "can't open"
+# when the file is gone (a process that just ended, its /proc/<pid>/cmdline), and the sampler's log shows it as an error
+if grep -nE '< ("[^"]+"|\$[^ ]+) 2>/dev/null' "$script"; then bad "an input file opened before its errors are silenced (the lines above)"
+else ok "every input file is opened after its errors are silenced (2>/dev/null < file)"; fi
+mv "$R/var/lib/misc/dnsmasq.leases" "$t/leases.bak" 2>/dev/null
+runa sample > /dev/null 2> "$t/sample-nl.err" || true
+mv "$t/leases.bak" "$R/var/lib/misc/dnsmasq.leases" 2>/dev/null
+[ -s "$t/sample-nl.err" ] && { bad "'sample' without a DHCP leases file printed errors:"; cat "$t/sample-nl.err"; } || ok "'sample' without a DHCP leases file prints no errors"
 run sample > "$t/sample2.json" 2> "$t/sample2.err" || true
 # debug: router facts and classification counts for an issue, never a name, host name, MAC or IP
 run debug > "$t/debug.out" 2>&1 || true
