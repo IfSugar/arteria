@@ -572,8 +572,10 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 # Only rows between a "#B" and its "#E" count: the file can be emptied in the middle of a block. At most 512 rows a
 # block (a node serves far fewer clients), 8 ports, 128 addresses and 16 networks: a hostile node can't make every sample
 # cost seconds of CPU. A network name is any text up to 64 bytes, escaped for JSON (and a "<" later, by write_atomic).
+# je escapes it one character at a time: what a backslash means in gsub's replacement differs between awks (BusyBox 1.38
+# drops the one in "\\\"", so a network name with a quote broke the JSON).
 NODE_AWK="$ROWS_AWK"'
-function je(s) { gsub(/[[:cntrl:]]/, "", s); gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return s }
+function je(s,   o, c, i, n) { gsub(/[[:cntrl:]]/, "", s); n = length(s); for (i = 1; i <= n; i++) { c = substr(s, i, 1); if (c == "\\" || c == "\"") o = o "\\"; o = o c } return o }
 function nm(s) { return s ~ /^[A-Za-z0-9._-]+$/ && length(s) <= 16 }
 /^#B / { cur = ""; cc = 0; cu = ""; uc = 0; cw = ""; wc = 0; cl = ""; lc = 0; cm = ""; mc = 0; cn = ""; nc = 0; cx = ""; xc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
 open && xc < 4 && /^X / && NF == 2 && nm($2) { cx = cx $2 ";"; xc++; next }
