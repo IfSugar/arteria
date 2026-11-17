@@ -79,6 +79,15 @@ const CASES = [
 	['shellydw2-A1B2C3', 0, 0, 0, 'wifi', 'Espressif Inc.', '', 'contact'],
 	['Nintendo Switch', 0, 0, 0, 'wifi', '', '', 'console'],
 	['Office switch', 0, 2, 0, 'wired', '', '', 'switch'],
+	// a network switch by its name (a managed switch has an address of its own); on Wi-Fi, a "Switch" is a Nintendo Switch
+	['Switch-02', 0, 0, 0, 'wired', '', '', 'switch'],
+	['Switch02', 0, 0, 0, 'wired', '', '', 'switch'],
+	['GS308EP', 0, 0, 0, 'wired', 'NETGEAR', '', 'switch'],
+	['TL-SG108E', 0, 0, 0, 'wired', '', '', 'switch'],
+	['USW-Lite-8-PoE', 0, 0, 0, 'wired', '', '', 'switch'],
+	['Kids Switch', 0, 0, 0, 'wifi', '', '', 'console'],
+	['Hall light switch', 0, 0, 0, 'wired', '', '', 'wallswitch'],
+	['SteamMachine', 0, 0, 0, 'wired', '', '', 'console'],
 	// words run together: a name rule finds "nas" in JohnsNas, nas01, johns_nas and ExampleDSPNAS; a first name that ends in it isn't one
 	['JohnsNas', 0, 0, 0, 'wired', '', '', 'nas'],
 	['nas01', 0, 0, 0, 'wired', '', '', 'nas'],
@@ -667,12 +676,12 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	A.sel = null;
 	ok(s && s.kind === 'switch' && s.count === 3 && Math.abs(s.dn - 10) < 0.01 && names === 'Backup NAS,Device …53:A3,Game PC' && kinds.indexOf('nas') >= 0 && pickable && !inDevs && one && !one.behind
 		&& n.clients === 4 && hsS && hsS.open && hsS.devs === b && hsS.key === 'port:eth1' && hsD && hsD.devs === b && ch.join() === 'port:eth1'
-		&& ro.dnN === '—' && /through a switch/.test(ro.d.link) && /all 3 together/.test(ro.note) && ro.path === 'RT-AX86U → switch → Backup NAS',
+		&& ro.dnN === '—' && /through a switch/.test(ro.d.link) && /all 3 of its devices together/.test(ro.note) && ro.path === 'RT-AX86U → switch → Backup NAS',
 		'a switch: the port\'s figures on one device, its devices named in its list (no figures of their own), each one traced to it',
 		JSON.stringify({ names, kinds, dn: s && s.dn, inDevs, clients: n.clients, ch, link: ro.d.link, note: ro.note }));
 	const cells = T.detailsFor(n, n.byId['00:00:5E:00:53:A1']), cell = cells.filter(c => c[0] === 'Behind')[0];
 	const rep = T.buildReport(n).split('\n').filter(l => / wired /.test(l)).length;
-	ok(cell && cell[1] === 'a switch · 3 devices' && rep === 4, 'a device behind a switch: its details say so, and the device report lists each one', (cell && cell[1]) + ', ' + rep + ' wired rows');
+	ok(cell && cell[1] === 'Switch on LAN 1 · 3 devices' && rep === 4, 'a device behind a switch: its details say so, and the device report lists each one', (cell && cell[1]) + ', ' + rep + ' wired rows');
 	A.names = AR.parseNames({});
 }
 
@@ -769,6 +778,48 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	const lab = m => (n.byId[m] || {}).portLabel, sw = (n.byId['port:eth1'] || {}).name;
 	ok(lab('00:00:5E:00:53:E1') === 'LAN 2' && lab('00:00:5E:00:53:E2') === 'LAN 3+4' && n.byId['00:00:5E:00:53:E2'].speed === 5000 && sw === 'Switch on LAN 5–7',
 		'a bond by its ports (LAN 3+4), a mapped port by its number, ports sharing one link by theirs, not by its fastest one\'s speed', [lab('00:00:5E:00:53:E1'), lab('00:00:5E:00:53:E2'), sw].join(' | '));
+}
+
+// ---- 27. a managed switch has an address of its own, learned on its port with the devices behind it: the switch takes its name,
+// IP and MAC (renaming it renames the switch) and lists only the others, on a router port with a node beside it and on a node's
+// port alike. The network counts it as a device. Two that both look like switches: neither is taken.
+{
+	const ND = '02:10:00:00:03:10', S1 = '00:00:5E:00:53:B1', S2 = '00:00:5E:00:53:B5', B = 250000;
+	A.names = AR.parseNames({ custom: '<Switch-01>' + S1 + '>0>0>><Desktop PC>00:00:5E:00:53:B2>0>0>><Switch-02>' + S2 + '>0>0>><Roku>00:00:5E:00:53:B6>0>0>><SteamMachine>00:00:5E:00:53:B7>0>0>>',
+		leases: '1794400000 ' + S1.toLowerCase() + ' 192.168.50.41 Switch-01 *|' });
+	const ms = (k, extra) => AR.buildNet(smp({ up: (9950 + 2 * k).toFixed(1), ports: ['eth1'], links: [['eth0', 1, 1000], ['eth1', 1, 1000]], plab: { eth1: '2' },
+		ifs: [['eth0', '1', '1'], ['eth1', '1000', String(1000 + k * 80 * B)]],
+		macs: [['eth1', ND], ['eth1', S1], ['eth1', '00:00:5E:00:53:B2'], ['eth1', '00:00:5E:00:53:B3']].concat(extra || []),
+		nodes: [{ mac: ND, ip: '192.168.50.32', model: 'RT-AX86U', alias: 'Living Room', sta: '', state: 'ok', up: (6000 + 2 * k).toFixed(1), c: [],
+			u: [['eth0', String(1000 + k * 30 * B), '1000']], w: [['eth3', 1, 1000, '1000', String(1000 + k * 10 * B)]],
+			m: [['eth3', S2], ['eth3', '00:00:5E:00:53:B6'], ['eth3', '00:00:5E:00:53:B7']] }] }));
+	['p:eth1'].forEach(k => { delete A.prev[k]; delete A.sm[k]; });
+	ms(0); const n = ms(1), sw = n.byId['port:eth1'], ns = n.byId['port:' + ND + ':eth3'];
+	const names = d => d.behind.map(x => x.name).join(',');
+	A.sel = 'port:eth1'; const hs = T.hiddenSet(n), ro = T.readoutFor(n);
+	A.sel = S1; const picked = n.byId[S1];
+	A.sel = 'port:eth1'; const rt = T.renameTarget(n); A.sel = null;
+	const ip = (T.detailsFor(n, sw).filter(c => c[0] === 'IP address')[0] || [])[1], on = (T.detailsFor(n, sw).filter(c => c[0] === 'Devices on it')[0] || [])[1];
+	const rep = T.buildReport(n).split('\n').filter(l => / wired /.test(l)).length;
+	ok(sw && sw.name === 'Switch-01' && sw.count === 2 && names(sw) === 'Desktop PC,Device …53:B3' && sw.mac === S1 && picked === sw && hs && hs.title === 'Switch-01' && hs.devs.length === 2
+		&& ip === '192.168.50.41' && on === '2' && rt === sw && T.chainOf(n, S1).join() === 'port:eth1' && /The port counts the switch/.test(ro.note) === false && /On a switch with Living Room/.test(ro.note) && T.linkShort(sw) === 'LAN 2 · 1 GbE · 2 devices',
+		'a managed switch on a router port (a node beside it): named after itself, with its IP and MAC, listing only the others',
+		JSON.stringify({ name: sw && sw.name, count: sw && sw.count, behind: sw && names(sw), ip, on, note: ro.note, link: T.linkShort(sw) }));
+	A.sel = ns && ns.id; const ro3 = T.readoutFor(n); A.sel = null;
+	ok(ns && ns.name === 'Switch-02' && ns.count === 2 && names(ns) === 'Roku,SteamMachine' && ns.behind[1].kind === 'console' && n.clients === 6 && rep === 6
+		&& ro3.note === 'The port counts the switch and its 2 devices together.',
+		'a managed switch on a node\'s port: the same; the network counts it as a device, and the device report lists it',
+		JSON.stringify({ name: ns && ns.name, behind: ns && names(ns), clients: n.clients, rep, note: ro3.note }));
+	A.sel = '00:00:5E:00:53:B6'; const ro2 = T.readoutFor(n), cell = T.detailsFor(n, n.byId['00:00:5E:00:53:B6']).filter(c => c[0] === 'Behind')[0]; A.sel = null;
+	ok(cell && cell[1] === 'Switch-02 · 2 devices' && /all 2 of its devices and the switch together/.test(ro2.note) && ro2.dnS === 'counted with Switch-02',
+		'a device behind a managed switch: its details and readout name the switch', JSON.stringify({ cell: cell && cell[1], note: ro2.note, s: ro2.dnS }));
+	// one more device named like a switch on the router's port: which one is the switch can't be told, so neither is taken
+	const n2 = ms(2, [['eth1', '00:00:5E:00:53:B4']]);
+	A.names.custom['00:00:5E:00:53:B4'] = { name: 'Switch-03', type: 0 };
+	const n3 = ms(3, [['eth1', '00:00:5E:00:53:B4']]), sw3 = n3.byId['port:eth1'];
+	ok(n2.byId['port:eth1'].name === 'Switch-01' && sw3 && sw3.name === 'Switch on LAN 2' && sw3.count === 4 && !sw3.self,
+		'two devices that look like switches on one port: neither is taken as the switch', JSON.stringify({ name: sw3 && sw3.name, count: sw3 && sw3.count }));
+	A.names = AR.parseNames({});
 }
 
 process.exit(fails ? 1 : 0);

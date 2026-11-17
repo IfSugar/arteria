@@ -4,7 +4,7 @@
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
 Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, nodecrowd, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones),
-wired (a switch with four devices on a LAN port, a device on the node's LAN port, a phone on the node's guest network).
+wired (a managed switch with four devices on a LAN port, a device on the node's LAN port, a phone on the node's guest network).
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -109,7 +109,8 @@ if SCN == 'busy':
     for i in range(14):
         DEVICES.append(('02:CC:00:00:01:%02X' % i, ['Phone', 'Bulb', 'Plug', 'Tablet', 'Laptop', 'Speaker', 'Camera'][i % 7] + ' %d' % (i + 1),
                         'router' if i % 3 else 'node', '2.4' if i % 2 else '5', 0.5 + (i % 5) * 1.7, 0.1 + (i % 3) * 0.4, -50 - i))
-if SCN == 'wired':   # four devices behind one switch on LAN 1, one on the node's own LAN port, a phone on the node's guest network
+if SCN == 'wired':   # four devices behind one managed switch on LAN 1 (it has an address too), one on the node's own LAN port, a phone on the node's guest network
+    dev('02:CC:00:00:06:07', 'Switch-01', 'wired', 'eth4', 0.01, 0.01, None)
     dev('02:CC:00:00:06:01', 'Game PC', 'wired', 'eth4', 14.0, 2.0, None)
     dev('02:CC:00:00:06:02', 'Streaming box', 'wired', 'eth4', 8.0, 0.3, None)
     dev('02:CC:00:00:06:03', 'Backup NAS', 'wired', 'eth4', 0.4, 6.0, None)
