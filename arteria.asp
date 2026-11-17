@@ -106,6 +106,9 @@
 #ar .ar-lb.x3 > span { height: 46px; }
 #ar .c-dn { color: var(--dnt); } #ar .c-up { color: var(--upt); } #ar .c-mut { color: var(--ink-2); } #ar .c-bad { color: var(--bad); } #ar .c-warn { color: var(--warn); }
 #ar .ar-cards { display: flex; gap: 12px; margin-top: 12px; height: 224px; }
+/* an open list below the map (a switch's devices, a "+N more"): the cards grow to show its rows, up to 10, then it scrolls */
+#ar .ar-cards.tall, #ar.big.narrow .ar-cards.tall { height: auto; min-height: 224px; }
+#ar .ar-cards.tall .ar-more-list { flex: none; max-height: 400px; }
 #ar .ar-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 0; }
 #ar .ar-readout { width: 440px; flex: none; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 #ar .ar-ro-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 16px; }
@@ -628,7 +631,7 @@ var KIND_STRONG = [
 	['display', /echo[ _-]?(show|spot|hub)|nest[ _-]?hub|google[ _-]?home[ _-]?hub|smart[ _-]?(display|clock)|\bportal\b|lenovo[ _-]?smart|(photo|picture|digital)[ _-]?frame|nixplay|aura[ _-]?frame|meural|frameo|pix-?star/i],   /* before smart speaker: an Echo Show */
 	['smartspeaker', /homepod|\becho\b|echo[ _-]?(dot|pop|studio)|alexa(?!['’]s)|google[ _-]?home|nest[ _-]?(mini|audio)|^amazon-[0-9a-f]{6,}$/i],   /* Amazon's own devices call themselves amazon-<hex>: Echos, most often */
 	['speaker', /speaker|sonos|subwoofer|\bsubw\b|\bbose\b|\bheos\b|\bjbl\b|bluesound|\bwiim\b|libratone|bang[ _-]?(&|and)?[ _-]?olufsen|\bbeo(play|sound|lab)|harman|marshall|ultimate[ _-]?ears|\bnaim\b|devialet|\bkef\b|audio[ _-]?pro|volumio|moode|squeezebox|picoreplayer|denon[ _-]?home/i],
-	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?deck|\bswitch[ _-]?(oled|lite)\b|rog[ _-]?ally|legion[ _-]?go|ayaneo|retroid|anbernic|\bwii\b|msi[ _-]?claw/i],
+	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?(deck|machine)|\bswitch[ _-]?(oled|lite)\b|rog[ _-]?ally|legion[ _-]?go|ayaneo|retroid|anbernic|\bwii\b|msi[ _-]?claw/i],
 	['fitness', /peloton|\btonal\b|treadmill|exercise|fitness|\browing|\brower\b|concept[ _-]?2|ergometer|hydrow|wahoo|\bkickr|\btacx|\bzwift|elliptical|spin[ _-]?bike|indoor[ _-]?(bike|cycle)|\bechelon|nordictrack|\bifit\b|technogym|bowflex|speediance/i],
 	['tablet', /ipad|tablet|[ _-]pad([ _-]|\d|$)|matepad|lenovo[ _-]?tab|kindle|\bkobo\b|e-?reader|paperwhite|galaxy[ _-]?tab|\btab\b|\bsm-[tpx]\d{3}|\bmi[ _-]?pad|\bboox\b|remarkable|supernote|pocketbook|\btolino|\bnook\b|fire[ _-]?(hd|max)/i],
 	['watch', /watch\b|fitbit|garmin|\bmi ?band\b|bracelet|\bsm-r\d{3}/i],
@@ -646,6 +649,9 @@ var KIND_STRONG = [
 	['boiler', /boiler|\bcombi\b|ems[-_]?esp|ebusd|\botgw\b|opentherm|vitoconnect|viessmann|vaillant|buderus|\bkm\d{3}\b|intergas|incomfort|ariston|\bbaxi\b|worcester|ferroli|immergas|junkers|water[ _-]?heater|\bgeyser\b|bojler|бойлер|котел|\bkessel\b|heizung|chaudi[eè]re|caldaia|caldera|\bketel\b/i],
 	['blinds', /blind|curtain|\bshades?\b|shutter|rollo|rolladen|jalousie|\bsomfy(?![ _-]?(garage|gate|alarm|cam|tahoma|box|connexoon))|smartwings|motion[ _-]?blinds|powerview|\bbrel\b|\btuiss|awning/i],   /* before switch and light: "blind switch" */
 	['wallswitch', /wall ?switch|light ?switch|smart ?switch|switch ?module|\bdimmer\b|shelly[ _-]?(1|2|plus ?[12]|pro ?[12]|i4|dimmer)\b|sonoff[ _-]?(t[0-4]|tx|mini)\b|^(tapo[ _-]?)?s5\d\d[a-z]?$|^(hs2[0-2]0|ks2\d\d|es20m)\b/i],
+	/* a network switch: the name says switch (Switch-01, Office switch), or a managed switch's own model name (Netgear GS308E,
+	   TP-Link TL-SG108E, UniFi USW-Lite-8, MikroTik CRS305). On Wi-Fi, a "Switch" is a Nintendo Switch (classify) */
+	['switch', /\bswitch\b|^gs\d{3}[a-z]*\b|\btl-?sg\d|\busw[ _-]|\bcrs\d{3}/i],
 	/* Tapo and Kasa devices name themselves by model (L630, KL130), Govee's by its maker and model (ihoment_H6159_…) */
 	['light', /bulb|\blamp|light\b|\bwiz\b|wiz[_-]|lifx|yeelight|yeelink|signify|nanoleaf|^(tapo[ _-]?)?l[5-9]\d\d[a-z]?$|^(kl|lb)\d{3}\b|ihoment[_-]?h(6|70)|twinkly|sengled|\bcync\b|lumary|magic[ _-]?home|flux[ _-]?led|\bhue[ _-]?(lamp|bulb|play|go|iris|bloom|gradient|signe)\b/i],
 	['garage', /garage[ _-]?(door|opener|gate)|^garage$|\bmyq|liftmaster|chamberlain|tailwind|ratgdo|ismartgate|gogogate|aladdin[ _-]?connect|gate[ _-]?opener|meross[ _-]?msg/i],   /* before hub */
@@ -731,7 +737,7 @@ function classify(mac, name, link, al) {
 	var KEYS = ['nickname', 'label', 'hostname', 'router name'], names = [al ? c.name : nickOf(c, m), name, l && l.host, m && m.name], i, j, r;
 	/* What a name says: as written first, then with words run together split apart (only when nothing matched as written,
 	   so "Somfy TaHoma" stays a hub) */
-	var byName = function (s, j) { var k = nameKind(s); return k ? res(k.kind, 'name', KEYS[j] + ' #' + k.i + (k.split ? ' split' : '')) : null; };
+	var byName = function (s, j) { var k = nameKind(s); return k ? res(k.kind === 'switch' && link === 'wifi' ? 'console' : k.kind, 'name', KEYS[j] + ' #' + k.i + (k.split ? ' split' : '')) : null; };
 	/* 1. the icon you picked in the router's client list. Saving a nickname there also saves whatever icon the editor showed,
 	   often only the router's guess at the time, so the name comes first when the saved icon is:
 	   - the router's own guess (the same icon it detects), or a loose one (any computer, any phone);
@@ -851,7 +857,7 @@ function detailsFor(net, dv) {
 		['System', osOf(m)],
 		wifi ? ['Wi-Fi', wifiTxt, (WIFI_STD[dv.std] || 'Wi-Fi') + (dv.nss ? ', ' + dv.nss + ' spatial streams' : '') + (dv.bw ? ', ' + dv.bw + ' MHz channel' : '')] : ['Port', (dv.portLabel || '—') + (dv.speed ? ' · ' + speedTxt(dv.speed) : '')],
 		['Shown as', kl, kl + (why ? ': recognised by ' + why : '')],
-		wifi ? ['Link ↓ / ↑ Mb/s', (dv.phy || '—') + ' / ' + (dv.phyUp || '—'), 'Link rate: ' + (dv.phy || '—') + ' Mb/s down, ' + (dv.phyUp || '—') + ' Mb/s up'] : (dv.sw ? ['Behind', 'a switch · ' + dv.sw.count + ' devices', 'On a switch with ' + (dv.sw.count - 1) + ' other devices: ' + dv.sw.name] : ['Devices on it', String(dv.count || 1)]),
+		wifi ? ['Link ↓ / ↑ Mb/s', (dv.phy || '—') + ' / ' + (dv.phyUp || '—'), 'Link rate: ' + (dv.phy || '—') + ' Mb/s down, ' + (dv.phyUp || '—') + ' Mb/s up'] : (dv.sw ? ['Behind', dv.sw.name + ' · ' + devsTxt(dv.sw.count), dv.sw.count > 1 ? 'One of the ' + dv.sw.count + ' devices behind ' + dv.sw.name : 'The only device behind ' + dv.sw.name] : ['Devices on it', String(dv.count || 1)]),
 		wifi ? ['Connected', ago(dv.conn), 'Connected for ' + ago(dv.conn) + (dv.idle > 0 ? ', idle for ' + ago(dv.idle) : '') + (dv.node ? ' (restarts when it roams between the router and a node)' : '')] : ['Connected', '—'],
 		['IPv6', v6.length ? v6[0] + (v6.length > 1 ? ' +' + (v6.length - 1) : '') : '—', v6.join('\n')],
 		['Address', lease, l && left > 0 ? 'DHCP lease, ' + ago(left) + ' left' : ''],
@@ -896,6 +902,7 @@ function linkWeak(x) {
 
 /* ---------------------------------------------------------------- the network, from one sample */
 function zeroRate() { return { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }; }   /* a rate that hasn't been measured yet */
+function devsTxt(n) { return n + (n === 1 ? ' device' : ' devices'); }
 function speedTxt(mbps) { return mbps >= 1000 ? mbps / 1000 + ' GbE' : mbps + ' Mb/s'; }   /* a port's link speed */
 function dbm(v, none) { return v !== null && v !== undefined && v !== '' ? v + ' dBm' : (none === undefined ? '—' : none); }
 /* The network a Wi-Fi device is on, by name, when it isn't one of the main networks (a guest network, or another of Guest Network
@@ -1176,6 +1183,18 @@ function buildNet(d) {
 		net.byId[dv.id] = dv;
 		if (dv.node && !dv.sw) dv.node.devs.push(dv);
 	});
+	/* A managed switch has an address of its own, which the router learns on the port with the devices behind it. That one is the
+	   switch itself, not a device behind it: the switch takes its name and details (renaming it renames the switch), and lists
+	   only the others. Picking it from anywhere picks the switch. Two that both look like switches: neither is taken. */
+	net.devs.forEach(function (dv) {
+		var me = dv.behind ? dv.behind.filter(function (b) { return b.kind === 'switch'; }) : [];
+		if (me.length !== 1) return;
+		me = me[0];
+		dv.self = me; dv.behind = dv.behind.filter(function (b) { return b !== me; }); dv.count = dv.behind.length;
+		dv.mac = me.mac; dv.alias = me.alias; dv.why = me.why;
+		if (me.nameSrc !== 'tail') { dv.name = me.name; dv.nameSrc = me.nameSrc; }   /* a name of its own, not "Network device …12:34" */
+		net.byId[me.id] = dv;
+	});
 	net.devs.forEach(function (dv) { if (dv.behind) dv.behind.sort(byName); });
 	/* totals: everything the router delivered = its own clients + the nodes' backhaul, a router port with nodes behind it once
 	   (the port's own count: its nodes, and anything on a switch with them) */
@@ -1202,7 +1221,7 @@ function buildNet(d) {
 	net.total = tot;
 	net.local = { dn: Math.max(0, Math.min(tot.dn - net.wan.dn, tot.dn)), up: Math.max(0, Math.min(tot.up - net.wan.up, tot.up)),
 		sdn: Math.max(0, tot.sdn - net.wan.sdn), sup: Math.max(0, tot.sup - net.wan.sup) };
-	net.clients = net.devs.filter(function (dv) { return dv.st !== 'off'; }).reduce(function (a, dv) { return a + (dv.count > 1 ? dv.count : 1); }, 0);
+	net.clients = net.devs.filter(function (dv) { return dv.st !== 'off'; }).reduce(function (a, dv) { return a + (dv.behind ? dv.count + (dv.self ? 1 : 0) : 1); }, 0);
 	net.byId.wan = { id: 'wan' }; net.byId.router = { id: 'router' };
 	net.nodes.forEach(function (n) { net.byId[n.id] = n; });
 	return net;
@@ -2791,6 +2810,7 @@ function chainOf(net, id) {
 	if (id.indexOf('more') === 0) return ['more'];
 	var n = net.byId[id];
 	if (!n) return null;
+	if (n.id !== id) return chainOf(net, n.id);   /* a managed switch's own address: the switch */
 	if (n.sw) return chainOf(net, n.sw.id);   /* a device behind a switch is traced to the switch */
 	if (n.mac && id.indexOf('node:') === 0) return [id].concat(n.devs.map(function (dv) { return dv.id; }), n.devs.some(function (dv) { return inTray(dv.id); }) ? ['more'] : []);   /* its clients on the tray light the tray */
 	var end = inTray(id) ? 'more' : id;   /* a device on the tray is traced to the tray */
@@ -2930,7 +2950,7 @@ function renderMap(net) {
 		A.mapRefs = refs;
 	}
 	var R = A.mapRefs, sel = selValid(net), on = chainOf(net, sel);
-	if (sel && net.byId[sel] && net.byId[sel].sw) sel = net.byId[sel].sw.id;   /* a device behind a switch: the switch is what's drawn */
+	if (sel && net.byId[sel]) sel = (net.byId[sel].sw || net.byId[sel]).id;   /* a device behind a switch, or a managed switch's own address: the switch is what's drawn */
 	var lit = function (id) { return !on || on.indexOf(id) >= 0; };
 	var trayDev = inTray(sel) ? net.byId[sel] : null, trayOn = isMore(sel) || !!trayDev;   /* a tray device is selected: the tray's arc carries its packets */
 	var trayDn = 0, trayUp = 0, traySdn = 0, traySup = 0;
@@ -3164,7 +3184,7 @@ function flowRowInfo(g, r) {
 			var ip = ipOf(dv), wired = dv.link === 'wired';
 			x.sub = (wired ? dv.portLabel : (dv.node ? dv.node.name : bandName(dv.band))) + (ip ? ' · ' + ip : '') + (dv.net ? ' · ' + dv.net : '') + (dv.st === 'off' ? ' · offline' : '');
 			x.c1 = wired ? (dv.speed ? speedTxt(dv.speed) : '') : dbm(dv.rssi, '');
-			x.c2 = wired ? (dv.count > 1 ? dv.count + ' devices' : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
+			x.c2 = wired ? (dv.behind ? devsTxt(dv.count) : '') : (dv.phy ? dv.phy + ' Mb/s' : '');
 		}
 	} else if (r.more) { x.name = '+' + r.more.length + ' more'; x.icon = 'more'; x.sub = r.more.slice(0, 3).map(function (dv) { return dv.name; }).join(', '); }
 	else { x.name = r.nodeOnly.name; x.icon = FORM_ICON[formOf(r.nodeOnly.model, 'tower').form] || 'mesh'; x.sub = 'No clients right now'; }
@@ -3194,7 +3214,7 @@ function renderFlow(net) {
 	R.mode.setAttribute('class', upm ? 'm-up' : 'm-dn');
 	R.t.srchead.textContent = upm ? 'DESTINATION' : 'SOURCE';
 	var sel = selValid(net), rowVal = flowRowVal, gVal = flowGroupVal, agg = flowAgg;
-	if (sel && net.byId[sel] && net.byId[sel].sw) sel = net.byId[sel].sw.id;   /* a device behind a switch: its ribbon is the switch's */
+	if (sel && net.byId[sel]) sel = (net.byId[sel].sw || net.byId[sel]).id;   /* a device behind a switch, or a managed switch's own address: its ribbon is the switch's */
 	var Lay = flowLayout(gs, net, A.mode), k = Lay.k, slot = Lay.slot, grp = Lay.grp, Hr = Lay.Hr, rtop = Lay.rtop, src = Lay.src;
 	var Hs = String(Lay.height);
 	if (R.svg.getAttribute('height') !== Hs) { R.svg.setAttribute('height', Hs); R.svg.setAttribute('viewBox', '0 0 ' + G.SW + ' ' + Hs); }
@@ -3319,7 +3339,7 @@ function thirdLine(x) {
 	return x.st === 'off' ? 'Offline' : linkShort(x);
 }
 function linkShort(dv) {
-	if (dv.link === 'wired') return dv.portLabel + (dv.speed ? ' · ' + speedTxt(dv.speed) : '') + (dv.count > 1 ? ' · ' + dv.count + ' devices' : '');
+	if (dv.link === 'wired') return dv.portLabel + (dv.speed ? ' · ' + speedTxt(dv.speed) : '') + (dv.behind ? ' · ' + devsTxt(dv.count) : '');
 	return (dv.node ? dv.node.name : bandName(dv.band)) + (dbm(dv.rssi, '') ? ' · ' + dbm(dv.rssi) : '') + (dv.net ? ' · ' + dv.net : '');
 }
 
@@ -3376,7 +3396,7 @@ function readoutFor(net) {
 		if (dv.link === 'wired') { k1 = 'Port'; v1 = dv.portLabel; k2 = 'Link rate'; v2 = dv.speed ? dv.speed + ' Mb/s' : '—'; }
 		else { k1 = 'Signal'; v1 = dbm(dv.rssi); k2 = 'Link rate'; v2 = dv.phy ? dv.phy + ' Mb/s' : '—'; }
 		path = rname + (dv.node ? ' → ' + dv.node.name : '') + (dv.sw ? ' → switch' : '') + ' → ' + dv.name;
-		note = dv.link === 'wired' ? (dv.count > 1 ? dv.count + ' devices share this port: their traffic is added up.'
+		note = dv.link === 'wired' ? (dv.behind ? (dv.self ? 'The port counts the switch and its ' + devsTxt(dv.count) + ' together.' : dv.count + ' devices share this port: their traffic is added up.')
 				: (dv.node ? 'Measured on ' + dv.node.name + '\'s port counters, read over SSH.' : 'Measured on the port counters.'))
 			: (dv.node ? 'Counted on ' + dv.node.name + ' and read over SSH.' : 'Measured from Wi-Fi client counters on the router.');
 		/* on a router port a node is behind (a switch with it): what the port carries beyond the node, or, when the node isn't
@@ -3385,7 +3405,7 @@ function readoutFor(net) {
 		if (bn && dv.st === 'ok') note = 'On a switch with ' + bn + ': the port\'s traffic beyond ' + (dv.beside.length > 1 ? 'theirs' : 'its') + '.';
 		if (dv.st === 'nodata') { sdn = sup = bn ? 'counted with ' + bn : 'not reported by the node'; note = bn ? 'On a switch with ' + bn + ': its traffic is in ' + (dv.beside.length > 1 ? 'theirs' : 'its figure') + '.' : (dv.node ? dv.node.name + ' isn\'t reporting per-device traffic: see its backhaul total.' : ''); }
 		/* behind a switch: the port counts all its devices together, so this one's own traffic isn't known */
-		if (dv.st === 'shared') { d.link = 'Wired · ' + dv.portLabel + ' · through a switch'; sdn = sup = 'counted with the switch\'s ' + dv.sw.count + ' devices'; note = 'Behind a switch: its port counts all ' + dv.sw.count + ' together.'; }
+		if (dv.st === 'shared') { d.link = 'Wired · ' + dv.portLabel + ' · through a switch'; sdn = sup = 'counted with ' + dv.sw.name; note = 'Behind a switch: its port counts ' + (dv.sw.count > 1 ? 'all ' + dv.sw.count + ' of its devices' : 'this one') + (dv.sw.self ? ' and the switch' : '') + ' together.'; }
 		if (dv.st === 'off') { sdn = sup = 'offline'; note = 'Offline.'; tone = BAD; }
 	}
 	var a = fmt(dn), b = fmt(up);
@@ -3538,7 +3558,7 @@ function renderDetails(net, r) {
 function buildReport(net) {
 	var pad = function (v, n) { v = String(v); return v.length >= n ? v + ' ' : v + new Array(n - v.length + 1).join(' '); };
 	var N = A.names || {}, rows = [], devs = [];
-	(net ? net.devs : []).forEach(function (dv) { devs = devs.concat(dv.behind || [dv]); });   /* a switch: the devices behind it */
+	(net ? net.devs : []).forEach(function (dv) { devs = devs.concat(dv.behind ? (dv.self ? [dv.self] : []).concat(dv.behind) : [dv]); });   /* a switch: itself (one with an address), then the devices behind it */
 	devs.forEach(function (dv) {
 		if (!dv.mac) return;   /* a port with no address learned on it */
 		var w = dv.why || {}, mac = dv.mac, c = N.custom && N.custom[mac], m = N.nmp && N.nmp[mac], l = N.lease && N.lease[mac];
@@ -3561,6 +3581,7 @@ function renderSide(net) {
 	$('arTop').className = mapOn && !open && !rep ? 'ar-card ar-side' : 'ar-card ar-side hide';
 	$('arHist').className = mapOn || open || rep ? 'ar-card ar-hist hide' : 'ar-card ar-hist';
 	$('arMore').className = open ? 'ar-card ar-side' : 'ar-card ar-side hide';
+	$('arCards').className = open && !(G.big && !A.narrow) ? 'ar-cards tall' : 'ar-cards';   /* the expanded view's column has room */
 	$('arRepBtn').setAttribute('aria-expanded', rep ? 'true' : 'false');
 	if (rep) { var tx = $('arRepTx'), t = buildReport(net); if (tx.value !== t && document.activeElement !== tx) { tx.value = t; tx.setSelectionRange(0, 0); tx.scrollTop = tx.scrollLeft = 0; } }
 	else if (open) renderMore(hs);
@@ -3591,7 +3612,7 @@ function renderSide(net) {
 function renderMore(hs) {
 	var box = $('arMoreList'), ord = A.moreOrd;
 	A.moreKey = hs.key;
-	$('arMoreTitle').textContent = hs.title + ' · ' + (hs.devs.length || !(hs.nodes && hs.nodes.length) ? hs.devs.length + ' devices' : trayName([], hs.nodes).slice(1));
+	$('arMoreTitle').textContent = hs.title + ' · ' + (hs.devs.length || !(hs.nodes && hs.nodes.length) ? devsTxt(hs.devs.length) : trayName([], hs.nodes).slice(1));
 	var nt = $('arMoreNote'), why = hs.note || noZoneText(hs);
 	nt.className = why ? 'ar-more-note' : 'ar-more-note hide';
 	if (nt.textContent !== why) nt.textContent = why;
@@ -3951,7 +3972,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
@@ -4030,7 +4051,7 @@ window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKin
 		</div>
 	</div>
 
-	<div class="ar-cards">
+	<div class="ar-cards" id="arCards">
 		<div class="ar-card ar-readout" id="arReadout">
 			<div class="ar-ro-head"><div class="eyebrow">Live readout</div><div class="ar-ro-tools"><button type="button" class="ar-det hide" id="arRoDet" aria-pressed="false" aria-controls="arRoDetails" title="Show the device's address, maker, system and connection">Details</button><div class="ar-badge" id="arRoBadge"></div></div></div>
 			<div class="ar-ro-id"><div class="ar-ico" id="arRoIcon"></div><div style="min-width:0;flex:1"><div class="ar-ro-nrow" id="arRoNrow"><div class="ar-ro-name" id="arRoName">Whole network</div><button type="button" class="ar-ro-edit hide" id="arRoEdit" aria-label="Rename this device"></button></div><div class="ar-ro-ed hide" id="arRoEd"><input type="text" class="ar-ro-in" id="arRoIn" maxlength="32" autocomplete="off" spellcheck="false" aria-label="Device name" aria-describedby="arRoLink"/><button type="button" id="arRoOk" aria-label="Save the name"></button><button type="button" id="arRoNo" aria-label="Keep the old name"></button></div><div class="ar-ro-link" id="arRoLink"></div></div></div>

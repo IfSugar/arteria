@@ -96,15 +96,20 @@ async def scenario(b, scn, port):
             await pg.click('#arMapLabels .ar-lb[data-id="%s"]' % sw); await pg.wait_for_timeout(300)
             lst = await pg.evaluate("[...document.querySelectorAll('#arMoreList button .nm')].map(e => e.textContent).join(',')")
             title = await pg.evaluate("document.getElementById('arMoreTitle').textContent")
+            # below the map, the cards grow to show every row of the list: none scrolled out of sight
+            fit = await pg.evaluate("""() => { const l = document.getElementById('arMoreList'), c = document.getElementById('arCards');
+                return { rows: l.children.length, scroll: l.scrollHeight - l.clientHeight, h: Math.round(c.getBoundingClientRect().height) }; }""")
             await pg.click('#arMoreList button'); await pg.wait_for_timeout(300)
             picked = await pg.evaluate("""(sw) => ({ link: document.getElementById('arRoLink').textContent, name: document.getElementById('arRoName').textContent,
                 on: document.querySelector('#arMapLabels .ar-lb[data-id="' + sw + '"]').classList.contains('on'), list: !document.getElementById('arMore').classList.contains('hide') })""", sw)
             pi = await pg.evaluate("""() => { const d = Arteria.state.net.devs.find(x => x.name === 'Pi-hole') || {}, g = Arteria._t.flowGroups(Arteria.state.net);
                 return [d.node && d.node.name, d.link, d.portLabel, g.some(x => x.node && x.devs.indexOf(d) >= 0), g.some(x => x.id === 'lan' && x.devs.indexOf(d) >= 0)].join('|'); }""")
             guest = await pg.evaluate("(Arteria.state.net.devs.find(d => d.name === 'Visitor phone') || {}).net || ''")
-            check(sw == 'port:eth4' and lst == 'Backup NAS,Game PC,Media NAS,Streaming box' and title.startswith('Switch on LAN 1 · 4 devices')
+            check(fit['rows'] == 4 and fit['scroll'] <= 1 and fit['h'] > 224,
+                  tag + ': a switch\'s list below the map: the cards grow to show all its rows (%s)' % fit)
+            check(sw == 'port:eth4' and lst == 'Backup NAS,Game PC,Media NAS,Streaming box' and title.startswith('Switch-01 · 4 devices')
                   and picked['name'] == 'Backup NAS' and 'through a switch' in picked['link'] and picked['on'] and picked['list'],
-                  tag + ': a switch lists its four devices by name; one picked shows its details, the switch stays lit and the list open (%s; %s)' % (lst, picked['link']))
+                  tag + ': a managed switch is named after itself and lists its four devices; one picked shows its details, the switch stays lit and the list open (%s; %s; %s)' % (title, lst, picked['link']))
             check(pi == 'Hall|wired|Hall LAN|true|false' and guest == 'Guests', tag + ': a device on the node\'s LAN port is the node\'s; a node\'s guest network is named (%s, %s)' % (pi, guest))
             # pipes are cables, arcs are Wi-Fi: the node (on an Ethernet backhaul) and its wired device by pipe, its Wi-Fi devices by arc
             kinds = await pg.evaluate("""() => { const L = Arteria.state.layout, node = L.nodes[0].node;
@@ -114,7 +119,9 @@ async def scenario(b, scn, port):
             check(kinds['node'] == 'pipe' and kinds['wired'] and all(k == 'pipe' for k in kinds['wired']) and kinds['wifi'] and all(k == 'arc' for k in kinds['wifi']),
                   tag + ': a node on an Ethernet backhaul and its wired device are drawn as pipes, its Wi-Fi devices as arcs (%s)' % kinds)
             await pg.keyboard.press('Escape'); await pg.wait_for_timeout(200)
-            await pg.evaluate("Arteria.pick(null)")
+            await pg.evaluate("Arteria.pick(null)"); await pg.wait_for_timeout(200)
+            back = await pg.evaluate("Math.round(document.getElementById('arCards').getBoundingClientRect().height)")
+            check(back == 224, tag + ': with the list closed, the cards are back to their height (%s px)' % back)
         # the page's view: Flow, the list, Details, the report
         await pg.click('#arTabFlow'); await pg.wait_for_timeout(250)
         await pg.click('#arTabMap'); await pg.wait_for_timeout(250)
