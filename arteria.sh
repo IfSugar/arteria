@@ -115,7 +115,7 @@ lowprio() { renice -n 19 -p $$ >/dev/null 2>&1 || true; }
 # make Arteria signal someone else's process.
 pid_ours() {   # pid pattern
 	case "$1" in ''|*[!0-9]*) return 1 ;; esac
-	tr '\000' ' ' < "/proc/$1/cmdline" 2>/dev/null | grep -q -- "$2"
+	tr '\000' ' ' 2>/dev/null < "/proc/$1/cmdline" | grep -q -- "$2"
 }
 
 web_dir() {
@@ -562,7 +562,7 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 			if [ -n "$blk" ]; then sed -n "${blk}p" "$o" > "${o%.out}.last"; else : > "${o%.out}.last"; fi
 			: > "$o"
 		fi
-		[ "$(wc -c < "${o%.out}.err" 2>/dev/null || echo 0)" -gt 65536 ] && : > "${o%.out}.err"
+		[ "$(wc -c 2>/dev/null < "${o%.out}.err" || echo 0)" -gt 65536 ] && : > "${o%.out}.err"
 	done
 	return 0
 }
@@ -572,8 +572,10 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 # Only rows between a "#B" and its "#E" count: the file can be emptied in the middle of a block. At most 512 rows a
 # block (a node serves far fewer clients), 8 ports, 128 addresses and 16 networks: a hostile node can't make every sample
 # cost seconds of CPU. A network name is any text up to 64 bytes, escaped for JSON (and a "<" later, by write_atomic).
+# je escapes it one character at a time: what a backslash means in gsub's replacement differs between awks (BusyBox 1.38
+# drops the one in "\\\"", so a network name with a quote broke the JSON).
 NODE_AWK="$ROWS_AWK"'
-function je(s) { gsub(/[[:cntrl:]]/, "", s); gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return s }
+function je(s,   o, c, i, n) { gsub(/[[:cntrl:]]/, "", s); n = length(s); for (i = 1; i <= n; i++) { c = substr(s, i, 1); if (c == "\\" || c == "\"") o = o "\\"; o = o c } return o }
 function nm(s) { return s ~ /^[A-Za-z0-9._-]+$/ && length(s) <= 16 }
 /^#B / { cur = ""; cc = 0; cu = ""; uc = 0; cw = ""; wc = 0; cl = ""; lc = 0; cm = ""; mc = 0; cn = ""; nc = 0; cx = ""; xc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
 open && xc < 4 && /^X / && NF == 2 && nm($2) { cx = cx $2 ";"; xc++; next }
@@ -690,7 +692,7 @@ export_names() {
 		printf ',"cl":'
 		if ours_file "$ROOT/tmp/clientlist.json" && head -c 1 "$ROOT/tmp/clientlist.json" 2>/dev/null | grep -q '{'; then tr -d '\000-\037' < "$ROOT/tmp/clientlist.json"; else printf '{}'; fi
 		printf ',"custom":"%s","leases":"' "$(js "$(nvram get custom_clientlist)")"
-		tr '\n' '|' < "$ROOT/var/lib/misc/dnsmasq.leases" 2>/dev/null | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'
+		tr '\n' '|' 2>/dev/null < "$ROOT/var/lib/misc/dnsmasq.leases" | tr -d '\000-\037' | sed 's/\\/\\\\/g; s/"/\\"/g'
 		printf '"'
 		# For the page's Details: DHCP reservations, addresses seen without a lease (static ones), and IPv6
 		# neighbours on the LAN bridge. Only hex, dots and colons get through the two awks, so nothing can
@@ -778,7 +780,7 @@ sampler() {
 			links_json > "$TMPD/links.json"; macs_json > "$TMPD/macs.json"
 		fi
 		[ $((seq % 15)) -eq 14 ] && export_names
-		[ $((seq % 30)) -eq 29 ] && { sample_init; [ "$(wc -c < "$TMPD/sampler.err" 2>/dev/null || echo 0)" -gt 32768 ] && : > "$TMPD/sampler.err"; }   # nodes and radios can change while the page is open
+		[ $((seq % 30)) -eq 29 ] && { sample_init; [ "$(wc -c 2>/dev/null < "$TMPD/sampler.err" || echo 0)" -gt 32768 ] && : > "$TMPD/sampler.err"; }   # nodes and radios can change while the page is open
 		NODE_NOSTART=""; [ "$HEALTH" -ge 1 ] && NODE_NOSTART=1
 		[ "$NODES" = on ] && [ $seq -eq 0 ] && nodes_tick
 		t1=$(uptime_cs)
@@ -1783,12 +1785,12 @@ dr_lock() {
 	l="$TMPD/sampler.lock"
 	sampler_running && return 0
 	[ -f "$l" ] || return 0
-	( flock -n 9 ) 9< "$l" 2>/dev/null && return 0
+	( flock -n 9 ) 2>/dev/null 9< "$l" && return 0
 	hp=""; hc=""
 	for q in /proc/[0-9]*; do
 		for d in "$q"/fd/*; do
 			[ "$(readlink "$d" 2>/dev/null)" = "$l" ] || continue
-			hp="$hp ${q#/proc/}"; hc="$hc; $(tr '\000' ' ' < "$q/cmdline" 2>/dev/null | awk 'NR == 1 { n = split($1, a, "/"); p = a[n]; if (p ~ /^(ba|a|)sh$/ && $2 != "") { n = split($2, a, "/"); p = p " " a[n] } print p }' | tr -cd '\040-\176' | cut -c1-40)"; break
+			hp="$hp ${q#/proc/}"; hc="$hc; $(tr '\000' ' ' 2>/dev/null < "$q/cmdline" | awk 'NR == 1 { n = split($1, a, "/"); p = a[n]; if (p ~ /^(ba|a|)sh$/ && $2 != "") { n = split($2, a, "/"); p = p " " a[n] } print p }' | tr -cd '\040-\176' | cut -c1-40)"; break
 		done
 	done
 	if [ "$DR_FX" = 1 ]; then   # only something Arteria started has its private lock (in its own folder) open: all of them go
@@ -1800,7 +1802,7 @@ dr_lock() {
 	fi
 	dr_fix "something still holds the sampler's lock, so the page can't start sampling${hc:+ (${hc#; })}"
 }
-dr_lock_free() { ( flock -n 9 ) 9< "$TMPD/sampler.lock" 2>/dev/null; }
+dr_lock_free() { ( flock -n 9 ) 2>/dev/null 9< "$TMPD/sampler.lock"; }
 
 doctor() {   # [fix]
 	tmpd; DR_FX=0; [ "$1" = fix ] && DR_FX=1; DR_F=0; DR_W=0; DR_D=0
@@ -1843,7 +1845,7 @@ doctor() {   # [fix]
 	else
 		n=0; ps=""
 		for q in /proc/[0-9]*; do   # a page's node session (its own -K 10 -I 30 ... and the node script) with no page open
-			c=$(tr '\000' ' ' < "$q/cmdline" 2>/dev/null)
+			c=$(tr '\000' ' ' 2>/dev/null < "$q/cmdline")
 			case "$c" in *dbclient*" -K 10 -I 30 "*"$NODE_MARK"*|*dbclient*" -K 10 -I 30 "*" sh -s ") n=$((n + 1)); ps="$ps ${q#/proc/}" ;; esac
 		done
 		if [ $n -gt 0 ]; then [ "$DR_FX" = 1 ] && kill $ps 2>/dev/null; dr_fix "$n node session(s) still running with no page open"
@@ -2044,7 +2046,7 @@ menu() {
 			2) ( nodes_cmd test ); menu_pause ;;
 			3) ( nodekey ); menu_pause ;;
 			4|5|8)
-				before=$(md5sum < "$SCRIPT" 2>/dev/null)
+				before=$(md5sum 2>/dev/null < "$SCRIPT")
 				if [ "$opt" = 8 ]; then
 					say " Development versions are unreleased and can be broken. Option 4 goes back to the latest release."
 					printf ' Branch (Enter for main, e to go back): '; read -r br || br=e
@@ -2053,7 +2055,7 @@ menu() {
 				elif [ "$opt" = 5 ]; then ( update force ); else ( update ); fi
 				menu_pause
 				# the update replaced this script: carry on in the new one
-				[ -f "$SCRIPT" ] && [ "$(md5sum < "$SCRIPT" 2>/dev/null)" != "$before" ] && exec sh "$SCRIPT" menu ;;
+				[ -f "$SCRIPT" ] && [ "$(md5sum 2>/dev/null < "$SCRIPT")" != "$before" ] && exec sh "$SCRIPT" menu ;;
 			6) ( debug ); menu_pause ;;
 			d|D)
 				if ! ( doctor ); then

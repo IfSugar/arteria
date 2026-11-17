@@ -246,7 +246,7 @@ case "\$1 \$2" in
 	'commit '*) ;;
 	*) case "\$2" in wl0_ifname) echo eth1 ;; wl1_ifname) echo eth2 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
 		lan_ifnames) echo "eth3 eth1 eth2 wl0.1 wl1.1" ;; wan_ifnames) echo eth0 ;;   # a LAN port, its radios; its WAN port (its uplink on an Ethernet backhaul)
-		wl0_ssid|wl1_ssid|wl0.1_ssid) echo 'Home "net"' ;; wl1.1_ssid) echo 'Guest <net>' ;;   # the main network, and a guest one on wl1.1
+		wl0_ssid|wl1_ssid|wl0.1_ssid) echo 'Home "net"' ;; wl1.1_ssid) printf '%s\n' 'Guest <net> \1' ;;   # the main network, and a guest one on wl1.1 (a backslash: escaped for JSON)
 		sta_phy_ifnames) [ -f "$t/node-dpsta" ] && echo dpsta || echo eth2 ;;   # its 5 GHz radio's own interface is its uplink to the router (a Wi-Fi backhaul)
 		dpsta_ifnames) [ -f "$t/node-dpsta" ] && echo "eth1 eth2" ;;   # a node that joins both radios' uplinks into one interface, dpsta
 		sta_ifnames) [ -f "$t/node-all-listed" ] && echo "eth1 wl0.1 wl1.1"
@@ -324,6 +324,14 @@ runa() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$sc
 mkdir -p "$R/jffs/addons/arteria"
 runa sample > "$t/sample.json" 2> "$t/sample.err" || true
 [ -s "$t/sample.err" ] && { bad "'sample' printed errors:"; cat "$t/sample.err"; }
+# BusyBox's shell opens an input file before it sees a later 2>/dev/null: "cmd < file 2>/dev/null" still prints "can't open"
+# when the file is gone (a process that just ended, its /proc/<pid>/cmdline), and the sampler's log shows it as an error
+if grep -nE '< ("[^"]+"|\$[^ ]+) 2>/dev/null' "$script"; then bad "an input file opened before its errors are silenced (the lines above)"
+else ok "every input file is opened after its errors are silenced (2>/dev/null < file)"; fi
+mv "$R/var/lib/misc/dnsmasq.leases" "$t/leases.bak" 2>/dev/null
+runa sample > /dev/null 2> "$t/sample-nl.err" || true
+mv "$t/leases.bak" "$R/var/lib/misc/dnsmasq.leases" 2>/dev/null
+[ -s "$t/sample-nl.err" ] && { bad "'sample' without a DHCP leases file printed errors:"; cat "$t/sample-nl.err"; } || ok "'sample' without a DHCP leases file prints no errors"
 run sample > "$t/sample2.json" 2> "$t/sample2.err" || true
 # debug: router facts and classification counts for an issue, never a name, host name, MAC or IP
 run debug > "$t/debug.out" 2>&1 || true
@@ -500,7 +508,7 @@ assert n['u'] == [['eth2', '7340032', '1048576']], n['u']   # its uplink's own c
 w = {r[0]: r for r in n['w']}   # its wired ports: its LAN port, with its counters; its WAN port, down (a Wi-Fi backhaul)
 assert w['eth3'] == ['eth3', 1, 1000, '524288', '3145728'] and w['eth0'][1] == 0 and set(w) == {'eth0', 'eth3'}, n['w']
 assert n['m'] == [['eth3', '02:CC:00:00:00:31']], n['m']   # the device on its LAN port; the router and its devices are behind its uplink
-assert ['wl1.1', 'Guest <net>', 0] in n['n'] and ['eth1', 'Home "net"', 1] in n['n'] and ['wl0.1', 'Home "net"', 0] in n['n'] and len(n['n']) == 3, n['n']
+assert ['wl1.1', 'Guest <net> \\1', 0] in n['n'] and ['eth1', 'Home "net"', 1] in n['n'] and ['wl0.1', 'Home "net"', 0] in n['n'] and len(n['n']) == 3, n['n']
 assert c['02:CC:00:00:00:11'][1] == '2.4', c
 assert float(n['up']) > 0, n['up']
 names = json.load(open(sys.argv[2]))
