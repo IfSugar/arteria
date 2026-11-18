@@ -819,6 +819,40 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	const n3 = ms(3, [['eth1', '00:00:5E:00:53:B4']]), sw3 = n3.byId['port:eth1'];
 	ok(n2.byId['port:eth1'].name === 'Switch-01' && sw3 && sw3.name === 'Switch on LAN 2' && sw3.count === 4 && !sw3.self,
 		'two devices that look like switches on one port: neither is taken as the switch', JSON.stringify({ name: sw3 && sw3.name, count: sw3 && sw3.count }));
+	// a device the router detected as a router or switch (a TV tuner, say), not named so or given that icon: not the switch
+	delete A.names.custom['00:00:5E:00:53:B4']; delete A.names.custom[S1]; delete A.names.lease[S1]; A.names.nmp['00:00:5E:00:53:B4'] = { name: 'HDHomeRun', type: '2' };
+	const n4 = ms(4, [['eth1', '00:00:5E:00:53:B4']]), sw4 = n4.byId['port:eth1'], tuner = sw4 && sw4.behind.filter(b => b.mac === '00:00:5E:00:53:B4')[0];
+	ok(sw4 && sw4.name === 'Switch on LAN 2' && sw4.count === 4 && !sw4.self && tuner && tuner.kind === 'switch' && tuner.why.rule === 'router icon',
+		'a device only the router detected as a switch (a TV tuner): listed, not taken as the switch', JSON.stringify({ name: sw4 && sw4.name, count: sw4 && sw4.count, why: tuner && tuner.why }));
+	A.names = AR.parseNames({});
+}
+
+// ---- 28. a Wi-Fi 7 phone that joined as a multi-link device: the radio lists its link address (private: the first part's private bit
+// set, the last part changed), DHCP and the client list its own. The link address is the device; on two links, one device.
+{
+	const M = '7C:00:5E:00:1D:A2', L1 = '7E:00:5E:00:1D:24', L2 = '7E:00:5E:00:1D:25', P = '6A:00:5E:00:53:77', B = 125000;
+	A.names = AR.parseNames({ leases: '1794400000 ' + M.toLowerCase() + ' 192.168.50.60 Galaxy-S26-Ultra *|1794400000 ' + P.toLowerCase() + ' 192.168.50.61 Pixel *' });
+	const row = (ifn, band, m, k, mbit) => [ifn, band, m, String(1000 + k * mbit * B), '1000', -50, 2882000, 2882000, 100, 1, 'be', 2, 320];
+	['r:' + L1, 'r:' + L2, 'r:' + P].forEach(k => { delete A.prev[k]; delete A.sm[k]; });
+	const ml = (k, two) => AR.buildNet(smp({ up: (11000 + 2 * k).toFixed(1), sta: [row('wl2.1', '6', L1, k, 80), row('wl0.2', '2.4', P, k, 1)].concat(two ? [row('wl1.1', '5', L2, k, 40)] : []) }));
+	ml(0); let n = ml(1); const ph = n.byId[M];
+	const cell = ph && (T.detailsFor(n, ph).filter(c => c[0] === 'Wi-Fi')[0] || []);
+	ok(ph && ph.name === 'Galaxy-S26-Ultra' && ph.lmac === L1 && !n.byId[L1] && n.byId[P] && n.byId[P].mac === P && cell[2] && cell[2].indexOf(L1) >= 0 && Math.round(ph.sdn) === 40,
+		'a multi-link device\'s link address is the device: named from its own address\'s lease, the link address in its Wi-Fi details',
+		JSON.stringify({ id: ph && ph.id, name: ph && ph.name, lmac: ph && ph.lmac, ids: n.devs.map(d => d.id), sdn: ph && ph.sdn }));
+	ml(2, true); n = ml(3, true); const two = n.byId[M];
+	ok(two && two.links === 2 && n.devs.filter(d => d.link === 'wifi').length === 2 && Math.round(two.sdn) === 60 && two.band === '6'
+		&& / · 2 links$/.test((T.detailsFor(n, two).filter(c => c[0] === 'Wi-Fi')[0] || [])[1]),
+		'a multi-link device on two links: one device, both links\' traffic, shown with its busier one', JSON.stringify({ links: two && two.links, sdn: two && two.sdn, band: two && two.band }));
+	// two known addresses that the link address could be made from: it can't be told which, so it stays itself
+	A.names = AR.parseNames({ leases: '1794400000 ' + M.toLowerCase() + ' 192.168.50.60 Galaxy *|1794400000 7c:00:5e:00:1d:a3 192.168.50.62 Other *' });
+	n = ml(4);
+	ok(n.byId[L1] && !n.byId[M], 'a link address that two known addresses could be made from stays itself', JSON.stringify(n.devs.map(d => d.id)));
+	// on a node, the same
+	A.names = AR.parseNames({ leases: '1794400000 ' + M.toLowerCase() + ' 192.168.50.60 Galaxy-S26-Ultra *' });
+	const ND = '02:10:00:00:04:10';
+	n = AR.buildNet(smp({ up: '11010.0', nodes: [{ mac: ND, ip: '192.168.50.33', model: 'RT-BE58_Go', alias: 'Study', sta: '', state: 'ok', up: '7000.0', c: [row('wl2.1', '6', L1, 0, 1)] }] }));
+	ok(n.byId[M] && n.byId[M].node && n.byId[M].lmac === L1 && n.byId[M].name === 'Galaxy-S26-Ultra', 'a multi-link device on a node: the same', JSON.stringify(n.devs.map(d => d.id)));
 	A.names = AR.parseNames({});
 }
 

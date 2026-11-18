@@ -428,6 +428,14 @@ for p in $(nvram get lan_ifnames) $(nvram get wan_ifnames); do
 	case "$Y$U$E" in *" $p "*) continue ;; esac
 	for d in "$Q/class/net/$p/brport" "$Q/class/net/$p".*/brport; do [ -d "$d" ] && { E="$E$p "; break; }; done
 done
+# and an Ethernet port that is only in another bridge: a LAN port given to a VLAN (Guest Network Pro's LAN: VLAN) leaves
+# lan_ifnames and is in that VLAN's bridge alone (br53), untagged. A bridge port's name, less a VLAN on it, is the port.
+for d in "$Q"/class/net/*/brport; do
+	p=${d%/brport}; p=${p##*/}; p=${p%.[0-9]*}
+	case "$p" in eth[0-9]*|vlan[0-9]*) ;; *) continue ;; esac
+	case "$Y$U$E" in *" $p "*) continue ;; esac
+	[ -d "$Q/class/net/$p" ] && E="$E$p "
+done
 if [ "$E" != " " ]; then t brctl show; brctl show > /dev/null 2>&1 || E=" "; fi
 if [ -n "$W" ]; then
 	for p in $L; do echo "W read ${p%%:*} - $(wl -i "${p%%:*}" assoclist 2>/dev/null | wc -l)"; done
