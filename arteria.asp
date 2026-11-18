@@ -855,7 +855,8 @@ function detailsFor(net, dv) {
 		['Host name', (l && l.host && l.host !== '*' ? l.host : '') || (m && m.name) || '—'],
 		['Maker', (m && m.vendor) || (priv ? 'Hidden' : '—'), priv && !(m && m.vendor) ? 'A private address hides the maker.' : ''],
 		['System', osOf(m)],
-		wifi ? ['Wi-Fi', wifiTxt, (WIFI_STD[dv.std] || 'Wi-Fi') + (dv.nss ? ', ' + dv.nss + ' spatial streams' : '') + (dv.bw ? ', ' + dv.bw + ' MHz channel' : '')] : ['Port', (dv.portLabel || '—') + (dv.speed ? ' · ' + speedTxt(dv.speed) : '')],
+		wifi ? ['Wi-Fi', wifiTxt + (dv.links > 1 ? ' · ' + dv.links + ' links' : ''), (WIFI_STD[dv.std] || 'Wi-Fi') + (dv.nss ? ', ' + dv.nss + ' spatial streams' : '') + (dv.bw ? ', ' + dv.bw + ' MHz channel' : '')
+			+ (dv.lmac ? '. A multi-link device: the radio lists it as ' + dv.lmac + (dv.links > 1 ? ' and more, one address a link' : ', its address on that link') + '.' : '')] : ['Port', (dv.portLabel || '—') + (dv.speed ? ' · ' + speedTxt(dv.speed) : '')],
 		['Shown as', kl, kl + (why ? ': recognised by ' + why : '')],
 		wifi ? ['Link ↓ / ↑ Mb/s', (dv.phy || '—') + ' / ' + (dv.phyUp || '—'), 'Link rate: ' + (dv.phy || '—') + ' Mb/s down, ' + (dv.phyUp || '—') + ' Mb/s up'] : (dv.sw ? ['Behind', dv.sw.name + ' · ' + devsTxt(dv.sw.count), dv.sw.count > 1 ? 'One of the ' + dv.sw.count + ' devices behind ' + dv.sw.name : 'The only device behind ' + dv.sw.name] : ['Devices on it', String(dv.count || 1)]),
 		wifi ? ['Connected', ago(dv.conn), 'Connected for ' + ago(dv.conn) + (dv.idle > 0 ? ', idle for ' + ago(dv.idle) : '') + (dv.node ? ' (restarts when it roams between the router and a node)' : '')] : ['Connected', '—'],
@@ -902,6 +903,31 @@ function linkWeak(x) {
 
 /* ---------------------------------------------------------------- the network, from one sample */
 function zeroRate() { return { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }; }   /* a rate that hasn't been measured yet */
+/* A Wi-Fi 7 device on a Wi-Fi 7 router can join as a multi-link device (MLD), even over one link. The radio then lists the address it
+   uses on that link, made from its own: the same middle four parts, the first with its "private" bit set, the last one changed
+   (7E:…:1D:24 for 7C:…:1D:A2). Everything else, DHCP and the router's client list included, has its own address, the MLD address.
+   A radio's private address that nothing else knows, with exactly one known address made like that: it's that device. */
+function mldKey(m) { return ('0' + (parseInt(m.slice(0, 2), 16) & 0xfd).toString(16)).slice(-2).toUpperCase() + m.slice(2, 14); }
+function mldOf(m) {
+	var N = A.names;
+	if (!N || !isMac(m) || !(parseInt(m.slice(0, 2), 16) & 2)) return m;
+	if (N.lease[m] || N.arp[m] || N.nmp[m] || N.custom[m] || N.fixed[m]) return m;   /* known as itself */
+	if (!N.mld) {
+		N.mld = Object.create(null);
+		[N.custom, N.nmp, N.lease, N.arp, N.fixed].forEach(function (o) {
+			Object.keys(o || {}).forEach(function (x) { if (isMac(x)) { var k = mldKey(x); (N.mld[k] = N.mld[k] || []).push(x); } });
+		});
+	}
+	var c = (N.mld[mldKey(m)] || []).filter(function (x, i, a) { return x !== m && a.indexOf(x) === i; });
+	return c.length === 1 ? c[0] : m;
+}
+/* two links of one multi-link device (on two bands): one device, the links' traffic together, shown with its busier link */
+function bothLinks(o, x) {
+	var keep = x.s.sdn + x.s.sup > o.s.sdn + o.s.sup ? x : o;
+	keep.s = { dn: o.s.dn + x.s.dn, up: o.s.up + x.s.up, sdn: o.s.sdn + x.s.sdn, sup: o.s.sup + x.s.sup, ok: o.s.ok || x.s.ok };
+	keep.links = (o.links || 1) + 1;
+	return keep;
+}
 function devsTxt(n) { return n + (n === 1 ? ' device' : ' devices'); }
 function speedTxt(mbps) { return mbps >= 1000 ? mbps / 1000 + ' GbE' : mbps + ' Mb/s'; }   /* a port's link speed */
 function dbm(v, none) { return v !== null && v !== undefined && v !== '' ? v + ' dBm' : (none === undefined ? '—' : none); }
@@ -992,11 +1018,13 @@ function buildNet(d) {
 	/* the router's own Wi-Fi clients, and the nodes' backhaul stations */
 	var seen = {};
 	(d.sta || []).forEach(function (r) {
-		var mac = r[2];
+		var mac = r[2], lk = mac;
 		if (bh[mac]) { bh[mac].bhRows.push({ r: r, s: measure('b:' + mac, t, r[3], r[4]) }); return; }
 		if (own[mac]) return;
-		var s = measure('r:' + mac, t, r[3], r[4]);
-		seen[mac] = { ap: 'router', ifn: r[0], band: r[1], mac: mac, rssi: r[5], phy: r[6], phyUp: r[7], conn: r[8], idle: r[9], std: r[10], nss: r[11], bw: r[12], s: s, st: 'ok' };
+		mac = mldOf(lk);   /* a Wi-Fi 7 device's link address: the device's own address (its counters stay the link's) */
+		var s = measure('r:' + lk, t, r[3], r[4]);
+		var x = { ap: 'router', ifn: r[0], band: r[1], mac: mac, lmac: lk !== mac ? lk : '', rssi: r[5], phy: r[6], phyUp: r[7], conn: r[8], idle: r[9], std: r[10], nss: r[11], bw: r[12], s: s, st: 'ok' };
+		seen[mac] = seen[mac] ? bothLinks(seen[mac], x) : x;
 	});
 	var pbm = {};   /* a router port's rate, measured once a sample however many nodes are behind it */
 	var portRate = function (p) { var pr = ifs[p]; return pbm[p] || (pbm[p] = pr ? measure('pb:' + p, t, pr[2], pr[1]) : zeroRate()); };
@@ -1047,12 +1075,14 @@ function buildNet(d) {
 		}
 		if (node.state === 'ok') {
 			node.rows.forEach(function (r) {
-				var mac = r[2];
+				var mac = r[2], lk = mac;
 				if (own[mac] || bh[mac] || mac === node.mac) return;
-				var s = measure('n:' + node.mac + ':' + mac, nt, r[3], r[4]);
-				var cand = { ap: node.mac, node: node, ifn: r[0], band: r[1], mac: mac, rssi: r[5], phy: r[6], phyUp: r[7], conn: r[8], idle: r[9], std: r[10], nss: r[11], bw: r[12], s: s, st: 'ok' };
-				var o = seen[mac];   /* roaming: the newer association wins */
-				if (!o || (+cand.conn < +o.conn)) seen[mac] = cand;
+				mac = mldOf(lk);
+				var s = measure('n:' + node.mac + ':' + lk, nt, r[3], r[4]);
+				var cand = { ap: node.mac, node: node, ifn: r[0], band: r[1], mac: mac, lmac: lk !== mac ? lk : '', rssi: r[5], phy: r[6], phyUp: r[7], conn: r[8], idle: r[9], std: r[10], nss: r[11], bw: r[12], s: s, st: 'ok' };
+				var o = seen[mac];   /* roaming: the newer association wins; another link of the same device on this node: one device */
+				if (o && o.ap === node.mac && o.lmac && cand.lmac) seen[mac] = bothLinks(o, cand);
+				else if (!o || (+cand.conn < +o.conn)) seen[mac] = cand;
 			});
 		} else if (A.names && A.names.cl[node.mac]) {   /* not readable: list its clients without numbers */
 			var cl = A.names.cl[node.mac];
@@ -1164,7 +1194,7 @@ function buildNet(d) {
 		var x = seen[mac];
 		net.devs.push({ id: mac, mac: mac, link: 'wifi', ap: x.ap, node: x.node || null, ifn: x.ifn, band: x.band,
 			net: x.ap === 'router' ? netName(d.nets, x.ifn) : (x.node && x.ifn ? netName(x.node.nets, x.ifn, d.nets) : ''),
-			rssi: x.rssi, phy: x.phy, phyUp: x.phyUp, conn: x.conn, idle: x.idle, std: x.std, nss: x.nss, bw: x.bw, s: x.s, st: x.st });
+			rssi: x.rssi, phy: x.phy, phyUp: x.phyUp, conn: x.conn, idle: x.idle, std: x.std, nss: x.nss, bw: x.bw, s: x.s, st: x.st, lmac: x.lmac || '', links: x.links || 1 });
 	});
 	/* private addresses that took over a named device's host name (section 7): worked out again only when
 	   the names or the set of connected addresses change */
@@ -1185,9 +1215,11 @@ function buildNet(d) {
 	});
 	/* A managed switch has an address of its own, which the router learns on the port with the devices behind it. That one is the
 	   switch itself, not a device behind it: the switch takes its name and details (renaming it renames the switch), and lists
-	   only the others. Picking it from anywhere picks the switch. Two that both look like switches: neither is taken. */
+	   only the others. Picking it from anywhere picks the switch. Two that both look like switches: neither is taken. Only one you
+	   gave a switch's icon, or whose name says "switch": the type the router detected can be wrong (it called a TV tuner a router),
+	   and a switch's model name (GS724T) may be any of several switches chained on the port. */
 	net.devs.forEach(function (dv) {
-		var me = dv.behind ? dv.behind.filter(function (b) { return b.kind === 'switch'; }) : [];
+		var me = dv.behind ? dv.behind.filter(function (b) { return b.kind === 'switch' && b.why && (b.why.rule === 'your icon' || (b.why.rule === 'name' && /switch/i.test(b.name))); }) : [];
 		if (me.length !== 1) return;
 		me = me[0];
 		dv.self = me; dv.behind = dv.behind.filter(function (b) { return b !== me; }); dv.count = dv.behind.length;
