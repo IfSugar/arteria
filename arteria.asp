@@ -1561,15 +1561,17 @@ function drawPhone(id, kind, cx, cy, face) {
 	o.target = P(cx, cy, 1.07);
 	return o;
 }
+/* A tablet standing on a slim foot, upright: wider and with a thinner frame than the phone, its camera at the top. Not on
+   a table: lying on one, it read as a table. */
 function drawTablet(id, kind, cx, cy, face) {
 	var o;
-	o = new Obj(id, cx, cy, 0.6);
-	[[cx - 0.6, cy + 0.45], [cx + 0.48, cy + 0.45], [cx + 0.48, cy - 0.55]].forEach(function (l) { o.box(l[0], l[1], 0, 0.12, 0.12, 0.45, M_DARK, { rim: false }); });
-	o.box(cx - 0.65, cy - 0.6, 0.45, 1.3, 1.2, 0.09, M_TABLE, { shadow: true });
-	o.box(cx - 0.45, cy - 0.4, 0.54, 0.9, 0.75, 0.05, M_BLACK);
-	o.face('T', 0.06, 0.07, 0.94, 0.93, 'fill:url(#ar-scr5)');
-	o.face('T', 0.14, 0.18, 0.5, 0.5, 'fill:#ffffff;opacity:.16');
-	o.target = P(cx, cy, 0.64);
+	o = new Obj(id, cx, cy, 1.12);
+	o.box(cx - 0.32, cy - 0.16, 0, 0.64, 0.4, 0.05, M_DARK, { shadow: true });   /* the foot */
+	o.box(cx - 0.4, cy - 0.04, 0.05, 0.8, 0.07, 1.04, M_BLACK, { shadow: true });   /* the tablet */
+	o.face('L', 0.05, 0.04, 0.95, 0.93, 'fill:url(#ar-scr5)');
+	o.face('L', 0.47, 0.955, 0.53, 0.975, 'fill:#3a464b');   /* its camera */
+	o.face('L', 0.12, 0.5, 0.88, 0.6, 'fill:#ffffff;opacity:.16');
+	o.target = P(cx, cy, 1.12);
 	return o;
 }
 function drawNas(id, kind, cx, cy, face) {
