@@ -769,6 +769,8 @@ sampler() {
 	lowprio
 	echo $$ > "$TMPD/sampler.pid"
 	trap 'node_stop_all; rm -f "$TMPD/sampler.pid"; exit 0' INT TERM
+	# the page closed (start_arteriastop): stop now, not after the pause before the next sample, which can be 10 s
+	SAMPLER_STOP=""; trap 'SAMPLER_STOP=1' USR1
 	sample_init
 	CPUS=$(cpu_count); health
 	if [ "$HEALTH" -ge 2 ]; then pause_sampling "$HWHY"; rm -f "$TMPD/sampler.pid"; exit 0; fi
@@ -777,7 +779,7 @@ sampler() {
 	rm -f "$TMPD"/node.*.fail "$TMPD"/node.*.start "$TMPD"/node.*.last "$TMPD"/node.*.k "$TMPD"/node.*.out "$TMPD"/node.*.err
 	WD=$(web_dir); seq=0; ms=0; over=0; slow=0; paused=0; EFF=$INTERVAL
 	log "sampling started (page open)"
-	while hb_fresh; do
+	while [ -z "$SAMPLER_STOP" ] && hb_fresh; do
 		t0=$(uptime_cs)
 		health
 		if [ "$HEALTH" -ge 2 ]; then over=$((over + 1)); else over=0; fi
@@ -809,15 +811,19 @@ sampler() {
 		# live about a second after the router started. The names are written alongside, so they don't hold it up.
 		if [ $seq -eq 1 ]; then
 			( export_names ) 8>&- &   # without the sampler's lock (a hung child must not keep it); ash keeps fd 8 for "f 8>&-"
-			[ "$HEALTH" -eq 0 ] && { sleep 1; continue; }
+			[ "$HEALTH" -eq 0 ] && { sampler_nap 1; continue; }
 		fi
-		sleep "$EFF"
+		sampler_nap "$EFF"
 	done
 	node_stop_all
 	rm -f "$TMPD/sampler.pid" "$WD/clist.htm"   # the copy of the client list a rename read: needed only while the page is open
 	[ $paused = 1 ] || log "sampling stopped: no page open (closed, paused or in a hidden tab)"
 }
 
+# The pause between samples, cut short by the page closing: the shell runs a trap (USR1, above) only once a command it waits
+# for has ended, and 'wait' ends at once when a signal comes, where a 'sleep' in the foreground would run its course.
+# The sleep doesn't get the sampler's lock (fd 8): one left running must not keep the next sampler from starting.
+sampler_nap() { [ -n "$SAMPLER_STOP" ] && return 0; sleep "$1" 8>&- & sn=$!; wait $sn 2>/dev/null; kill $sn 2>/dev/null; }
 cl_count() { nvram get custom_clientlist | tr '<' '\n' | grep -c '>'; }   # names in the router's client list
 
 service_event() {   # action service
@@ -828,7 +834,9 @@ service_event() {   # action service
 			# the sampler's own errors are kept (doctor shows them): it is started with nowhere else to say anything
 			sampler_running || paused_recently || { : > "$TMPD/sampler.err"; (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>> "$TMPD/sampler.err" &); } ;;   # paused: the page says why
 		"${NAME}stop")
-			rm -f "$TMPD/heartbeat" ;;
+			rm -f "$TMPD/heartbeat"
+			p=$(cat "$TMPD/sampler.pid" 2>/dev/null)
+			if pid_ours "$p" "$NAME.sh sampler"; then kill -USR1 "$p" 2>/dev/null || :; fi ;;   # only our own sampler
 		"${NAME}names"*)   # a device was renamed on the page (it saved the router's client list first): show it now, not in 30 s
 			tmpd; web_init && export_names
 			b=$(cat "$TMPD/clist.n" 2>/dev/null); rm -f "$TMPD/clist.n"

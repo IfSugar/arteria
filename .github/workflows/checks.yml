@@ -12,12 +12,16 @@ on:
 permissions:
   contents: read
 
-# Two jobs side by side, so the run takes as long as the slower one: the script on a stand-in router,
-# and the page (its JavaScript, then the browser test).
+# Three jobs side by side, so the run takes as long as the slowest one: the script on a stand-in router in two halves
+# (sampling and the AiMesh node sessions; install, update and doctor), and the page (its JavaScript, then the browser test).
 jobs:
   script:
-    name: Script (stand-in router)
+    name: Script (stand-in router, ${{ matrix.part }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [sampling, install]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0, pinned to its commit
         with:
@@ -45,10 +49,10 @@ jobs:
             exit 1
           fi
 
-      - name: Check the addon on a stand-in router (sampling, AiMesh node sessions, install and uninstall)
+      - name: Check the addon on a stand-in router (${{ matrix.part }})
         # Runs the script with only Merlin's BusyBox commands, and [, printf and echo as separate
         # programs (no shell builtins), like the router. The AiMesh node is emulated too.
-        run: bash .github/tests/router.sh
+        run: ROUTER_PART=${{ matrix.part }} bash .github/tests/router.sh
 
       - name: Changelog entry
         run: |
