@@ -169,7 +169,7 @@ To remove everything: `arteria.sh uninstall`. If the web UI ever looks wrong, a 
 
 Arteria is in amtm, the Asuswrt-Merlin Terminal Menu, since amtm 7.2, as **ar**: amtm installs it, **ar** then opens Arteria's menu, and amtm's update check and its automatic script updates cover it. To keep amtm from updating Arteria, turn that off with menu option 7 (or `AMTM_UPDATE=off`); `arteria.sh update` still works.
 
-For amtm's module, Arteria follows amtm's conventions for third-party scripts: with no arguments in a terminal the script shows its menu; `amtmupdate check` exits 0 when amtm may update it (1 when you turned that off with menu option 7 or `AMTM_UPDATE=off`), and `amtmupdate` installs the latest release, prints two lines and exits 0, or 1 if the update failed.
+For amtm's module, Arteria follows amtm's conventions for third-party scripts: with no arguments in a terminal the script shows its menu; `amtmupdate check` exits 0 when amtm may update it (1 when you turned that off with menu option 7 or `AMTM_UPDATE=off`), and `amtmupdate` installs the latest release, prints two lines and exits 0, or 1 if the update failed. A development version (`update dev`) carries amtm's `# amtm NoMD5check` line, so amtm doesn't take it for an update of the release with the same number, and `amtmupdate` replaces it only with a newer release.
 
 | | |
 |---|---|
