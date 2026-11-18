@@ -2447,6 +2447,25 @@ function trayName(devs, nodes) {
 	if (nodes.length) p.push('+' + nodes.length + (nodes.length > 1 ? ' nodes' : ' node'));
 	return p.join(' · ');
 }
+/* Devices of a kind in one cluster of stands: the biggest group first. Each group starts at the free stand furthest from the
+   middle of the free ones (an outer one, so what's left stays in one piece) and takes the free stands nearest to it; inside
+   a group, names run back to front. -> [stand for each device, in list order] */
+function standGroups(list, slots) {
+	var free = slots.slice(), at = [], groups = {}, kinds;
+	list.forEach(function (dv, i) { var k = dv.kind || ''; (groups[k] = groups[k] || []).push(i); });
+	kinds = Object.keys(groups).sort(function (a, b) { return groups[b].length - groups[a].length || (a < b ? -1 : a > b ? 1 : 0); });
+	var d = function (a, b) { return Math.sqrt((a.cx - b.cx) * (a.cx - b.cx) + (a.cy - b.cy) * (a.cy - b.cy)); };
+	kinds.forEach(function (k) {
+		var mid = { cx: 0, cy: 0 };
+		free.forEach(function (s) { mid.cx += s.cx / free.length; mid.cy += s.cy / free.length; });
+		var seed = free.reduce(function (a, b) { return d(b, mid) > d(a, mid) + 1e-9 || (Math.abs(d(b, mid) - d(a, mid)) < 1e-9 && b.cx + b.cy < a.cx + a.cy) ? b : a; });
+		var mine = free.slice().sort(function (a, b) { return d(a, seed) - d(b, seed) || (a.cx + a.cy) - (b.cx + b.cy); }).slice(0, groups[k].length)
+			.sort(function (a, b) { return (a.cx + a.cy) - (b.cx + b.cy) || a.cx - b.cx; });
+		groups[k].forEach(function (i, j) { at[i] = mine[j]; });
+		free = free.filter(function (s) { return mine.indexOf(s) < 0; });
+	});
+	return at;
+}
 function mapLayout(net) {
 	var L = { nodes: [], devs: [], tray: [], wired: [], hidden: [] };
 	var shownNodes = pickNodes(net.nodes, G.nodeSlots.length);
@@ -2464,18 +2483,13 @@ function mapLayout(net) {
 	/* each node's clients */
 	var nk = {};
 	shownNodes.forEach(function (n, i) { nk[n.mac] = pickStands(visible.filter(function (dv) { return dv.node === n; }), G.nodeSlots[i].dev.length, 'n' + i); });
-	var used = {}, next = {};
-	var place = function (dv, g, slots) {
-		var prev = A.slot[dv.id], idx = prev && prev.g === g && !used[g + prev.i] && prev.i < slots.length ? prev.i : -1;
-		if (idx < 0) for (var i = 0; i < slots.length; i++) if (!used[g + i]) { idx = i; break; }
-		used[g + idx] = 1;
-		next[dv.id] = { g: g, i: idx };
-		return slots[idx];
-	};
-	/* devices that keep their stand first, then the newcomers */
+	/* Where each stands: devices of a kind together (bulbs by bulbs, laptops by laptops), on the zone's first stands, as many
+	   as it has devices (see standGroups). Only which devices have a stand decides it, never their traffic: nothing moves
+	   until a device joins or leaves (and which ones have a stand is held for 20 s, see pickStands). */
+	var next = {};
 	var put = function (list, g, slots, into) {
-		list.slice().sort(function (a, b) { return (A.slot[b.id] && A.slot[b.id].g === g ? 1 : 0) - (A.slot[a.id] && A.slot[a.id].g === g ? 1 : 0); })
-			.forEach(function (dv) { into.push({ dev: dv, slot: place(dv, g, slots), group: g }); });
+		var devs = list.slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); }), at = standGroups(devs, slots.slice(0, devs.length));
+		devs.forEach(function (dv, i) { next[dv.id] = { g: g, i: slots.indexOf(at[i]) }; into.push({ dev: dv, slot: at[i], group: g }); });
 	};
 	put(wk, 'w', wslots, L.wired);
 	put(dk, 'r', G.wifiSlots, L.devs);
@@ -2743,6 +2757,16 @@ function placeLabels(net, L, objs, arcs) {
 	var obb = objs.map(function (o) { return [o, o.bbox()]; });   /* each drawing's outline, worked out once */
 	var arcPts = [];
 	arcs.forEach(function (a) { arcPts = arcPts.concat(a.pts.slice(3, -3)); });
+	/* Labels' lines: one that would cross another label's line costs about as much as 70 px more line, so of the spots near
+	   its device a label takes one whose line crosses none, if there is one; it isn't sent further out for it. */
+	var XC = 8, segs = [];
+	var side = function (p, q, r) { return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]); };
+	var crosses = function (a, b) {
+		var p1 = [a[0], a[1]], p2 = [a[2], a[3]], p3 = [b[0], b[1]], p4 = [b[2], b[3]];
+		var d1 = side(p3, p4, p1), d2 = side(p3, p4, p2), d3 = side(p1, p2, p3), d4 = side(p1, p2, p4);
+		return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+	};
+	var crossings = function (sg, skip) { var n = 0; segs.forEach(function (t, i) { if (i !== skip && crosses(sg, t)) n++; }); return n; };
 	items.forEach(function (it) {
 		if (!it.o) return;
 		var name = it.name.length > 24 ? it.name.slice(0, 23) + '…' : it.name;
@@ -2784,10 +2808,12 @@ function placeLabels(net, L, objs, arcs) {
 			obb.forEach(function (e) { if (e[0] !== it.o && ov(r, e[1])) cost += OBJ; });
 			zones.forEach(function (z) { if (ov(r, z)) cost += 60; });
 			if (cost < bestCost) arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) cost += 0.6; });
+			if (cost < bestCost) cost += crossings([c.px, c.py, c.axr !== undefined ? c.axr : ax, c.ay]) * XC;
 			if (cost < bestCost) { bestCost = cost; best = c; }
 		});
 		var x = Math.round(best.x), y = Math.round(best.y);
 		rects.push([x, y + 5, x + w, y + HIT - 5]);
+		segs.push([best.px, best.py, best.axr !== undefined ? best.axr : ax, best.ay]);
 		out.push({ id: it.id, name: name, x3: it.x3 || '', x: x, y: y, w: w, just: best.just, px: best.px, py: best.py, ax: best.axr !== undefined ? best.axr : ax, ay: best.ay });
 		meta.push({ o: it.o, bb: bb, ax: ax });
 	});
@@ -2812,7 +2838,7 @@ function placeLabels(net, L, objs, arcs) {
 			zones.forEach(function (z) { if (ov(r, z)) c += 60; });
 			return c;
 		};
-		var curCost = nowCov * OBJ + Math.sqrt(Math.pow(lb.px - lb.ax, 2) + Math.pow(lb.py - lb.ay, 2)) * 0.12;
+		var curCost = nowCov * OBJ + Math.sqrt(Math.pow(lb.px - lb.ax, 2) + Math.pow(lb.py - lb.ay, 2)) * 0.12 + crossings(segs[k], k) * XC;
 		for (var gy = 8; gy <= SH - HIT - 8; gy += 12) for (var gx = 8; gx <= SW - w2 - 8; gx += 16) {
 			var r2 = [gx, gy + 5, gx + w2, gy + HIT - 5], c2;
 			/* where its line meets it: the side facing the device */
@@ -2825,11 +2851,13 @@ function placeLabels(net, L, objs, arcs) {
 			c2 = costAt(r2);
 			if (c2 >= 1e9) continue;
 			c2 += Math.sqrt(Math.pow(g.px - g.ax, 2) + Math.pow(g.py - g.ay, 2)) * 0.12;
+			if (c2 < curCost - 1 && (!place || c2 < place.c)) c2 += crossings([g.px, g.py, g.ax, g.ay], k) * XC;
 			if (c2 < curCost - 1 && (!place || c2 < place.c)) place = { c: c2, x: gx, y: gy, g: g };
 		}
 		if (place) {
 			lb.x = place.x; lb.y = place.y; lb.px = place.g.px; lb.py = place.g.py; lb.ax = place.g.ax; lb.ay = place.g.ay; lb.just = place.g.just;
 			rects[k] = [place.x, place.y + 5, place.x + w2, place.y + HIT - 5];
+			segs[k] = [lb.px, lb.py, lb.ax, lb.ay];
 		}
 	}
 	return out;
@@ -4004,7 +4032,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, standGroups: standGroups, placeLabels: placeLabels, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>

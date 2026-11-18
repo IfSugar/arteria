@@ -856,4 +856,42 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	A.names = AR.parseNames({});
 }
 
+// ---- 29. stands by kind: devices of a kind stand together, in the page's view and an expanded one, and traffic moves none
+{
+	const kinds = ['light', 'laptop', 'tv', 'light', 'phone', 'laptop', 'light', 'tv', 'light', 'laptop', 'phone', 'light', 'light', 'light', 'phone', 'tv'];
+	const mkNet = (seed) => {
+		const devs = kinds.map((k, i) => ({ id: 'K' + i, mac: '02:CC:00:00:09:' + (10 + i), name: k + ' ' + i, kind: k, link: 'wifi', band: '5', st: 'ok', dn: 1, up: 1, sdn: (i * seed) % 7, sup: 1, rssi: -50, s: { dn: 1, up: 1, sdn: (i * seed) % 7, sup: 1, ok: true } }));
+		const net = { router: { model: 'RT-AX86U' }, nodes: [], devs: devs, byId: {}, wan: { dn: 1, up: 1 } };
+		devs.forEach(d => { net.byId[d.id] = d; });
+		return net;
+	};
+	const keepG = T.G(), keepSlot = A.slot, keepAt = A.slotAt, keepAny = A.gotAny, res = [];
+	let bad = false;
+	[['page', T.geomSmall()], ['expanded', T.geomBig(1568, 780, 0)]].forEach(([tag, g]) => {
+		T.useGeom(g); A.slot = {}; A.gotAny = true; A.slotAt = Date.now();
+		const L = T.mapLayout(mkNet(3)), at = {};
+		L.devs.forEach(x => { at[x.dev.id] = x.slot; });
+		// a device with others of its kind on the map: one of them is on one of the stands nearest its own (2 in the page's view)
+		const near = (a, b) => Math.hypot(a.slot.cx - b.slot.cx, a.slot.cy - b.slot.cy);
+		const far = L.devs.filter(x => {
+			const same = L.devs.filter(y => y !== x && y.dev.kind === x.dev.kind);
+			if (!same.length) return false;
+			const mine = Math.min(...same.map(y => near(x, y))), any = L.devs.filter(y => y !== x).map(y => near(x, y)).sort((a, b) => a - b);
+			return mine > any[Math.min(1, any.length - 1)] + 0.01;
+		}).map(x => x.dev.name);
+		const moved = T.mapLayout(mkNet(5)).devs.filter(x => at[x.dev.id] !== x.slot).length;   // other rates, the same devices
+		res.push(tag + ': ' + L.devs.length + ' stands, ' + far.length + ' away from their kind' + (far.length ? ' (' + far.join(', ') + ')' : '') + ', ' + moved + ' moved');
+		if (L.devs.length < 4 || far.length > (tag === 'page' ? 1 : 2) || moved) bad = true;
+	});
+	T.useGeom(keepG); A.slot = keepSlot; A.slotAt = keepAt; A.gotAny = keepAny;
+	// the groups themselves: 9 stands on a 3 x 3 grid, 3 kinds of 3: each kind fills one row or column (or another block of 3 touching)
+	const grid = []; for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) grid.push({ cx: x * 3, cy: y * 3 });
+	const nine = ['a', 'b', 'c', 'a', 'b', 'c', 'a', 'b', 'c'].map((k, i) => ({ kind: k, id: 'G' + i }));
+	const got = T.standGroups(nine, grid), blocks = ['a', 'b', 'c'].every(k => {
+		const ss = got.filter((s, i) => nine[i].kind === k);
+		return ss.every(s => ss.some(t => t !== s && Math.abs(t.cx - s.cx) + Math.abs(t.cy - s.cy) === 3));
+	});
+	ok(!bad && blocks && new Set(got).size === 9, 'devices of a kind stand together, and traffic alone moves none', res.join('; ') + '; grid ' + blocks);
+}
+
 process.exit(fails ? 1 : 0);
