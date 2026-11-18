@@ -1023,11 +1023,30 @@ if [ "$(inst_ver)" = 9.9.10 ] && grep -q "^dev fix/menu 0123456 " "$R/jffs/addon
 	&& ! grep -v "/$sha/\|branches/fix/menu" "$t/curl.log" | grep -q .; then
 	ok "update dev <branch>: that branch's newest commit, fetched by its commit id, marked as a development version"
 else bad "update dev fix/menu:"; cat "$t/upd.out" "$t/curl.log"; fi
-# back to a release from a development version: the same number is installed again, and install takes the mark away
+# A development version tells amtm not to compare it with the release by MD5 (amtm took a development version for an MD5 update
+# of the release with the same number, and put the release back over it). Through amtm it's replaced only by a newer release.
 printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"; release 9.9.10 9.9.10
+n_md5=$(grep -c '^# amtm NoMD5check' "$R/jffs/addons/arteria/arteria.sh")
+upd amtmupdate && rc=0 || rc=1
+if [ "$n_md5" = 1 ] && [ "$(sed -n 2p "$R/jffs/addons/arteria/arteria.sh" | cut -c1-17)" = '# amtm NoMD5check' ] && [ $rc = 0 ] \
+	&& grep -q "Kept the development version: fix/menu @ 0123456, installed .*: the latest release, 9.9.10, isn't newer" "$R/tmp/arteria/amtmupdate.log" \
+	&& grep -q "^dev fix/menu 0123456 " "$R/jffs/addons/arteria/build" && sh -n "$R/jffs/addons/arteria/arteria.sh"; then
+	ok "update dev: amtm is told not to compare it by MD5; amtmupdate keeps it unless a newer release is out"
+else bad "amtm and a development version (marks: $n_md5, rc $rc):"; cat "$t/upd.out" "$R/tmp/arteria/amtmupdate.log"; fi
+# a newer release, though, does replace it through amtm, as the release's own file (put the development version back after)
+printf '{"tag_name": "9.9.11"}' > "$srv/api/latest"; release 9.9.11 9.9.11
+cp "$R/jffs/addons/arteria/arteria.sh" "$t/dev.sh"; cp "$R/jffs/addons/arteria/arteria.asp" "$t/dev.asp"; cp "$R/jffs/addons/arteria/build" "$t/dev.build"
+upd amtmupdate && rc=0 || rc=1
+if [ $rc = 0 ] && [ "$(inst_ver)" = 9.9.11 ] && [ ! -f "$R/jffs/addons/arteria/build" ] && cmp -s "$R/jffs/addons/arteria/arteria.sh" "$srv/raw/9.9.11/arteria.sh"; then
+	ok "amtmupdate: a newer release replaces a development version, as the release's own file"
+else bad "amtmupdate, newer release over a development version (rc $rc):"; cat "$t/upd.out" "$R/tmp/arteria/amtmupdate.log"; fi
+cp "$t/dev.sh" "$R/jffs/addons/arteria/arteria.sh"; cp "$t/dev.asp" "$R/jffs/addons/arteria/arteria.asp"; cp "$t/dev.build" "$R/jffs/addons/arteria/build"
+printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"
+# back to a release from a development version: the same number is installed again, and install takes the marks away
 upd update || true
-if grep -q "Updating 9.9.10 (development version: fix/menu @ 0123456, installed .*) -> 9.9.10, the release" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ]; then
-	ok "update: from a development version back to the release, the mark is gone"
+if grep -q "Updating 9.9.10 (development version: fix/menu @ 0123456, installed .*) -> 9.9.10, the release" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ] \
+	&& ! grep -q '^# amtm NoMD5check' "$R/jffs/addons/arteria/arteria.sh" && cmp -s "$R/jffs/addons/arteria/arteria.sh" "$srv/raw/9.9.10/arteria.sh"; then
+	ok "update: from a development version back to the release, the marks are gone (the script is the release's own file)"
 else bad "update after update dev:"; cat "$t/upd.out"; fi
 # doctor: the known problems, found, then fixed. What going back to 1.0.0 leaves (its own hook line next to today's), a
 # file an old version left, page files anyone could change, a client list copy left after the page closed, a node

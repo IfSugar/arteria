@@ -1533,8 +1533,14 @@ install() {
 			[ $got -eq 1 ] || { rm -f "$asp"; die "Couldn't get $NAME.asp $VERSION. Put it in the same folder as $NAME.sh and run install again."; }
 		fi
 		stop_all
-		# rename into place: a running copy of the old script (e.g. during update) keeps reading its own file
-		cp -f "$0" "$SCRIPT.new" && mv -f "$SCRIPT.new" "$SCRIPT"
+		# rename into place: a running copy of the old script (e.g. during update) keeps reading its own file. A development
+		# version gets "# amtm NoMD5check" under its first line: amtm takes a script that differs from the release with the same
+		# number for an MD5 update, and that update would put the release back over it. A release's own file has no such line.
+		if [ -n "$AR_BUILD" ]; then
+			{ head -n 1 "$0"; echo '# amtm NoMD5check (a development version: not the release with this number)'; tail -n +2 "$0" | grep -v '^# amtm NoMD5check'; } > "$SCRIPT.new"
+		else
+			grep -v '^# amtm NoMD5check' "$0" > "$SCRIPT.new"
+		fi && mv -f "$SCRIPT.new" "$SCRIPT"
 		cp -f "$asp" "$PAGE_SRC.new" && mv -f "$PAGE_SRC.new" "$PAGE_SRC"
 		rm -f "$TMPD/$NAME.asp.dl"
 	fi
@@ -1618,6 +1624,11 @@ update() {   # [force]  fetch the latest release from GitHub and reinstall over 
 	get_script "$rel" "the latest release"
 	if [ "$new" = "$VERSION" ] && [ "$1" != "force" ] && [ ! -f "$BUILD_FILE" ]; then
 		rm -rf "$dl"; say "Already up to date ($VERSION)."; return 0
+	fi
+	# amtm asks for an update when the script differs from the release with the same number: a development version does.
+	# Through amtm, a development version is replaced only by a newer release ('update' itself goes back to the release).
+	if [ -n "$AR_AMTM" ] && [ -f "$BUILD_FILE" ] && ! ver_gt "$new" "$VERSION"; then
+		rm -rf "$dl"; say "Kept the $(build_text): the latest release, $new, isn't newer. '$SCRIPT update' goes back to it."; return 0
 	fi
 	if ver_gt "$VERSION" "$new" && [ "$1" != "force" ]; then
 		rm -rf "$dl"
@@ -1997,7 +2008,7 @@ amtm_update() {   # [check]
 	fi
 	say "  i  Running function amtmupdate"
 	tmpd; alog="$TMPD/amtmupdate.log"
-	( update ) > "$alog" 2>&1; rc=$?
+	( AR_AMTM=1 update ) > "$alog" 2>&1; rc=$?
 	now_ver=$(script_version "$SCRIPT")
 	if [ $rc -eq 0 ]; then
 		say "  ✔  $TITLE ${now_ver:-$VERSION} amtmupdate complete"
