@@ -642,6 +642,13 @@ run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
 grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection" "$t/nt.out" \
 	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+# one that breaks after a round's port lines, with nothing on stderr: none of the script's own lines (X: its wired uplink) is taken
+# for what the session said
+printf 'echo "#B 1"\necho "L eth3 1 1000"\necho "X eth0"\nexit 1\n' > "$t/node-hostile"
+run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
+grep -q "key login OK (Arteria's key), reading its devices failed$" "$t/nt.out" \
+	&& ok "nodes test: a session that breaks after its port lines isn't reported with one of them as the reason" \
+	|| { bad "nodes test, broken after the port lines:"; cat "$t/nt.out"; }
 # A node that joins both radios' uplinks into one interface, dpsta (an RP-AX56): each packet is counted on dpsta and on its radio,
 # so its uplink is dpsta alone, or its backhaul reads double
 touch "$t/node-dpsta" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-dpsta" "$t/node-tee"
@@ -665,13 +672,13 @@ if grep -q '^L eth3 1 1000$' "$t/node-last.out" && grep -q '^M eth3 02:CC:00:00:
 else bad "a node's wired ports on an Ethernet backhaul:"; grep '^[LCMX] ' "$t/node-last.out"; fi
 # A node with a NAS on two of its LAN ports, bonded: its bridge has the bond in their place, and the bond is read as one port,
 # with the NAS on it (the node read nothing there, and the NAS showed beside the node on the router's port)
-nsys=$t/node-sys/class/net; mv "$nsys/eth3/brport" "$nsys/eth3/brport.off"; mkdir -p "$nsys/bond0/brport"
+nsys=$t/node-sys/class/net; mv "$nsys/eth3/brport" "$nsys/eth3/brport.off"; mkdir -p "$nsys/bond0/brport" "$nsys/eth3/bonding_slave"
 echo 1 > "$nsys/bond0/carrier"; echo 2000 > "$nsys/bond0/speed"; cp "$t/node-proc/net/dev" "$t/node-dev.before"
 printf '  bond0: 524288 400 0 0 0 0 0 0 3145728 2100 0 0 0 0 0 0\n' >> "$t/node-proc/net/dev"
 touch "$t/node-bond" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-bond" "$t/node-tee"
-rm -rf "$nsys/bond0"; mv "$nsys/eth3/brport.off" "$nsys/eth3/brport"; cp "$t/node-dev.before" "$t/node-proc/net/dev"
+rm -rf "$nsys/bond0" "$nsys/eth3/bonding_slave"; mv "$nsys/eth3/brport.off" "$nsys/eth3/brport"; cp "$t/node-dev.before" "$t/node-proc/net/dev"
 if grep -q '^L bond0 1 2000$' "$t/node-last.out" && grep -q '^M bond0 02:CC:00:00:00:31$' "$t/node-last.out" && grep -q '^C bond0 524288 3145728$' "$t/node-last.out" \
-	&& ! grep -q '^M eth3 ' "$t/node-last.out"; then
+	&& ! grep -q '^[LCM] eth3 ' "$t/node-last.out"; then   # its port (eth3, also on a VLAN's bridge here) isn't read beside it
 	ok "a node's bonded LAN ports (a NAS on two of them) are read as one port, the bond, with the NAS on it"
 else bad "a node with a bond:"; grep '^[LCMX] ' "$t/node-last.out"; fi
 # A node whose firmware names the interfaces its devices are on as possible uplinks: it reads 0 devices, and nodes test says
@@ -1017,7 +1024,6 @@ case "\$url" in
 	https://raw.githubusercontent.com/IfSugar/arteria/*) f="$srv/raw/\${url#https://raw.githubusercontent.com/IfSugar/arteria/}" ;;
 	https://api.github.com/repos/IfSugar/arteria/releases/latest) f="$srv/api/latest" ;;
 	https://api.github.com/repos/IfSugar/arteria/branches/*) f="$srv/api/branches/\${url#https://api.github.com/repos/IfSugar/arteria/branches/}" ;;
-	https://api.github.com/repos/IfSugar/arteria/compare/*) u=\${url#https://api.github.com/repos/IfSugar/arteria/compare/}; f="$srv/api/compare/\${u%%\?*}" ;;
 	*) f=/nonexistent ;;
 esac
 if [ -f "\$f" ]; then if [ -n "\$o" ]; then cat "\$f" > "\$o"; else cat "\$f"; fi; [ -n "\$w" ] && printf 200; exit 0; fi
@@ -1074,7 +1080,6 @@ else bad "update dev fix/menu:"; cat "$t/upd.out" "$t/curl.log"; fi
 # A development version tells amtm not to compare it with the release by MD5 (amtm took a development version for an MD5 update
 # of the release with the same number, and put the release back over it). Through amtm it's replaced only by a newer release.
 printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"; release 9.9.10 9.9.10
-mkdir -p "$srv/api/compare"; printf '{"status": "ahead", "ahead_by": 2, "behind_by": 0}' > "$srv/api/compare/9.9.10...0123456"   # it has commits the release hasn't
 n_md5=$(grep -c '^# amtm NoMD5check' "$R/jffs/addons/arteria/arteria.sh")
 upd amtmupdate && rc=0 || rc=1
 if [ "$n_md5" = 1 ] && [ "$(sed -n 2p "$R/jffs/addons/arteria/arteria.sh" | cut -c1-17)" = '# amtm NoMD5check' ] && [ $rc = 0 ] \
@@ -1091,15 +1096,6 @@ if [ $rc = 0 ] && [ "$(inst_ver)" = 9.9.11 ] && [ ! -f "$R/jffs/addons/arteria/b
 else bad "amtmupdate, newer release over a development version (rc $rc):"; cat "$t/upd.out" "$R/tmp/arteria/amtmupdate.log"; fi
 cp "$t/dev.sh" "$R/jffs/addons/arteria/arteria.sh"; cp "$t/dev.asp" "$R/jffs/addons/arteria/arteria.asp"; cp "$t/dev.build" "$R/jffs/addons/arteria/build"
 printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"
-# the release with the development version's own number, once it has every commit of it (the branch became the release): it
-# replaces the development version through amtm too, which otherwise kept it until the next release
-printf '{"status": "behind", "ahead_by": 0, "behind_by": 3}' > "$srv/api/compare/9.9.10...0123456"
-upd amtmupdate && rc=0 || rc=1
-if [ $rc = 0 ] && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ] && cmp -s "$R/jffs/addons/arteria/arteria.sh" "$srv/raw/9.9.10/arteria.sh"; then
-	ok "amtmupdate: the release with a development version's number replaces it once it has all of it"
-else bad "amtmupdate, a release that has all of a development version (rc $rc):"; cat "$t/upd.out" "$R/tmp/arteria/amtmupdate.log"; fi
-cp "$t/dev.sh" "$R/jffs/addons/arteria/arteria.sh"; cp "$t/dev.asp" "$R/jffs/addons/arteria/arteria.asp"; cp "$t/dev.build" "$R/jffs/addons/arteria/build"
-rm -f "$srv/api/compare/9.9.10...0123456"
 # back to a release from a development version: the same number is installed again, and install takes the marks away
 upd update || true
 if grep -q "Updating 9.9.10 (development version: fix/menu @ 0123456, installed .*) -> 9.9.10, the release" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ] \
@@ -1198,9 +1194,11 @@ if grep -q "^  \[WARN\] node 1 (RP-AX56): something crashed on the node running 
 	&& grep -q '^== node 1 (RP-AX56)' "$R/tmp/arteria/node-trace.txt" && ! grep -qi '192\.168\|02:CC' "$t/doc.out" "$R/tmp/arteria/node-trace.txt"; then
 	ok "doctor: a command that crashes on a node is named, its trace saved without addresses"
 else bad "doctor, a crash on the node:"; cat "$t/doc.out"; fi
+own_key=$(grep -c '^ssh-ed25519 AAAAown me@laptop$' "$t/router-authkeys" 2>/dev/null)
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
-if [ -f "$t/router-authkeys" ] && ! grep -q 'arteria' "$t/router-authkeys"; then ok "uninstall takes the key out of the router's own list"
+if [ -f "$t/router-authkeys" ] && ! grep -q 'arteria' "$t/router-authkeys" && { [ "$own_key" = 0 ] || grep -q '^ssh-ed25519 AAAAown me@laptop$' "$t/router-authkeys"; }; then
+	ok "uninstall takes the key out of the router's own list$( [ "$own_key" = 1 ] && printf ', and leaves your own')"
 else bad "uninstall left the key in the router's list (or there was no list to check):"; cat "$t/router-authkeys" 2>/dev/null; fi
 cmp -s "$R/jffs/scripts/services-start" "$t/ss.before" && ok "other scripts' hook lines untouched" || { bad "services-start changed:"; cat "$R/jffs/scripts/services-start"; }
 grep -q Arteria "$m" && bad "menu line left behind" || ok "menu line removed"

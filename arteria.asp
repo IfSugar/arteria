@@ -1029,25 +1029,32 @@ function buildNet(d) {
 		net.nodes.push(node);
 	});
 	/* Only a Wi-Fi 7 row's address can be a link address (mldOf), and it isn't taken for: a station on a radio as itself, a node or
-	   its backhaul station, a device on a node's port, or one learned on a router port no node is behind (a node's own Wi-Fi
-	   devices are learned on the port it is behind) */
-	var notMld = Object.create(null), viaNode = Object.create(null);
-	var link7 = function (r, lk) { return r[10] === 'be' ? mldOf(lk, notMld) : lk; };
+	   its backhaul station, or a device on a cable (a node's port, a router port), where the device's own address was learned.
+	   A port with a node behind it is the exception for a node's own Wi-Fi devices, whose own addresses are learned there too:
+	   on a router port, or on a node's port another node is behind (a node wired behind a node). A station on the router's own
+	   radios has its own address learned on those radios, never on a port: there, every port's addresses count. */
+	var notMld = Object.create(null), notMldR = Object.create(null), viaNode = Object.create(null);
+	var isNodeAddr = function (m, but) { return net.nodes.some(function (o) { return o !== but && (m === o.mac || o.sta.indexOf(m) >= 0); }); };
+	var link7 = function (r, lk, router) { return r[10] === 'be' ? mldOf(lk, router ? notMldR : notMld) : lk; };
 	(d.sta || []).forEach(function (r) { notMld[r[2]] = 1; });
 	net.nodes.forEach(function (n) {
+		var toNode = {};
 		notMld[n.mac] = 1; n.sta.forEach(function (m) { notMld[m] = 1; });
 		n.rows.forEach(function (r) { notMld[r[2]] = 1; });
-		n.pmacs.forEach(function (pm) { notMld[pm[1]] = 1; });
+		n.pmacs.forEach(function (pm) { if (isNodeAddr(pm[1], n)) toNode[pm[0]] = 1; });
+		n.pmacs.forEach(function (pm) { if (!toNode[pm[0]]) notMld[pm[1]] = 1; });
 	});
-	(d.macs || []).forEach(function (pm) { if (net.nodes.some(function (n) { return pm[1] === n.mac || n.sta.indexOf(pm[1]) >= 0; })) viaNode[pm[0]] = 1; });
+	(d.macs || []).forEach(function (pm) { if (isNodeAddr(pm[1])) viaNode[pm[0]] = 1; });
 	(d.macs || []).forEach(function (pm) { if (!viaNode[pm[0]]) notMld[pm[1]] = 1; });
+	Object.keys(notMld).forEach(function (m) { notMldR[m] = 1; });
+	(d.macs || []).forEach(function (pm) { notMldR[pm[1]] = 1; });
 	/* the router's own Wi-Fi clients, and the nodes' backhaul stations */
 	var seen = {};
 	(d.sta || []).forEach(function (r) {
 		var mac = r[2], lk = mac;
 		if (bh[mac]) { bh[mac].bhRows.push({ r: r, s: measure('b:' + mac, t, r[3], r[4]) }); return; }
 		if (own[mac]) return;
-		mac = link7(r, lk);   /* a Wi-Fi 7 device's link address: the device's own address (its counters stay the link's) */
+		mac = link7(r, lk, true);   /* a Wi-Fi 7 device's link address: the device's own address (its counters stay the link's) */
 		var s = measure('r:' + lk, t, r[3], r[4]);
 		var x = { ap: 'router', ifn: r[0], band: r[1], mac: mac, lmac: lk !== mac ? lk : '', rssi: r[5], phy: r[6], phyUp: r[7], conn: r[8], idle: r[9], std: r[10], nss: r[11], bw: r[12], s: s, st: 'ok' };
 		seen[mac] = seen[mac] ? bothLinks(seen[mac], x) : x;
@@ -2659,14 +2666,20 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 	      label moved), before anything else, in any zone;
 	   2. then the zones' other devices that stood (in a stand a picked one had no room for), for now;
 	   3. then each picked newcomer takes a free stand, near its kind, or else one of those others' (that one goes to the tray). */
-	var kept = {};
+	var kept = {}, gone = {};   /* gone: an other that gave up its stand to a newcomer waits on the tray, not on another stand */
 	if (prev) {
 		var faceOf = function (z, sl) { return z.g === 'w' ? 'L' : sl.face; };
 		var back = function (z, dv) {
 			var p = prev.at[dv.id], sh;
 			if (!p || p.g !== z.g || z.slots.indexOf(p.slot) < 0) return null;
 			sh = shapeAt(dv.kind || '', p.slot, faceOf(z, p.slot));
-			if (!R.clearFor(sh) || !R.spotFree(p.lab, p.lab.w, null)) return null;
+			/* its drawing against the other drawings and the fixed labels only: the labels of the others that stay were checked
+			   against it when they took their spots, as close as a label may come (nearer than a drawing to a label) */
+			var labs = R.labs, lines = R.lines, ok;
+			R.labs = labs.slice(0, fixed.length); R.lines = lines.slice(0, fixed.length);
+			ok = R.clearFor(sh);
+			R.labs = labs; R.lines = lines;
+			if (!ok || !R.spotFree(p.lab, p.lab.w, null)) return null;
 			R.objs.push(sh);
 			var lab = R.hold(p.lab, p.lab.w);
 			return { dv: dv, slot: p.slot, lab: lab, sh: sh, r: R.labs[R.labs.length - 1], l: R.lines[R.lines.length - 1] };
@@ -2715,7 +2728,7 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 				for (var x = k.extra.length - 1; x >= 0; x--) {   /* one of the others gives up its stand */
 					var e = k.extra[x];
 					pull(e); k.extra.splice(x, 1); k.n--;
-					if (place(dv, i)) return;
+					if (place(dv, i)) { gone[e.dv.id] = 1; return; }
 					put(e); k.extra.splice(x, 0, e); k.n++;
 				}
 			});
@@ -2768,7 +2781,7 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 		var used = best.at.filter(function (s) { return s; }).concat((best.extra || []).map(function (e) { return e.slot; })), left = z.n - best.n;
 		var bySize = function (a, b) { return (b.link === 'wired') - (a.link === 'wired') || size(b.kind || '') - size(a.kind || '') || byName(a, b) || (a.id < b.id ? -1 : 1); };
 		devs.filter(function (dv, i) { return !best.at[i]; }).sort(bySize).concat((z.rest || []).slice().sort(bySize)).forEach(function (dv) {
-			if (left <= 0 || out.at[dv.id]) return;
+			if (left <= 0 || out.at[dv.id] || gone[dv.id]) return;
 			var k = dv.kind || '', lw = labelW(dv.id, dv.name, x3(dv)), order = z.slots;
 			var away = function (s) { return Math.min.apply(null, kin[k].map(function (t) { return Math.abs(t.cx - s.cx) + Math.abs(t.cy - s.cy); })); };
 			if (kin[k]) order = z.slots.map(function (s, i) { return [away(s), i, s]; }).sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }).map(function (e) { return e[2]; });

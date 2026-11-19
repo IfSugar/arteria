@@ -426,6 +426,7 @@ E=" "
 t nvram get lan_ifnames wan_ifnames
 for p in $(nvram get lan_ifnames) $(nvram get wan_ifnames); do
 	case "$Y$U$E" in *" $p "*) continue ;; esac
+	[ -d "$Q/class/net/$p/bonding_slave" ] && continue   # a bond's port: the bond is read (below)
 	for d in "$Q/class/net/$p/brport" "$Q/class/net/$p".*/brport; do [ -d "$d" ] && { E="$E$p "; break; }; done
 done
 # and an Ethernet port that is only in another bridge: a LAN port given to a VLAN (Guest Network Pro's LAN: VLAN) leaves
@@ -435,6 +436,7 @@ for d in "$Q"/class/net/*/brport; do
 	p=${d%/brport}; p=${p##*/}; p=${p%.[0-9]*}
 	case "$p" in eth[0-9]*|vlan[0-9]*|bond[0-9]*) ;; *) continue ;; esac
 	case "$Y$U$E" in *" $p "*) continue ;; esac
+	[ -d "$Q/class/net/$p/bonding_slave" ] && continue
 	[ -d "$Q/class/net/$p" ] && E="$E$p "
 done
 if [ "$E" != " " ]; then t brctl show; brctl show > /dev/null 2>&1 || E=" "; fi
@@ -1636,9 +1638,10 @@ update() {   # [force]  fetch the latest release from GitHub and reinstall over 
 		rm -rf "$dl"; say "Already up to date ($VERSION)."; return 0
 	fi
 	# amtm asks for an update when the script differs from the release with the same number: a development version does.
-	# Through amtm, a development version is replaced only by a newer release, or by the release with its number once that
-	# has all of it (built from a branch that became the release) ('update' itself goes back to the release).
-	if [ -n "$AR_AMTM" ] && [ -f "$BUILD_FILE" ] && ! ver_gt "$new" "$VERSION" && ! { [ "$new" = "$VERSION" ] && in_release "$new"; }; then
+	# Through amtm, a development version is replaced only by a newer release ('update' itself goes back to the release).
+	# amtm runs amtmupdate only for a newer number, so a development version stays over the release with its own number
+	# until the next one, or until 'update'.
+	if [ -n "$AR_AMTM" ] && [ -f "$BUILD_FILE" ] && ! ver_gt "$new" "$VERSION"; then
 		rm -rf "$dl"; say "Kept the $(build_text): the latest release, $new, isn't newer. '$SCRIPT update' goes back to it."; return 0
 	fi
 	if ver_gt "$VERSION" "$new" && [ "$1" != "force" ]; then
@@ -1652,12 +1655,6 @@ update() {   # [force]  fetch the latest release from GitHub and reinstall over 
 	install_dl
 }
 
-in_release() {   # tag: true if that release has every commit of this development version (GitHub says so; unsure is no)
-	read -r kind br sha when 2>/dev/null < "$BUILD_FILE"
-	case "$sha" in ''|*[!0-9a-f]*) return 1 ;; esac
-	curl -fsL --proto =https --proto-redir =https --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
-		"https://api.github.com/repos/$REPO/compare/$1...$sha?per_page=1" 2>/dev/null | grep -q '"ahead_by": *0[^0-9]'
-}
 build_text() {   # "" for a release; "development version: main @ 1a2b3c4, installed 2026-11-11 23:30"
 	[ -f "$BUILD_FILE" ] || return 0
 	read -r kind br sha when < "$BUILD_FILE"
