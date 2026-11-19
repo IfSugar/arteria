@@ -32,7 +32,7 @@ GROUPS = [
         ('console', ['PS5', 'Xbox', 'Nintendo Switch']), ('vr', ['Quest 3', 'VR headset'])]),
     ('Home and office', [
         ('printer', ['Office printer', 'LaserJet', 'Brother printer']), ('printer3d', ['3D printer', 'Bambu', 'Prusa']),
-        ('nas', ['Synology NAS', 'Ugreen NAS', 'JohnsNas']), ('switch', []),
+        ('nas', ['Synology NAS', 'Ugreen NAS', 'JohnsNas']), ('switch', ['Office switch', 'Switch-01', 'GS308E']),
         ('fitness', ['Peloton', 'Treadmill'])]),
     ('Smart home', [
         ('camera', ['Garage camera', 'Reolink', 'Baby monitor']), ('doorbell', ['Doorbell', 'Ring doorbell']),
