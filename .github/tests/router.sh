@@ -327,6 +327,21 @@ export AR_NODE_PROC="$t/node-proc"
 run()  { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" BASH_ENV="$t/no-builtins.sh" "$bash_bin" "$script" "$@"; }
 runa() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$script" "$@"; }
 
+# ---- what both halves use -------------------------------------------------------------------
+# The checks come in two halves that CI runs side by side: ROUTER_PART=sampling (a sample, the sampler, the AiMesh node
+# sessions, the guard) and ROUTER_PART=install (install, the hooks, the menu, update, doctor, uninstall). Without it, both.
+PART=${ROUTER_PART:-all}
+W=$R/www/user/arteria
+inst="$R/jffs/addons/arteria/arteria.sh"
+runi() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$inst" "$@"; }
+# waitfor SECONDS COMMAND...: retry COMMAND every 0.1 s until it succeeds, for at most SECONDS, instead of a fixed
+# sleep. It only waits: the checks after it decide (and say) whether what it waited for happened.
+waitfor() { local end=$(( $(date +%s%N) / 1000000 + $1 * 1000 )); shift; until "$@"; do [ $(( $(date +%s%N) / 1000000 )) -ge $end ] && return 0; sleep 0.1; done; }
+seq_at_least() { [ "$(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null | cut -d: -f2)" -ge "$1" ] 2>/dev/null; }
+sampler_gone() { [ ! -f "$R/tmp/arteria/sampler.pid" ]; }
+no_session() { ! pgrep -f "$B/dbclient" > /dev/null 2>&1 && ! grep -qsa "AR_NODE_SESSION=$t" /proc/[0-9]*/environ; }
+
+if [ "$PART" != install ]; then
 # ---- 1: one sample --------------------------------------------------------------------------
 mkdir -p "$R/jffs/addons/arteria"
 runa sample > "$t/sample.json" 2> "$t/sample.err" || true
@@ -431,16 +446,8 @@ for k in ('epoch','sta','up'): a.pop(k,None); b.pop(k,None)
 sys.exit(0 if a==b else 1)" && ok "ash and bash-without-builtins agree" || bad "ash and bash give different samples"
 
 # ---- 3 first: no key, no retry loop ---------------------------------------------------------------
-W=$R/www/user/arteria
 cp "$script" "$R/jffs/addons/arteria/arteria.sh"; cp "$asp" "$R/jffs/addons/arteria/arteria.asp"
 printf 'INTERVAL=1\nIDLE_STOP=10\n' > "$R/jffs/addons/arteria/config"
-inst="$R/jffs/addons/arteria/arteria.sh"
-runi() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$inst" "$@"; }
-# waitfor SECONDS COMMAND...: retry COMMAND every 0.1 s until it succeeds, for at most SECONDS, instead of a fixed
-# sleep. It only waits: the checks after it decide (and say) whether what it waited for happened.
-waitfor() { local end=$(( $(date +%s%N) / 1000000 + $1 * 1000 )); shift; until "$@"; do [ $(( $(date +%s%N) / 1000000 )) -ge $end ] && return 0; sleep 0.1; done; }
-seq_at_least() { [ "$(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null | cut -d: -f2)" -ge "$1" ] 2>/dev/null; }
-sampler_gone() { [ ! -f "$R/tmp/arteria/sampler.pid" ]; }
 # a rename on the page: it saves the router's client list, then asks for the names at once, not in 30 s
 rm -f "$W/names.htm"; runi service_event start arterianames
 grep -q 'Living room TV' "$W/names.htm" 2>/dev/null && [ ! -f "$R/tmp/arteria/sampler.pid" ] \
@@ -495,7 +502,11 @@ gap=$(( ${s1:-99999} - ${s0:-0} ))
 if [ -n "$s0" ] && [ "$gap" -lt 1900 ] && grep -q '"interval":3' "$W/live.htm" && [ -s "$W/names.htm" ]; then
 	ok "start: the second sample comes $gap ms after the first, then every 3 s as set; the names are written meanwhile"
 else bad "start: the second sample came $gap ms after the first (${s0:-no first sample seen})"; grep -o '"seq":[0-9]*,\|"interval":[0-9]*' "$W/live.htm"; ls "$W"; fi
-runi service_event start arteriastop; waitfor 6 sampler_gone
+# The page closes just after a sample: the sampler stops at once, not after its 3 s pause before the next one
+waitfor 5 seq_at_least 4; t_stop=$(date +%s%N); runi service_event start arteriastop
+waitfor 6 sampler_gone; ms_stop=$(( ($(date +%s%N) - t_stop) / 1000000 ))
+[ ! -f "$R/tmp/arteria/sampler.pid" ] && [ "$ms_stop" -lt 1500 ] && ok "the sampler stops at once when the page closes ($ms_stop ms, not after its 3 s pause)" \
+	|| bad "the sampler took $ms_stop ms to stop after the page closed (it should not finish its 3 s pause first)"
 sed -i 's/^INTERVAL=3$/INTERVAL=1/' "$R/jffs/addons/arteria/config"
 
 # ---- 2: with the key: the node's clients over the session ------------------------------------------
@@ -547,7 +558,6 @@ EOF
 grep -- " -i " "$t/dbclient.args" | grep -qv -- "-o BatchMode=yes" && { bad "a key login without BatchMode (dbclient could ask for a password):"; cat "$t/dbclient.args"; } || ok "key logins never offer a password (BatchMode)"
 runi service_event start arteriastop
 # no session left: neither the stand-in dbclient nor the node side it runs
-no_session() { ! pgrep -f "$B/dbclient" > /dev/null 2>&1 && ! grep -qsa "AR_NODE_SESSION=$t" /proc/[0-9]*/environ; }
 waitfor 6 no_session
 no_session && ok "node session ends with the sampler" || { bad "the node session outlived the page:"; pgrep -af "$B/dbclient"; }
 rm -rf "$R/tmp/arteria" "$W"
@@ -873,6 +883,14 @@ grep -q 'paused for 2 minutes' "$t/syslog" && ! grep -q 'sampling stopped: no pa
 runi service_event start arteriastop
 lav 1.39; rm -f "$t/proc/cpuinfo" "$t/proc/meminfo"; rm -rf "$R/tmp/arteria" "$W"
 
+fi   # the sampling half
+
+if [ "$PART" != sampling ]; then
+if [ "$PART" = install ]; then   # what the sampling half leaves for this one: the addon in place, its settings and node key
+	mkdir -p "$R/jffs/addons/arteria/.ssh"; chmod 700 "$R/jffs/addons/arteria/.ssh"
+	cp "$script" "$inst"; cp "$asp" "$R/jffs/addons/arteria/arteria.asp"
+	printf 'INTERVAL=1\nIDLE_STOP=10\n' > "$R/jffs/addons/arteria/config"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
+fi
 # ---- 4: install and uninstall ----------------------------------------------------------------
 printf '#!/bin/sh\n/some/other/script startup &\n' > "$R/jffs/scripts/services-start"
 cp "$R/jffs/scripts/services-start" "$t/ss.before"
@@ -1051,7 +1069,9 @@ else bad "update after update dev:"; cat "$t/upd.out"; fi
 # doctor: the known problems, found, then fixed. What going back to 1.0.0 leaves (its own hook line next to today's), a
 # file an old version left, page files anyone could change, a client list copy left after the page closed, a node
 # session left running; then a command that crashes on the node. Never a name, MAC or IP in what it says.
-doc() { AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" doctor "$@" > "$t/doc.out" 2>&1; }
+# doctor's own waits for the page's request are up to 20 s (a busy router is slow): here a request takes about 1 s, and one
+# that can't arrive (a broken hook) would only wait the whole time
+doc() { AR_DR_WAIT=${AR_DR_WAIT:-5} AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" doctor "$@" > "$t/doc.out" 2>&1; }
 printf '%s/jffs/addons/arteria/arteria.sh service_event "$@" & # arteria\n' "$R" >> "$R/jffs/scripts/service-event"
 echo pub > "$R/jffs/addons/arteria/node_key.new.pub"
 mkdir -p "$W"; echo '{}' > "$W/clist.htm"; chmod 777 "$W"; chmod 666 "$W/clist.htm"
@@ -1154,5 +1174,6 @@ if ! grep -q PLANTED "$R/jffs/addons/arteria/arteria.asp" 2>/dev/null && grep -q
 	ok "install: a page planted next to the installer is ignored, the release's is downloaded"
 else bad "planted page:"; cat "$t/inst.out"; head -3 "$R/jffs/addons/arteria/arteria.asp"; fi
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > /dev/null 2>&1 || true
+fi   # the install half
 
-[ $fail -eq 0 ] && echo "Router: all checks passed." || { echo "::error::Router checks failed."; exit 1; }
+[ $fail -eq 0 ] && echo "Router: all checks passed ($PART)." || { echo "::error::Router checks failed ($PART)."; exit 1; }
