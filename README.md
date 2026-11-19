@@ -18,7 +18,7 @@ An **Arteria** tab in **Traffic Analyzer** (or the last tab of **Network Tools**
 - **Trace any device**: tap it and everything else dims. The readout shows its rates, share, signal, link rate and path (*RT-AX86U → Hall → LG TV*), and **Details** shows its IP and MAC, host name, maker, system, Wi-Fi standard, connection time, IPv6 and DHCP lease.
 - **Rename it right there**: the pencil after its name opens a field; the icon shows what the new name will make it while you type. The name goes into the router's own client list, so the router shows it too. See [Devices](#devices).
 - **51 kinds of device**, each with its own drawing and icon, recognised by name, by the icon you picked in the router, or by maker. AiMesh nodes and routers are drawn by model.
-- **Expanded view**: fills the window (or the screen), with a stand for about 30 devices and a third line on each label. Its map **zooms and pans** like a whiteboard: the mouse wheel or a pinch zooms around the pointer, dragging or two fingers move around, and **− / 100% / +** zoom in steps or show the whole map.
+- **Expanded view**: fills the window (or the screen), with room for 20 to 30 devices (fewer when they are big, like TVs; the rest wait on the **+N more** tray) and a third line on each label. Its map **zooms and pans** like a whiteboard: the mouse wheel or a pinch zooms around the pointer, dragging or two fingers move around, and **− / 100% / +** zoom in steps or show the whole map.
 - **AiMesh nodes, per device**: the router reads each node's own clients over SSH while the page is open, the ones on its LAN ports too. Without that, each node shows its backhaul total. **Dual WAN** counts both WANs as internet, devices on a **Guest Network Pro** LAN port are placed on it, and a device on a guest network, on the router or a node, shows that network's name.
 - **Mb/s or MB/s** with one switch, and notices for a weak or offline backhaul, a node that can't be read, or a router that's too busy. A backhaul is weak when it's slow under traffic (under 200 Mb/s), or its signal is low (under -75 dBm, -80 on 6 GHz) and it isn't running fast.
 
@@ -52,7 +52,7 @@ Reading these counters doesn't disturb Wi-Fi or change any setting.
 <td width="50%"><a href="docs/zoom.webp"><img src="docs/zoom.webp" alt="The expanded view's map zoomed in on the AiMesh node's zone, with a TV traced and the zoom buttons in the corner"></a><br><b>Zoomed in</b> on the expanded map</td>
 </tr>
 <tr>
-<td colspan="2"><a href="docs/expanded.webp"><img src="docs/expanded.webp" alt="The expanded view at 1600 by 900: a large map with about thirty devices, each label with a third line for band and signal, and the readout and the busiest devices in a column on the right"></a><br><b>Expanded</b>: the whole window, a stand for every device, and more on each label</td>
+<td colspan="2"><a href="docs/expanded.webp"><img src="docs/expanded.webp" alt="The expanded view at 1600 by 900: a large map with about thirty devices, each label with a third line for band and signal, and the readout and the busiest devices in a column on the right"></a><br><b>Expanded</b>: the whole window, room for more devices, and more on each label</td>
 </tr>
 </table>
 

@@ -3,7 +3,7 @@
 
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
-Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, nodecrowd, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones),
+Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, nodecrowd, house, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones),
 wired (a managed switch with four devices on a LAN port, a device on the node's LAN port, a phone on the node's guest network).
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
@@ -67,6 +67,20 @@ if SCN == 'nodecrowd':   # 20 clients, half of them behind the node, several TVs
             ('Guest iPhone 13 Pro Max', 'node', '5', 0.002, 0.0, -70), ('BOSCH-WAV28K40GB-AB12CD3456', 'node', '2.4', 0.001, 0.0, -60),
             ('Lounge AC', 'node', '2.4', 0.002, 0.0, -53), ('Kids TV', 'node', '5', 0.002, 0.0, -59)]):
         dev('02:CC:00:00:04:%02X' % i, nm, where, band, d, u, rssi, nick=bool(nm), **({} if nm else {'vendor': 'Signify B.V.'}))
+if SCN == 'house':   # a whole house: 27 clients, 15 of them behind the node (nine bulbs, three TVs), a dozen on the router: the most crowded map
+    DEVICES = []
+    dev('02:CC:00:00:04:00', 'Loft NAS', 'wired', 'eth5', 0.11, 1.2, None)
+    for i, (nm, where, band, d, u, rssi) in enumerate([
+            ('Office iMac', 'router', '5', 0.217, 8.2, -45), ('Lounge TV', 'router', '5', 0.004, 0.003, -43),
+            ('Kitchen Echo Dot', 'router', '5', 0.004, 0.001, -53), ('Landing purifier', 'router', '2.4', 0.002, 0.0, -36),
+            ('Gaming PC', 'router', '5', 0.002, 0.0, -77), ('iPhone 15', 'router', '5', 0.002, 0.0, -44),
+            ('Pixel 8a', 'router', '5', 0.003, 0.001, -58), ('Nest thermostat', 'router', '2.4', 0.002, 0.001, -54),
+            ('boiler-gateway', 'router', '2.4', 0.002, 0.003, -61), ('Porch bulb', 'router', '2.4', 0.004, 0.002, -47),
+            ('Garden bulb', 'router', '2.4', 0.006, 0.006, -60),
+            ('Den TV', 'node', '5', 1.1, 1.2, -63), ('Nursery TV', 'node', '5', 0.005, 0.0, -58), ('Spare Room TV', 'node', '5', 0.003, 0.001, -61),
+            ('Work laptop', 'node', '5', 0.085, 0.085, -43), ('Galaxy A55', 'node', '5', 0.005, 0.0, -55), ('Robot vacuum', 'node', '2.4', 0.006, 0.007, -58)]
+            + [('Landing bulb %d' % k, 'node', '2.4', 0.003 + k * 0.001, 0.002 + (k % 3) * 0.002, -42 - k * 2) for k in (1, 2, 3, 4, 5, 7, 8, 10, 11)], 1):
+        dev('02:CC:00:00:04:%02X' % i, nm, where, band, d, u, rssi)
 if SCN == 'crowd':   # a real-world crowd: 28 clients, many quiet and unnamed, half of them on the node
     for i, (nm, where, band, host, vendor) in enumerate([
             ('Work MacBook', 'router', '5', '', ''), ('', 'router', '2.4', '', ''), ('LGwebOSTV', 'router', '5', 'LGwebOSTV', ''),
