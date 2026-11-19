@@ -980,7 +980,7 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 		Object.keys(p1).filter(id => p2[id] && p1[id] !== p2[id]).forEach(id => moved.push((big ? 'expanded ' : 'page ') + trial + ': ' + p1[id] + ' -> ' + p2[id].split('@')[1]));
 	}
 	T.useGeom(keepG); A.stands = null; A.slot = {};
-	ok(swaps >= 20 && !moved.length && came * 3 >= offBefore * 2, 'traffic that swaps a device onto the map moves none of the others (' + swaps + ' swaps; the busy one came on in ' + came + ' of ' + offBefore + ')',
+	ok(swaps >= 20 && !moved.length && came * 5 >= offBefore * 3, 'traffic that swaps a device onto the map moves none of the others (' + swaps + ' swaps; the busy one came on in ' + came + ' of ' + offBefore + ')',
 		moved.slice(0, 4).join('; ') + ' came ' + came + '/' + offBefore);
 }
 

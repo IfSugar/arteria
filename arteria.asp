@@ -2703,7 +2703,13 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 				}
 				return false;
 			};
-			devs.forEach(function (dv, i) {
+			/* newcomers in the full fit's order: one on a cable first, then the biggest drawings */
+			var sz = function (dv) { var b = shapeOf(dv.kind || '', z.g === 'w' ? 'L' : undefined).bb; return (b[2] - b[0]) * (b[3] - b[1]); };
+			devs.map(function (dv, i) { return i; }).sort(function (a, b) {
+				var x = devs[a], y = devs[b];
+				return (y.link === 'wired') - (x.link === 'wired') || sz(y) - sz(x) || a - b;
+			}).forEach(function (i) {
+				var dv = devs[i];
 				if (k.at[i]) return;
 				if (k.n < z.n && place(dv, i)) return;
 				for (var x = k.extra.length - 1; x >= 0; x--) {   /* one of the others gives up its stand */
@@ -2808,7 +2814,8 @@ function mapLayout(net) {
 	   pickStands). So it is worked out once for a set of devices, and kept until the set changes. */
 	var ids = function (l) { return l.map(function (dv) { return [dv.id, dv.kind, dv.name]; }).sort(); };
 	zones.forEach(function (z) { z.rest = z.all.filter(function (dv) { return z.list.indexOf(dv) < 0; }); });
-	var base = JSON.stringify([G.key, net.router.model, L.nodes.map(function (x) { return [x.node.id, x.node.name, x.node.model]; }), L.hidden.length,
+	/* (once the first rates are in, the picks are made anew, and so is the fit: the first one had no traffic to go by) */
+	var base = JSON.stringify([G.key, !!A.gotAny, net.router.model, L.nodes.map(function (x) { return [x.node.id, x.node.name, x.node.model]; }), L.hidden.length,
 		zones.map(function (z) { return ids(z.all); })]);
 	var key = JSON.stringify([base, zones.map(function (z) { return ids(z.list); })]);
 	if (!A.stands || A.stands.key !== key) {
