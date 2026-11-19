@@ -1306,7 +1306,7 @@ function px(v) { return n1(v * G.U / 24); }   /* a size in pixels that grows wit
 function ptsS(ps) { return ps.map(function (p) { return n1(p[0]) + ',' + n1(p[1]); }).join(' '); }
 function poly(ps, st) { return '<polygon points="' + ptsS(ps) + '" style="' + st + '"/>'; }
 function pline(ps, st, dy) { return '<path d="M' + ps.map(function (p) { return n1(p[0]) + ' ' + n1(p[1] + (dy || 0)); }).join(' L') + '" style="' + st + '"/>'; }
-function ellPts(o, c, r) { var rx = 1.2247 * r * G.U + 2, ry = 0.7071 * r * G.U + 2; o.pts.push([c[0] - rx, c[1] - ry], [c[0] + rx, c[1] + ry]); }   /* an ell()'s extent, in a drawing's outline */
+function ellPts(o, c, r) { var rx = 1.2247 * r * G.U + 2, ry = 0.7071 * r * G.U + 2; o.pts.push([c[0] - rx, c[1] - ry], [c[0] + rx, c[1] - ry], [c[0] - rx, c[1] + ry], [c[0] + rx, c[1] + ry]); }   /* an ell()'s extent, in a drawing's outline: four corners, for hull() */
 function ell(c, r, st, cls) { return '<ellipse cx="' + n1(c[0]) + '" cy="' + n1(c[1]) + '" rx="' + n1(1.2247 * r * G.U) + '" ry="' + n1(0.7071 * r * G.U) + '"' + (cls ? ' class="' + cls + '"' : '') + ' style="' + st + '"/>'; }
 /* Four tones from one base colour: top, left (lit), right (shade), deep; plus edge and rim. Light comes from the upper left. */
 function MAT(base, light) {
@@ -1367,6 +1367,32 @@ Obj.prototype.bbox = function () {
 	return [Math.min.apply(null, xs), Math.min.apply(null, ys), Math.max.apply(null, xs), Math.max.apply(null, ys)];
 };
 
+/* A drawing's outline as a polygon around all its points (bbox() is the rectangle around them, mostly empty at its corners
+   for anything drawn on the slant): what tells whether two drawings overlap. */
+function hullOf(pts) {
+	var p = pts.slice().sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }), h = [], i, t;
+	var turn = function (o, a, b) { return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]); };
+	for (i = 0; i < p.length; i++) { while (h.length >= 2 && turn(h[h.length - 2], h[h.length - 1], p[i]) <= 0) h.pop(); h.push(p[i]); }
+	for (i = p.length - 2, t = h.length + 1; i >= 0; i--) { while (h.length >= t && turn(h[h.length - 2], h[h.length - 1], p[i]) <= 0) h.pop(); h.push(p[i]); }
+	h.pop();
+	return h;
+}
+/* two outlines closer than gap pixels: there is no line between them with one wholly on each side, gap apart */
+function hullsMeet(a, b, gap) {
+	var apart = function (p, q) {
+		for (var i = 0; i < p.length; i++) {
+			var u = p[i], v = p[(i + 1) % p.length], nx = v[1] - u[1], ny = u[0] - v[0], n = Math.sqrt(nx * nx + ny * ny), far = -1e9, near = 1e9, j, d;
+			if (!n) continue;
+			for (j = 0; j < p.length; j++) { d = ((p[j][0] - u[0]) * nx + (p[j][1] - u[1]) * ny) / n; if (d > far) far = d; }
+			for (j = 0; j < q.length; j++) { d = ((q[j][0] - u[0]) * nx + (q[j][1] - u[1]) * ny) / n; if (d < near) near = d; }
+			if (near - far >= gap) return true;
+		}
+		return false;
+	};
+	return !apart(a, b) && !apart(b, a);
+}
+Obj.prototype.hull = function () { return hullOf(this.pts); };
+
 /* The fixed parts: the internet terminal and the router. */
 function objWan() {
 	var o = new Obj('wan', 1.675, 1.675, 2.45);
@@ -1381,7 +1407,7 @@ function objWan() {
 	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="15" style="fill:url(#ar-globe);stroke:#bfe8ff;stroke-width:1.1"/>');
 	o.svg.push('<path d="M' + n1(g[0] - 15) + ' ' + n1(g[1]) + ' h30 M' + n1(g[0] - 13) + ' ' + n1(g[1] - 7.5) + ' a15 6.5 0 0 0 26 0 M' + n1(g[0] - 13) + ' ' + n1(g[1] + 7.5) + ' a15 6.5 0 0 1 26 0" style="fill:none;stroke:rgba(225,245,255,.6);stroke-width:.9"/>');
 	o.svg.push('<ellipse cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" rx="6.5" ry="15" style="fill:none;stroke:rgba(225,245,255,.6);stroke-width:.9"/>');
-	o.pts.push([g[0] - 16, g[1] - 16], [g[0] + 16, g[1] + 16]);
+	o.pts.push([g[0] - 16, g[1] - 16], [g[0] + 16, g[1] - 16], [g[0] - 16, g[1] + 16], [g[0] + 16, g[1] + 16]);
 	o.collar(2.2, 1.5, 0.2, 0.35);
 	return o;
 }
@@ -1428,7 +1454,7 @@ Obj.prototype.disc = function (cx, cy, z, r, h, m, side, o) {
 	var c0 = P(cx, cy, z), c1 = P(cx, cy, z + h), rx = 1.2247 * r * G.U, ry = 0.7071 * r * G.U;
 	this.svg.push('<path d="M' + n1(c1[0] - rx) + ' ' + n1(c1[1]) + ' L' + n1(c0[0] - rx) + ' ' + n1(c0[1]) + ' A' + n1(rx) + ' ' + n1(ry) + ' 0 0 0 ' + n1(c0[0] + rx) + ' ' + n1(c0[1]) + ' L' + n1(c1[0] + rx) + ' ' + n1(c1[1]) + ' Z" style="fill:url(#' + side + ');stroke:' + m.e + ';stroke-width:.7;stroke-linejoin:round"/>');
 	this.svg.push(ell(c1, r, 'fill:' + m.t + ';stroke:' + m.e + ';stroke-width:.7'));
-	if (o.track !== false) this.pts.push([c1[0] - rx, c1[1] - ry], [c0[0] + rx, c0[1] + ry]);
+	if (o.track !== false) this.pts.push([c1[0] - rx, c1[1] - ry], [c1[0] + rx, c1[1] - ry], [c0[0] - rx, c0[1] + ry], [c0[0] + rx, c0[1] + ry]);
 	if (o.shadow) this.shadow.push([cx - r * 0.75, cy - r * 0.75, r * 1.5, r * 1.5, 0.45 * (z + h) + 0.1, -0.2 * (z + h) - 0.04]);
 	return this;
 };
@@ -1640,7 +1666,7 @@ function drawLight(id, kind, cx, cy, face) {   /* a lit bulb on a small lamp foo
 	g = P(cx, cy, 0.62);
 	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="15" style="fill:url(#ar-glow)"/>');
 	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="7.5" style="fill:url(#ar-bulb);stroke:#ffe9a3;stroke-width:.9"/>');
-	o.pts.push([g[0] - 15, g[1] - 15], [g[0] + 15, g[1] + 15]);   /* its glow */
+	o.pts.push([g[0] - 15, g[1] - 15], [g[0] + 15, g[1] - 15], [g[0] - 15, g[1] + 15], [g[0] + 15, g[1] + 15]);   /* its glow */
 	o.target = P(cx, cy, 1.0);
 	return o;
 }
@@ -2302,7 +2328,8 @@ function objTray(cx, cy) {
 
 /* Where things go. The router sits in the middle; up to two AiMesh nodes (three in the expanded view) get a zone of their
    own, each with stands for its busiest clients (with more nodes, the busiest get the zones: pickNodes); the router's busiest Wi-Fi and wired clients get stands
-   around it; everything else goes on the "+N more" tray. Stands are sticky, so devices don't jump. */
+   around it; everything else goes on the "+N more" tray. Stands are sticky, so devices don't jump. A stand is only used
+   where the device's drawing overlaps no other and its label fits next to it (fitStands), so a crowded zone shows fewer. */
 var NODE_SLOTS = [
 	{ cx: 11.55, cy: 0.95, zone: [10.4, 0, 18, 6.4], text: [10.7, 6.05], dev: [{ cx: 16.98, cy: 1.9, face: 'R' }, { cx: 16.4, cy: 4.45 }, { cx: 13.9, cy: 4.75 }] },
 	{ cx: 1.3, cy: 9.6, zone: [0, 8.3, 5.3, 14], text: [0.35, 13.6], dev: [{ cx: 3.55, cy: 12.55 }, { cx: 1.35, cy: 12.55 }, { cx: 3.9, cy: 9.8 }] }
@@ -2351,13 +2378,16 @@ function geomBig(w, h, nodes) {
 }
 function box2(a, b, pad) { return [Math.min(a[0], b[0]) - pad, Math.min(a[1], b[1]) - pad, Math.max(a[0], b[0]) + pad, Math.max(a[1], b[1]) + pad]; }
 function genSlots(g) {
-	var cells = [], pitchX = 3.0, pitchY = 2.6;
+	var cells = [], pitchX = 1.5, pitchY = 1.3;   /* places a stand may be: far more than are used, and closer than drawings can stand (see fitStands) */
 	var inR = function (x, y, r) { return x > r[0] && x < r[2] && y > r[1] && y < r[3]; };
 	/* node zones: back right and front left as in the small view, a third front right. On a small floor (a
 	   short or narrow window) they shrink, so none reaches under the router or into another zone. */
 	var RT = [3.9, 4.3, 10.3, 9.9];   /* the router and its base plate, with half a cell of room */
 	var z0 = [Math.max(g.x1 - 10.5, RT[2] + 0.4), g.y0, g.x1, g.y0 + 9];
 	var z1 = [g.x0, Math.max(g.y1 - 8.4, RT[3] + 0.3), g.x0 + 9, g.y1];
+	/* With one node or two, nothing is in front of the first one's zone: it runs to the front wall, right of the router's
+	   pipes, where the floor is wide enough. A node often has more devices than the router, and they stay in its zone. */
+	if (g.nodes < 3 && g.x1 - 14.2 >= 6.5) z0 = [14.2, g.y0, g.x1, g.y1];
 	var z2 = [Math.max(g.x1 - 9.5, z1[2] + 0.3), Math.max(g.y1 - 8, z0[3] + 0.3), g.x1, g.y1];
 	if (z2[0] < RT[2] + 0.4) z2[1] = Math.max(z2[1], RT[3] + 0.3);
 	g.nodeSlots = [
@@ -2378,9 +2408,9 @@ function genSlots(g) {
 		var p = P(x, y, 0.8);
 		return (p[0] < 250 && p[1] < 84) || (p[0] > g.SW - 270 && p[1] < 70) || (p[0] < 450 && p[1] > g.SH - 46);
 	};
-	for (var i = 0, x = g.x0 + 1.6; x <= g.x1 - 1.4; i++, x += pitchX) for (var j = 0, y = g.y0 + 1.5; y <= g.y1 - 1.3; j++, y += pitchY) {
+	for (var x = g.x0 + 1.6; x <= g.x1 - 1.4; x += pitchX) for (var y = g.y0 + 1.5; y <= g.y1 - 1.3; y += pitchY) {
 		if (keep.some(function (r) { return inR(x, y, r); }) || overlay(x, y)) continue;
-		cells.push({ cx: +x.toFixed(2), cy: +y.toFixed(2), odd: (i + j) % 2 });
+		cells.push({ cx: +x.toFixed(2), cy: +y.toFixed(2) });
 	}
 	g.nodeSlots.forEach(function (ns) {
 		ns.text = [ns.zone[0] + 0.3, ns.zone[3] - 0.35];
@@ -2393,11 +2423,10 @@ function genSlots(g) {
 		});
 		ns.dev.sort(function (a, b) { return Math.abs(a.cx - ns.cx) + Math.abs(a.cy - ns.cy) - Math.abs(b.cx - ns.cx) - Math.abs(b.cy - ns.cy); });
 	});
-	/* as many stands as the stage has room for labels: about one per 24,000 px², the node and wired ones included */
+	/* the router's own: the rest of the floor, nearest first. How many are used is up to the room for drawings and labels. */
 	var d = function (c) { return Math.abs(c.cx - 7.1) + Math.abs(c.cy - 7.1); };
-	var cap = Math.round(g.SW * g.SH / 24000) - g.wiredSlots.length - g.nodeSlots.reduce(function (a, ns) { return a + ns.dev.length; }, 0);
-	g.wifiSlots = cells.filter(function (c) { return !c.taken; }).sort(function (a, b) { return a.odd - b.odd || d(a) - d(b); }).slice(0, Math.max(8, Math.min(40, cap)))
-		.map(function (c) { return { cx: c.cx, cy: c.cy }; });
+	g.wifiSlots = cells.filter(function (c) { return !c.taken; }).sort(function (a, b) { return d(a) - d(b) || a.cx - b.cx; }).map(function (c) { return { cx: c.cx, cy: c.cy }; });
+	g.wifiMax = 40;   /* at most, however big the floor */
 }
 G = geomSmall();
 
@@ -2449,8 +2478,217 @@ function trayName(devs, nodes) {
 	if (nodes.length) p.push('+' + nodes.length + (nodes.length > 1 ? ' nodes' : ' node'));
 	return p.join(' · ');
 }
+/* Devices of a kind in one cluster of stands. Each group starts at the free stand furthest from the middle of the free ones
+   (an outer one, so what's left stays in one piece) and takes the free stands nearest to it; inside a group, names run back
+   to front. With room (see fitStands), a group takes only stands where its drawing and its label have room, the kinds with
+   the biggest drawings first (they are the hardest to find room for), and a device left without one gets none. Without
+   it, the biggest group goes first. -> [stand for each device, in list order] */
+function standGroups(list, slots, room) {
+	var free = slots.slice(), at = [], groups = {}, kinds;
+	list.forEach(function (dv, i) { var k = dv.kind || ''; (groups[k] = groups[k] || []).push(i); });
+	/* with room to check: a kind with a device on a cable first (there are few, and their cable is on the map anyway), then the biggest drawings */
+	var cable = function (k) { return groups[k].some(function (i) { return list[i].link === 'wired'; }) ? 1 : 0; };
+	kinds = Object.keys(groups).sort(function (a, b) { return (room ? cable(b) - cable(a) || room.size(b) - room.size(a) : 0) || groups[b].length - groups[a].length || (a < b ? -1 : a > b ? 1 : 0); });
+	var d = function (a, b) { return Math.sqrt((a.cx - b.cx) * (a.cx - b.cx) + (a.cy - b.cy) * (a.cy - b.cy)); };
+	kinds.forEach(function (k) {
+		if (!free.length) return;
+		var mid = { cx: 0, cy: 0 };
+		free.forEach(function (s) { mid.cx += s.cx / free.length; mid.cy += s.cy / free.length; });
+		var seed = free.reduce(function (a, b) { return d(b, mid) > d(a, mid) + 1e-9 || (Math.abs(d(b, mid) - d(a, mid)) < 1e-9 && b.cx + b.cy < a.cx + a.cy) ? b : a; });
+		var near = free.slice().sort(function (a, b) { return d(a, seed) - d(b, seed) || (a.cx + a.cy) - (b.cx + b.cy); }), mine = [];
+		for (var j = 0; j < near.length && mine.length < groups[k].length; j++) if (!room || room.take(k, near[j], groups[k])) mine.push(near[j]);
+		mine.sort(function (a, b) { return (a.cx + a.cy) - (b.cx + b.cy) || a.cx - b.cx; });
+		groups[k].forEach(function (i, j) { at[i] = mine[j]; });
+		free = free.filter(function (s) { return mine.indexOf(s) < 0; });
+	});
+	return at;
+}
+
+/* ---------------------------------------------------------------- room for every drawing and its label
+   A stand is only used when the device's drawing overlaps no other drawing there and its label has a spot right next to
+   it. So mapLayout asks fitStands which of a zone's devices get a stand, and each comes back with its label's spot; the
+   others wait on the tray. A crowded zone shows fewer devices rather than drawings on top of one another, or labels far
+   from their devices at the end of long lines. */
+var SHAPE = {};
+/* a kind's drawing standing at (0, 0): its outline and where its label's line meets it. Drawings are the same wherever they stand. */
+function shapeOf(kind, face) {
+	var k = G.U + '|' + kind + '|' + (face || ''), sh = SHAPE[k];
+	if (!sh) {
+		var o = objDevice('', kind, 0, 0, face), bb = o.bbox(), p = P(0, 0);
+		sh = SHAPE[k] = { bb: [bb[0] - p[0], bb[1] - p[1], bb[2] - p[0], bb[3] - p[1]], ax: o.anchor[0] - p[0], hull: o.hull().map(function (q) { return [q[0] - p[0], q[1] - p[1]]; }) };
+	}
+	return sh;
+}
+function shapeAt(kind, s, face) {
+	var sh = shapeOf(kind, face), p = P(s.cx, s.cy);
+	return { bb: [sh.bb[0] + p[0], sh.bb[1] + p[1], sh.bb[2] + p[0], sh.bb[3] + p[1]], ax: sh.ax + p[0], hull: sh.hull.map(function (q) { return [q[0] + p[0], q[1] + p[1]]; }) };
+}
+/* A label's width: its name, or the widest rates its second line can show ("↓ 99.9M ↑ 99.9M"), so a busy device's numbers
+   never spill out. A node's second line can grow a " · weak" tag, so it gets room for that up front. */
+function labelName(name) { return name.length > 24 ? name.slice(0, 23) + '…' : name; }
+function labelW(id, name, x3) {
+	return Math.round(Math.max(textW(labelName(name), true), x3 ? textW(x3) * 0.96 + 8 : 0, id === 'router' ? 0 : textW('↓ 99.9M↑ 99.9M', false, 10.5) + 8,
+		id.indexOf('node:') === 0 ? 112 : 76) + 22);
+}
+/* The spots a label may take, the shortest line first: against its drawing (above, below, beside), shifted along it, then
+   a step or three out. Nothing further: the longest line is about 70 px. bb: the drawing's outline, ax: where its top is. */
+function labelSpots(bb, ax, w) {
+	var HIT = G.hit, mid = (bb[1] + bb[3]) / 2, out = [];
+	var add = function (c) { c.d = Math.sqrt((c.px - c.ax) * (c.px - c.ax) + (c.py - c.ay) * (c.py - c.ay)) + out.length * 0.01; out.push(c); };
+	var clamp = function (v, a, b) { return Math.min(Math.max(v, a), b); };
+	(G.big ? [0, 16, 32, 48] : [0, 16, 32, 48, 64]).forEach(function (g) {
+		[0, -17, 17, -34, 34, -51, 51, -68, 68, -85, 85].forEach(function (dx) {
+			var x = ax - w / 2 + dx;
+			add({ x: x, y: bb[1] - 7 - HIT - g, px: clamp(ax, x + 12, x + w - 12), py: bb[1] - 12 - g, ax: ax, ay: bb[1] - 2, just: 'center' });
+			add({ x: x, y: bb[3] + 7 + g, px: clamp(ax, x + 12, x + w - 12), py: bb[3] + 12 + g, ax: ax, ay: bb[3] + 2, just: 'center' });
+		});
+		[0, -12, 12, -24, 24, -36, 36].forEach(function (dy) {
+			var y = mid - HIT / 2 + dy;
+			add({ x: bb[2] + 11 + g, y: y, px: bb[2] + 15 + g, py: clamp(mid, y + 12, y + HIT - 12), ax: bb[2] + 1, ay: mid, just: 'flex-start' });
+			add({ x: bb[0] - 11 - g - w, y: y, px: bb[0] - 15 - g, py: clamp(mid, y + 12, y + HIT - 12), ax: bb[0] - 1, ay: mid, just: 'flex-end' });
+		});
+	});
+	return out.sort(function (a, b) { return a.d - b.d; });
+}
+function linesCross(a, b) {
+	var s = function (p, q, r, t, x, y) { return (r - p) * (y - q) - (t - q) * (x - p); };
+	var d1 = s(b[0], b[1], b[2], b[3], a[0], a[1]), d2 = s(b[0], b[1], b[2], b[3], a[2], a[3]), d3 = s(a[0], a[1], a[2], a[3], b[0], b[1]), d4 = s(a[0], a[1], a[2], a[3], b[2], b[3]);
+	return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+function rectsMeet(a, b) { return !(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]); }
+function lineMeets(l, r) {   /* does a label's line (short: a point every 3 px will do) pass through a rectangle */
+	if (Math.max(l[0], l[2]) <= r[0] || Math.min(l[0], l[2]) >= r[2] || Math.max(l[1], l[3]) <= r[1] || Math.min(l[1], l[3]) >= r[3]) return false;
+	var n = Math.max(1, Math.ceil((Math.abs(l[2] - l[0]) + Math.abs(l[3] - l[1])) / 3));
+	for (var i = 0; i <= n; i++) { var x = l[0] + (l[2] - l[0]) * i / n, y = l[1] + (l[3] - l[1]) * i / n; if (x > r[0] && x < r[2] && y > r[1] && y < r[3]) return true; }
+	return false;
+}
+function stageText() {   /* the map's text, legend and notice, and the expanded view's zoom buttons: no label goes there */
+	var z = [[0, 0, 244, 78], [G.SW - 266, 0, G.SW, 62], [0, G.SH - 40, 440, G.SH]];
+	if (G.big) z.push([G.SW - 156, G.SH - 52, G.SW, G.SH]);
+	return z;
+}
+/* What the map holds, and where a label may still go: drawings (objs: { bb, hull }), labels, and labels' lines. */
+function Room() { this.objs = []; this.labs = []; this.lines = []; this.text = stageText(); }
+/* Can a drawing stand here: 6 px or more from every other drawing's outline, under no label or line. The router isn't asked:
+   the stands keep off it by where they are, and a device in front of it may cover a corner of its plate. */
+Room.prototype.clearFor = function (sh) {
+	var bb = sh.bb, pad = [bb[0] - 3, bb[1] - 3, bb[2] + 3, bb[3] + 3], far = [bb[0] - 6, bb[1] - 6, bb[2] + 6, bb[3] + 6];
+	return !this.objs.some(function (o) { return !o.wide && rectsMeet(far, o.bb) && hullsMeet(sh.hull, o.hull, 6); }) && !this.labs.some(function (r) { return rectsMeet(pad, r); }) &&
+		!this.lines.some(function (l) { return lineMeets(l, pad); });
+};
+/* Can a label go on spot c, for the drawing me (an entry of objs, or null for one not standing yet): inside the stage, off
+   the map's text, on no drawing, label or line, and its own line over none either: lines never cross. The router's outline is mostly empty
+   floor (its plate is a diamond), so a line may cross its corners; a label keeps off it all the same. */
+Room.prototype.spotFree = function (c, w, me, but) {
+	var r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5], l = [c.px, c.py, c.ax, c.ay];
+	if (r[0] < 4 || r[1] < 4 || r[2] > G.SW - 4 || r[3] > G.SH - 4) return false;
+	if (this.text.some(function (z) { return rectsMeet(r, z); })) return false;
+	if (this.objs.some(function (o) { return o !== me && rectsMeet(r, o.bb); }) || this.labs.some(function (q, i) { return i !== but && rectsMeet(r, q); })) return false;
+	if (this.objs.some(function (o) { return o !== me && !o.wide && lineMeets(l, o.bb); }) || this.labs.some(function (q, i) { return i !== but && lineMeets(l, q); })) return false;
+	return !this.lines.some(function (q, i) { return i !== but && (lineMeets(q, r) || linesCross(q, l)); });
+};
+/* The nearest free spot for a label, or null. The page's view has few stands, each placed by hand: there a label takes a
+   spot over no other stand while it has one (own: its own stand), so the stand stays free for a device. */
+Room.prototype.spot = function (bb, ax, w, me, own) {
+	var cs = labelSpots(bb, ax, w), any = null, i, c, r, st = this.stands || [];
+	var on = function (q) { return q.s !== own && rectsMeet(r, q.r); };
+	for (i = 0; i < cs.length; i++) {
+		c = cs[i];
+		if (!this.spotFree(c, w, me)) continue;
+		r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5];
+		if (!st.some(on)) return c;
+		any = any || c;
+	}
+	return any;
+};
+Room.prototype.hold = function (c, w) {   /* a label takes its spot */
+	this.labs.push([c.x, c.y + 5, c.x + w, c.y + G.hit - 5]);
+	this.lines.push([c.px, c.py, c.ax, c.ay]);
+	return { x: Math.round(c.x), y: Math.round(c.y), w: w, px: c.px, py: c.py, ax: c.ax, ay: c.ay, just: c.just };
+};
+/* zones: [{ list: devices picked for the zone, rest: its other devices, n: how many stands it may use, slots, g }], the
+   router's ports first, its Wi-Fi stands last (it has the most to choose from). tray: is the tray on the map (then it and its label need room too).
+   -> { at: { device id: { slot, lab } }, labs: { 'router' | 'wan' | node id | 'more': lab } } */
+function fitStands(net, nodes, zones, tray, hidden) {
+	var R = new Room(), out = { at: {}, labs: {} }, fixed = [];
+	if (!G.big) {
+		R.stands = [];
+		zones.forEach(function (z) { z.slots.forEach(function (s) { var p = P(s.cx, s.cy); R.stands.push({ s: s, r: [p[0] - 14, p[1] - 30, p[0] + 14, p[1] + 8] }); }); });
+	}
+	var x3 = function (x) { return G.big ? thirdLine(x) : ''; };
+	var thing = function (id, o, name, third, wide) { var e = { id: id, bb: o.bbox(), hull: o.hull(), ax: o.anchor[0], wide: wide, w: labelW(id, name, third) }; R.objs.push(e); fixed.push(e); };
+	thing('router', objRouter(net.router.model), net.router.model || 'Router', '', true);
+	thing('wan', objWan(), 'Internet', '');
+	nodes.forEach(function (x) { thing(x.node.id, objNode(x.node.id, x.slot.cx, x.slot.cy, x.node.model), x.node.name, x3(x.node)); });
+	/* the tray's label is as wide as its longest text: its count changes without the map being drawn again */
+	if (tray) thing('more', objTray(G.tray.cx, G.tray.cy), trayName({ length: 88 }, hidden), '');
+	fixed.forEach(function (e) {   /* these are always on the map: a label with no free spot takes the nearest one anyway */
+		out.labs[e.id] = R.hold(R.spot(e.bb, e.ax, e.w, e) || labelSpots(e.bb, e.ax, e.w)[0], e.w);
+	});
+	zones.forEach(function (z) {
+		var devs = z.list.slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); });
+		if (!devs.length) return;
+		var w = {}, labAt, added;
+		devs.forEach(function (dv) { var k = dv.kind || ''; w[k] = Math.max(w[k] || 0, labelW(dv.id, dv.name, x3(dv))); });   /* a group's labels: all as wide as its widest, so its devices can stand in any order */
+		var face = function (s) { return z.g === 'w' ? 'L' : s.face; };
+		var size = function (k) { var b = shapeOf(k, z.g === 'w' ? 'L' : undefined).bb; return Math.round((b[2] - b[0]) * (b[3] - b[1]) / 400); };
+		var room = {
+			size: size,
+			take: function (k, s) {
+				var sh = shapeAt(k, s, face(s)), c;
+				if (!R.clearFor(sh) || !(c = R.spot(sh.bb, sh.ax, w[k], null, s))) return false;
+				R.objs.push(sh);
+				labAt.push([s, R.hold(c, w[k])]);
+				added++;
+				return true;
+			}
+		};
+		/* The zone's nearest stands first, as many as it has devices; while some don't fit, try again with more of its
+		   stands, and keep the try that stood the most. So a zone with room stays close to its hub, and a crowded one spreads. */
+		var mark = [R.objs.length, R.labs.length], best = null, m = devs.length, at, n, kin = {};
+		var cut = function (t) { return [R.objs.splice(t[0]), R.labs.splice(t[1]), R.lines.splice(t[1])]; };
+		for (;;) {
+			labAt = []; added = 0;
+			at = standGroups(devs, z.slots.slice(0, m), room);
+			n = added;
+			var took = cut(mark);
+			if (!best || n > best.n) best = { n: n, at: at, labAt: labAt, took: took };
+			if (n === devs.length || m >= z.slots.length) break;
+			m = Math.min(z.slots.length, m + Math.max(2, Math.ceil(m / 2)));
+		}
+		R.objs = R.objs.concat(best.took[0]); R.labs = R.labs.concat(best.took[1]); R.lines = R.lines.concat(best.took[2]);
+		devs.forEach(function (dv, i) {
+			var s = best.at[i];
+			if (s) { out.at[dv.id] = { slot: s, lab: best.labAt.filter(function (e) { return e[0] === s; })[0][1] }; (kin[dv.kind || ''] = kin[dv.kind || ''] || []).push(s); }
+		});
+		/* The ones left out get one more look, each over all the zone's stands (the try that stood the most may not have
+		   had them all). Then a picked device with no room for its drawing leaves a stand unused, and another of the zone's
+		   devices may fit: the ones on a cable first, then the biggest drawings, then by name, never by traffic, so they
+		   don't come and go. Each goes as near its own kind as it can. */
+		var used = best.at.filter(function (s) { return s; }), left = z.n - best.n;
+		var bySize = function (a, b) { return (b.link === 'wired') - (a.link === 'wired') || size(b.kind || '') - size(a.kind || '') || byName(a, b) || (a.id < b.id ? -1 : 1); };
+		devs.filter(function (dv, i) { return !best.at[i]; }).sort(bySize).concat((z.rest || []).slice().sort(bySize)).forEach(function (dv) {
+			if (left <= 0) return;
+			var k = dv.kind || '', lw = labelW(dv.id, dv.name, x3(dv)), order = z.slots;
+			var away = function (s) { return Math.min.apply(null, kin[k].map(function (t) { return Math.abs(t.cx - s.cx) + Math.abs(t.cy - s.cy); })); };
+			if (kin[k]) order = z.slots.map(function (s, i) { return [away(s), i, s]; }).sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }).map(function (e) { return e[2]; });
+			for (var q = 0; q < order.length; q++) {
+				var s = order[q], sh, c;
+				if (used.indexOf(s) >= 0) continue;
+				sh = shapeAt(k, s, face(s));
+				if (!R.clearFor(sh) || !(c = R.spot(sh.bb, sh.ax, lw, null, s))) continue;
+				R.objs.push(sh);
+				out.at[dv.id] = { slot: s, lab: R.hold(c, lw) };
+				used.push(s); left--;
+				(kin[k] = kin[k] || []).push(s);
+				return;
+			}
+		});
+	});
+	return out;
+}
 function mapLayout(net) {
-	var L = { nodes: [], devs: [], tray: [], wired: [], hidden: [] };
+	var L = { nodes: [], devs: [], tray: [], wired: [], hidden: [], labs: {} };
 	var shownNodes = pickNodes(net.nodes, G.nodeSlots.length);
 	shownNodes.forEach(function (n, i) { L.nodes.push({ node: n, slot: G.nodeSlots[i] }); });
 	L.hidden = net.nodes.filter(function (n) { return shownNodes.indexOf(n) < 0; });
@@ -2462,28 +2700,42 @@ function mapLayout(net) {
 	var wk = pickStands(wired, wslots.length, 'w');
 	/* the router's Wi-Fi clients */
 	var direct = visible.filter(function (dv) { return dv.link === 'wifi' && !dv.node; });
-	var dk = pickStands(direct, G.wifiSlots.length, 'r');
+	var dn = Math.min(G.wifiSlots.length, G.wifiMax || G.wifiSlots.length), dk = pickStands(direct, dn, 'r');
 	/* each node's clients */
-	var nk = {};
-	shownNodes.forEach(function (n, i) { nk[n.mac] = pickStands(visible.filter(function (dv) { return dv.node === n; }), G.nodeSlots[i].dev.length, 'n' + i); });
-	var used = {}, next = {};
-	var place = function (dv, g, slots) {
-		var prev = A.slot[dv.id], idx = prev && prev.g === g && !used[g + prev.i] && prev.i < slots.length ? prev.i : -1;
-		if (idx < 0) for (var i = 0; i < slots.length; i++) if (!used[g + i]) { idx = i; break; }
-		used[g + idx] = 1;
-		next[dv.id] = { g: g, i: idx };
-		return slots[idx];
-	};
-	/* devices that keep their stand first, then the newcomers */
-	var put = function (list, g, slots, into) {
-		list.slice().sort(function (a, b) { return (A.slot[b.id] && A.slot[b.id].g === g ? 1 : 0) - (A.slot[a.id] && A.slot[a.id].g === g ? 1 : 0); })
-			.forEach(function (dv) { into.push({ dev: dv, slot: place(dv, g, slots), group: g }); });
-	};
-	put(wk, 'w', wslots, L.wired);
-	put(dk, 'r', G.wifiSlots, L.devs);
-	shownNodes.forEach(function (n, i) { put(nk[n.mac], 'n' + i, G.nodeSlots[i].dev, L.devs); });
-	var stood = {};
-	L.wired.concat(L.devs).forEach(function (x) { stood[x.dev.id] = 1; });
+	var zones = [{ list: wk, all: wired, n: wslots.length, g: 'w', slots: wslots }];
+	shownNodes.forEach(function (n, i) {
+		var mine = visible.filter(function (dv) { return dv.node === n; }), sl = G.nodeSlots[i].dev, cap = Math.min(sl.length, G.nodeMax || sl.length);
+		zones.push({ list: pickStands(mine, cap, 'n' + i), all: mine, n: cap, g: 'n' + i, slots: sl });
+	});
+	zones.push({ list: dk, all: direct, n: dn, g: 'r', slots: G.wifiSlots });
+	/* Where each stands: devices of a kind together (bulbs by bulbs, laptops by laptops), on the zone's nearest stands that
+	   have room for their drawings and labels (see standGroups, fitStands). Only which devices are there decides it, never
+	   their traffic: nothing moves until a device joins or leaves (and which ones are picked is held for 20 s, see
+	   pickStands). So it is worked out once for a set of devices, and kept until the set changes. */
+	var ids = function (l) { return l.map(function (dv) { return [dv.id, dv.kind, dv.name]; }).sort(); };
+	zones.forEach(function (z) { z.rest = z.all.filter(function (dv) { return z.list.indexOf(dv) < 0; }); });
+	var key = JSON.stringify([G.key, net.router.model, L.nodes.map(function (x) { return [x.node.id, x.node.name, x.node.model]; }), L.hidden.length, visible.length,
+		zones.map(function (z) { return [ids(z.list), ids(z.rest)]; })]);
+	if (!A.stands || A.stands.key !== key) {
+		/* without the tray first: it is there only when a device has no stand, or a node no zone */
+		var f = fitStands(net, L.nodes, zones, false, L.hidden);
+		if (L.hidden.length || Object.keys(f.at).length < visible.length) f = fitStands(net, L.nodes, zones, true, L.hidden);
+		f.key = key;
+		A.stands = f;
+	}
+	var next = {}, stood = {}, fit = A.stands;
+	L.labs = fit.labs;
+	zones.forEach(function (z) {
+		z.all.slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); }).forEach(function (dv) {
+			var at = fit.at[dv.id];
+			/* a picked device keeps its claim even with no room for it (i: -1), so the same ones stay picked: see pickStands.
+			   One that stands in its place has none: it is there until the picked ones change. */
+			if (z.list.indexOf(dv) >= 0) next[dv.id] = { g: z.g, i: at ? z.slots.indexOf(at.slot) : -1 };
+			if (!at) return;
+			stood[dv.id] = 1;
+			(z.g === 'w' ? L.wired : L.devs).push({ dev: dv, slot: at.slot, group: z.g, lab: at.lab });
+		});
+	});
 	L.tray = visible.filter(function (dv) { return !stood[dv.id]; });
 	A.slot = A.gotAny ? next : {};   /* before the first rates every device looks idle: pick again once they're known */
 	return L;
@@ -2491,7 +2743,7 @@ function mapLayout(net) {
 function mapSignature(L) {
 	/* a node's backhaul and a node's device going wired or not change the map too: a pipe or an arc */
 	return JSON.stringify([G.key, L.nodes.map(function (x) { return [x.node.mac, formOf(x.node.model, 'tower').form, !!(x.node.online && (x.node.wiredPort || x.node.viaWired)), x.node.via ? x.node.via.mac : '']; }),
-		L.wired.concat(L.devs).map(function (x) { return [x.dev.id, x.group, x.slot.cx, x.dev.kind, x.dev.link]; }), L.tray.length > 0, L.hidden.map(function (n) { return n.mac; })]);
+		L.wired.concat(L.devs).map(function (x) { return [x.dev.id, x.group, x.slot.cx, x.slot.cy, x.dev.kind, x.dev.link, x.lab.x, x.lab.y]; }), L.tray.length > 0, L.hidden.map(function (n) { return n.mac; })]);
 }
 
 /* lanes: one direction of one link, a soft halo plus a bright capsule riding the same dash pattern */
@@ -2720,120 +2972,58 @@ function buildMap(net, L) {
 	return { svg: svg, labels: html };
 }
 
-/* Label placement: try spots around each object, keep the first that hits no other label, object,
-   Wi-Fi arc or overlay. Widths come from the real text, measured once. */
-var ctx2d = null;
+/* Label widths come from the real text, measured once. */
+var ctx2d = null, textWs = {};
 function textW(s, bold, size) {
+	var k = (bold ? 'b' : '') + (size || 11) + '|' + s;
+	if (textWs[k] !== undefined) return textWs[k];
 	try {
 		ctx2d = ctx2d || document.createElement('canvas').getContext('2d');
 		ctx2d.font = (bold ? '700 ' : '') + (size || 11) + 'px system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
-		return ctx2d.measureText(s).width;
+		return (textWs[k] = ctx2d.measureText(s).width);
 	} catch (e) { return s.length * 6.6 * (size || 11) / 11; }
 }
+/* Labels: every one already has a spot next to its drawing, on nothing else (mapLayout's, from fitStands). Here, with the
+   arcs known, each looks once more over the free spots near its drawing (labelSpots: none is far, Room.spotFree: on
+   nothing, and no line crosses another) and moves when another is better: a shorter line, fewer packets passing under it. */
 function placeLabels(net, L, objs, arcs) {
-	var HIT = G.hit, SW = G.SW, SH = G.SH, LBL = 1000, rects = [], out = [], meta = [];
-	var OBJ = G.big ? 150 : 90;   /* covering another device: worse than a long line, still better than hiding a label */   /* a label on another label: only when there is nowhere else at all */
-	var zones = [[0, 0, 244, 78], [SW - 266, 0, SW, 62], [0, SH - 40, 440, SH]];
-	if (G.big) zones.push([SW - 156, SH - 52, SW, SH]);   /* the zoom buttons */
-	var byId = {};
+	var R = new Room(), out = [], byId = {};
 	objs.forEach(function (o) { byId[o.id] = o; });
-	var items = [{ id: 'router', name: net.router.model || 'Router', o: byId.router }, { id: 'wan', name: 'Internet', o: byId.wan }];
-	L.nodes.forEach(function (x) { items.push({ id: x.node.id, name: x.node.name, o: byId[x.node.id], x3: G.big ? thirdLine(x.node) : '' }); });
-	L.wired.concat(L.devs).sort(function (a, b) { return busy(b.dev) - busy(a.dev); }).forEach(function (x) { items.push({ id: x.dev.id, name: x.dev.name, o: byId[x.dev.id], x3: G.big ? thirdLine(x.dev) : '' }); });
-	if (L.tray.length || L.hidden.length) items.push({ id: 'more', name: trayName(L.tray, L.hidden), o: byId.more });
-	var ov = function (a, b) { return !(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]); };
-	var obb = objs.map(function (o) { return [o, o.bbox()]; });   /* each drawing's outline, worked out once */
+	var items = [{ id: 'router', name: net.router.model || 'Router' }, { id: 'wan', name: 'Internet' }];
+	L.nodes.forEach(function (x) { items.push({ id: x.node.id, name: x.node.name, x3: G.big ? thirdLine(x.node) : '' }); });
+	L.wired.concat(L.devs).forEach(function (x) { items.push({ id: x.dev.id, name: x.dev.name, x3: G.big ? thirdLine(x.dev) : '', lab: x.lab }); });
+	if (L.tray.length || L.hidden.length) items.push({ id: 'more', name: trayName(L.tray, L.hidden) });
+	items = items.filter(function (it) { it.o = byId[it.id]; it.lab = it.lab || (L.labs || {})[it.id]; return it.o && it.lab; });
+	items.forEach(function (it) {
+		it.e = { bb: it.o.bbox(), wide: it.id === 'router' };
+		R.objs.push(it.e);
+		R.labs.push([it.lab.x, it.lab.y + 5, it.lab.x + it.lab.w, it.lab.y + G.hit - 5]);
+		R.lines.push([it.lab.px, it.lab.py, it.lab.ax, it.lab.ay]);
+	});
 	var arcPts = [];
 	arcs.forEach(function (a) { arcPts = arcPts.concat(a.pts.slice(3, -3)); });
-	items.forEach(function (it) {
-		if (!it.o) return;
-		var name = it.name.length > 24 ? it.name.slice(0, 23) + '…' : it.name;
-		/* A node's second line can grow a " · weak" tag, so it gets room for that up front. */
-		/* room for the widest rates the second line can show ("↓ 99.9M ↑ 99.9M"), so a busy device's numbers never spill out */
-		var w = Math.round(Math.max(textW(name, true), it.x3 ? textW(it.x3) * 0.96 + 8 : 0, it.id === 'router' ? 0 : textW('↓ 99.9M↑ 99.9M', false, 10.5) + 8,
-			it.id.indexOf('node:') === 0 ? 112 : 76) + 22), bb = it.o.bbox(), ax = it.o.anchor[0];
-		var cands = [];
-		(G.big ? [0, -34, 34, -68, 68, -102, 102, -136, 136] : [0, -34, 34, -68, 68]).forEach(function (dx) {
-			cands.push({ x: ax - w / 2 + dx, y: bb[1] - 7 - HIT, px: ax + dx, py: bb[1] - 12, ay: bb[1] - 2, just: 'center' });
-			cands.push({ x: ax - w / 2 + dx, y: bb[3] + 7, px: ax + dx, py: bb[3] + 12, ay: bb[3] + 2, just: 'center' });
+	/* what a spot costs: its line's length in pixels, and a little for every packet's place under it */
+	var cost = function (c, w) {
+		var r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5], v = Math.sqrt((c.px - c.ax) * (c.px - c.ax) + (c.py - c.ay) * (c.py - c.ay));
+		arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) v += 1.5; });
+		return v;
+	};
+	for (var pass = 0; pass < 2; pass++) items.forEach(function (it, k) {
+		var lab = it.lab, w = lab.w, best = null, bc = cost(lab, w) - 1;
+		labelSpots(it.e.bb, it.o.anchor[0], w).forEach(function (c) {
+			if (c.d >= bc || !R.spotFree(c, w, it.e, k)) return;
+			var v = cost(c, w);
+			if (v < bc) { bc = v; best = c; }
 		});
-		cands.push({ x: bb[2] + 11, y: (bb[1] + bb[3]) / 2 - HIT / 2, px: bb[2] + 15, py: (bb[1] + bb[3]) / 2, ay: (bb[1] + bb[3]) / 2, axr: bb[2] + 1, just: 'flex-start' });
-		cands.push({ x: bb[0] - 11 - w, y: (bb[1] + bb[3]) / 2 - HIT / 2, px: bb[0] - 15, py: (bb[1] + bb[3]) / 2, ay: (bb[1] + bb[3]) / 2, axr: bb[0] - 1, just: 'flex-end' });
-		/* When all of those cover something, further out to either side, a little higher or lower: a longer line costs a
-		   little for every pixel, covering another device's drawing a lot more. */
-		var mid = (bb[1] + bb[3]) / 2, near = cands.length;
-		[0, 40, 80, 130, 190, 260, 340, 440].forEach(function (sx) {   /* as far as the free space beside the floor */
-			[0, -26, 26, -52, 52, -78, 78].forEach(function (dy) {
-				if (!sx && !dy) return;
-				var d = 20 + sx + Math.abs(dy);
-				cands.push({ x: bb[2] + 11 + sx, y: mid - HIT / 2 + dy, px: bb[2] + 15 + sx, py: mid + dy, ay: mid, axr: bb[2] + 1, just: 'flex-start', d: d });
-				cands.push({ x: bb[0] - 11 - w - sx, y: mid - HIT / 2 + dy, px: bb[0] - 15 - sx, py: mid + dy, ay: mid, axr: bb[0] - 1, just: 'flex-end', d: d });
-			});
-		});
-		(G.big ? [0, -34, 34, -68, 68, -102, 102, -170, 170] : [0, -34, 34, -68, 68, -102, 102]).forEach(function (dx) {
-			[24, 48, 80, 120, 170].forEach(function (dy) {
-				var d = 20 + Math.abs(dx) + dy;
-				cands.push({ x: ax - w / 2 + dx, y: bb[3] + 7 + dy, px: ax + dx, py: bb[3] + 12 + dy, ay: bb[3] + 2, just: 'center', d: d });
-				cands.push({ x: ax - w / 2 + dx, y: bb[1] - 7 - HIT - dy, px: ax + dx, py: bb[1] - 12 - dy, ay: bb[1] - 2, just: 'center', d: d });
-			});
-		});
-		var best = null, bestCost = 1e9;
-		cands.forEach(function (c, ci) {
-			if (ci >= near && bestCost < 30) return;   /* a near spot that covers nothing much: no need to look further */
-			var r = [c.x, c.y + 5, c.x + w, c.y + HIT - 5], cost = ci * 0.01 + (c.d || 0) * 0.12;
-			if (r[0] < 4 || r[1] < 4 || r[2] > SW - 4 || r[3] > SH - 4) cost += 1000;
-			rects.forEach(function (o) { if (ov(r, o)) cost += LBL; });
-			obb.forEach(function (e) { if (e[0] !== it.o && ov(r, e[1])) cost += OBJ; });
-			zones.forEach(function (z) { if (ov(r, z)) cost += 60; });
-			if (cost < bestCost) arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) cost += 0.6; });
-			if (cost < bestCost) { bestCost = cost; best = c; }
-		});
-		var x = Math.round(best.x), y = Math.round(best.y);
-		rects.push([x, y + 5, x + w, y + HIT - 5]);
-		out.push({ id: it.id, name: name, x3: it.x3 || '', x: x, y: y, w: w, just: best.just, px: best.px, py: best.py, ax: best.axr !== undefined ? best.axr : ax, ay: best.ay });
-		meta.push({ o: it.o, bb: bb, ax: ax });
+		if (!best) return;
+		it.lab = { x: Math.round(best.x), y: Math.round(best.y), w: w, px: best.px, py: best.py, ax: best.ax, ay: best.ay, just: best.just };
+		R.labs[k] = [best.x, best.y + 5, best.x + w, best.y + G.hit - 5];
+		R.lines[k] = [best.px, best.py, best.ax, best.ay];
 	});
-	/* One label at a time, busiest first, each near its device: on a crowded floor the last ones find every spot near them
-	   taken, and one that covers another device is the best they have, while there's room further out. So, once all are
-	   placed, a label still covering a device looks over the whole stage for a free spot, the nearest first (a longer line
-	   costs a little for every pixel), and moves there when that's better: the quietest first, twice over. */
-	for (var pass = 0; pass < 2; pass++) for (var k = out.length - 1; k >= 0; k--) {
-		var lb = out[k], m = meta[k], mine = rects[k], covers = function (r) {
-			var n = 0;
-			obb.forEach(function (e) { if (e[0] !== m.o && ov(r, e[1])) n++; });
-			return n;
-		};
-		var nowCov = covers(mine);
-		if (!nowCov) continue;
-		var bb2 = m.bb, mid2 = (bb2[1] + bb2[3]) / 2, w2 = lb.w, place = null;
-		var costAt = function (r) {
-			var c = 0;
-			if (r[0] < 4 || r[1] < 4 || r[2] > SW - 4 || r[3] > SH - 4) return 1e9;
-			for (var q = 0; q < rects.length; q++) if (q !== k && ov(r, rects[q])) return 1e9;   /* never on another label */
-			c += covers(r) * OBJ;
-			zones.forEach(function (z) { if (ov(r, z)) c += 60; });
-			return c;
-		};
-		var curCost = nowCov * OBJ + Math.sqrt(Math.pow(lb.px - lb.ax, 2) + Math.pow(lb.py - lb.ay, 2)) * 0.12;
-		for (var gy = 8; gy <= SH - HIT - 8; gy += 12) for (var gx = 8; gx <= SW - w2 - 8; gx += 16) {
-			var r2 = [gx, gy + 5, gx + w2, gy + HIT - 5], c2;
-			/* where its line meets it: the side facing the device */
-			var g;
-			if (r2[1] > bb2[3]) g = { px: Math.min(Math.max(m.ax, gx + 12), gx + w2 - 12), py: gy + 5, ax: m.ax, ay: bb2[3] + 2, just: 'center' };
-			else if (r2[3] < bb2[1]) g = { px: Math.min(Math.max(m.ax, gx + 12), gx + w2 - 12), py: gy + HIT - 5, ax: m.ax, ay: bb2[1] - 2, just: 'center' };
-			else if (gx > bb2[2]) g = { px: gx + 4, py: Math.min(Math.max(mid2, gy + 12), gy + HIT - 12), ax: bb2[2] + 1, ay: mid2, just: 'flex-start' };
-			else if (gx + w2 < bb2[0]) g = { px: gx + w2 - 4, py: Math.min(Math.max(mid2, gy + 12), gy + HIT - 12), ax: bb2[0] - 1, ay: mid2, just: 'flex-end' };
-			else continue;   /* on its own device */
-			c2 = costAt(r2);
-			if (c2 >= 1e9) continue;
-			c2 += Math.sqrt(Math.pow(g.px - g.ax, 2) + Math.pow(g.py - g.ay, 2)) * 0.12;
-			if (c2 < curCost - 1 && (!place || c2 < place.c)) place = { c: c2, x: gx, y: gy, g: g };
-		}
-		if (place) {
-			lb.x = place.x; lb.y = place.y; lb.px = place.g.px; lb.py = place.g.py; lb.ax = place.g.ax; lb.ay = place.g.ay; lb.just = place.g.just;
-			rects[k] = [place.x, place.y + 5, place.x + w2, place.y + HIT - 5];
-		}
-	}
+	items.forEach(function (it) {
+		var b = it.lab;
+		out.push({ id: it.id, name: labelName(it.name), x3: it.x3 || '', x: b.x, y: b.y, w: b.w, just: b.just, px: b.px, py: b.py, ax: b.ax, ay: b.ay });
+	});
 	return out;
 }
 
@@ -4006,7 +4196,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, standGroups: standGroups, placeLabels: placeLabels, shapeAt: shapeAt, hullsMeet: hullsMeet, labelSpots: labelSpots, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>

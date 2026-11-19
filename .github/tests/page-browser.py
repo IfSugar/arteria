@@ -8,7 +8,9 @@
   3. the "hostile" scenario: names and AiMesh client-list keys that look like HTML stay text and run nothing;
   4. two Arteria tabs: closing one doesn't tell the router to stop sampling while the other is open;
   5. in every scenario, labels keep off other devices' drawings, what is cut short shows in full on hover, and the
-     totals in the tab bar don't move as their numbers change.
+     totals in the tab bar don't move as their numbers change;
+  6. in every scenario and both views, no device's drawing overlaps another's, every label's line is short, and no two
+     lines cross.
 
 Needs Python 3 with Playwright (pip install playwright; the browser is the system's Chrome or Chromium).
 Usage: python3 .github/tests/page-browser.py [path to chrome]
@@ -18,7 +20,7 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'crowd', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd', 'wired']
+SCENARIOS = ['home', 'bulbs', 'crowd', 'house', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd', 'wired']
 fails = []
 
 
@@ -63,6 +65,43 @@ LABEL_COVERS = '''() => {
     });
     return n;
 }'''
+
+
+# Room on the map: drawings that overlap (their outlines, worked out here from the shapes in each drawing: the router is left
+# out, its plate is mostly floor and stands keep off it by where they are), the longest label line, and lines that cross.
+ROOM = r'''() => {
+    const hull = pts => { const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]), h = [], t = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        for (const q of p) { while (h.length >= 2 && t(h[h.length - 2], h[h.length - 1], q) <= 0) h.pop(); h.push(q); }
+        const n = h.length + 1; for (let i = p.length - 2; i >= 0; i--) { while (h.length >= n && t(h[h.length - 2], h[h.length - 1], p[i]) <= 0) h.pop(); h.push(p[i]); }
+        h.pop(); return h; };
+    // apart: a straight line passes between the two outlines, a pixel or more from each
+    const apart = (p, q) => p.some((u, i) => { const v = p[(i + 1) % p.length], nx = v[1] - u[1], ny = u[0] - v[0], n = Math.hypot(nx, ny); if (!n) return false;
+        const pr = w => ((w[0] - u[0]) * nx + (w[1] - u[1]) * ny) / n; return Math.min(...q.map(pr)) - Math.max(...p.map(pr)) >= 1; });
+    const shapes = [...document.querySelectorAll('#arMapScene g[data-obj]')].filter(g => !/^(wall|router)$/.test(g.getAttribute('data-obj'))).map(g => { const pts = [];
+        g.querySelectorAll('polygon').forEach(e => { const n = e.getAttribute('points').trim().split(/[ ,]+/).map(Number); for (let i = 0; i < n.length; i += 2) pts.push([n[i], n[i + 1]]); });
+        g.querySelectorAll('ellipse, circle').forEach(e => { if (e.classList.contains('df-ripple') || /url\(#ar-(halo|glow)/.test(e.getAttribute('style') || '')) return;   // light, not the thing itself
+            const cx = +e.getAttribute('cx'), cy = +e.getAttribute('cy'), rx = +(e.getAttribute('rx') || e.getAttribute('r')), ry = +(e.getAttribute('ry') || e.getAttribute('r'));
+            pts.push([cx - rx, cy], [cx + rx, cy], [cx, cy - ry], [cx, cy + ry]); });
+        return [g.getAttribute('data-obj'), hull(pts)]; }).filter(s => s[1].length > 2);
+    const on = [];
+    shapes.forEach((a, i) => shapes.slice(i + 1).forEach(b => { if (!apart(a[1], b[1]) && !apart(b[1], a[1])) on.push(a[0] + ' / ' + b[0]); }));
+    const segs = [...document.querySelectorAll('#arMapScene g[data-lead] path')].map(p => p.getAttribute('d').match(/-?[\d.]+/g).map(Number));
+    const side = (a, b, c, d, x, y) => (c - a) * (y - b) - (d - b) * (x - a);
+    const X = (a, b) => { const d1 = side(b[0], b[1], b[2], b[3], a[0], a[1]), d2 = side(b[0], b[1], b[2], b[3], a[2], a[3]), d3 = side(a[0], a[1], a[2], a[3], b[0], b[1]), d4 = side(a[0], a[1], a[2], a[3], b[2], b[3]);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)); };
+    let cross = 0; segs.forEach((a, i) => segs.slice(i + 1).forEach(b => { if (X(a, b)) cross++; }));
+    const L = Arteria.state.layout;
+    return { on: on, cross: cross, line: Math.round(Math.max(0, ...segs.map(s => Math.hypot(s[0] - s[2], s[1] - s[3])))), stands: L.wired.length + L.devs.length, labels: segs.length };
+}'''
+LINE = 110   # the longest line from a label to its device, in pixels: labels stay next to their devices
+
+
+def room_ok(r):
+    return not r['on'] and r['cross'] == 0 and r['line'] <= LINE and r['labels'] >= r['stands'] + 2
+
+
+def room_txt(rs):
+    return '; '.join('%d stands, longest line %d px, %d crossings%s' % (r['stands'], r['line'], r['cross'], (', overlapping: ' + ', '.join(r['on'][:3])) if r['on'] else '') for r in rs)
 
 
 async def ready(pg):   # two samples in: rates, stands and the tray are known
@@ -122,6 +161,16 @@ async def scenario(b, scn, port):
             await pg.evaluate("Arteria.pick(null)"); await pg.wait_for_timeout(200)
             back = await pg.evaluate("Math.round(document.getElementById('arCards').getBoundingClientRect().height)")
             check(back == 224, tag + ': with the list closed, the cards are back to their height (%s px)' % back)
+            # another computer's fonts: with every text 15% wider (fewer labels fit), the device on a cable still has its stand
+            wctx = await b.new_context(viewport={'width': 1600, 'height': 900})
+            wpg = await wctx.new_page()
+            await wpg.add_init_script("(() => { const m = CanvasRenderingContext2D.prototype.measureText;"
+                                      " CanvasRenderingContext2D.prototype.measureText = function (t) { return { width: m.call(this, t).width * 1.15 }; }; })()")
+            await wpg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(wpg)
+            wide = await wpg.evaluate("""() => { const L = Arteria.state.layout, node = L.nodes[0].node;
+                return L.devs.filter(x => x.dev.node === node).map(x => x.dev.link + ':' + x.dev.name); }""")
+            await wctx.close()
+            check('wired:Pi-hole' in wide, tag + ': with wider text, a device on a cable keeps its stand before Wi-Fi devices do (%s)' % ', '.join(wide))
         # the page's view: Flow, the list, Details, the report
         await pg.click('#arTabFlow'); await pg.wait_for_timeout(250)
         await pg.click('#arTabMap'); await pg.wait_for_timeout(250)
@@ -143,14 +192,20 @@ async def scenario(b, scn, port):
         await pg.click('#arBig'); await pg.wait_for_timeout(400)
         lbov_big = await pg.evaluate(LABEL_OVERLAPS)
         cover_big = await pg.evaluate(LABEL_COVERS)
-        if scn == 'nodecrowd':   # a crowded floor in a smaller window, where labels have the least room
+        room_big = [await pg.evaluate(ROOM)]
+        if scn in ('nodecrowd', 'house'):   # a crowded floor in a smaller window, where labels have the least room; and in a large one
             await pg.set_viewport_size({'width': 1456, 'height': 832}); await pg.wait_for_timeout(900)
             lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS)
+            room_big.append(await pg.evaluate(ROOM))
+            await pg.set_viewport_size({'width': 2540, 'height': 1450}); await pg.wait_for_timeout(900)
+            lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS)
+            room_big.append(await pg.evaluate(ROOM))
             await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
         check(cover_big == 0, tag + 'expanded view: labels don\'t cover other devices (%d)' % cover_big)
         if scn == 'crowd':   # a smaller window, where a crowd of labels has the least room
             await pg.set_viewport_size({'width': 1280, 'height': 720}); await pg.wait_for_timeout(700)
             lbov_big += await pg.evaluate(LABEL_OVERLAPS)
+            room_big.append(await pg.evaluate(ROOM))
             await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
         await pg.click('#arTabFlow'); await pg.wait_for_timeout(250)
         await pg.click('#arTabMap'); await pg.wait_for_timeout(250)
@@ -191,6 +246,7 @@ async def scenario(b, scn, port):
         }''')
         # a device's label doesn't cover another device's drawing (on a crowded floor, one may have to)
         cover = await pg.evaluate(LABEL_COVERS)
+        room = await pg.evaluate(ROOM)
         # labels never sit on one another
         lbov = await pg.evaluate(LABEL_OVERLAPS)
         # a label's rates (2.1M, 47k, 1.25G) fit inside it
@@ -221,6 +277,8 @@ async def scenario(b, scn, port):
         check(after == small, tag + 'closing the expanded view puts the stage back as it was')
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
         check(cover == 0, tag + 'labels don\'t cover other devices (%d)' % cover)
+        check(room_ok(room), tag + 'no drawing overlaps another, every label is next to its device, no lines cross (%s)' % room_txt([room]))
+        check(all(room_ok(r) for r in room_big), tag + 'expanded view: no drawing overlaps another, every label is next to its device, no lines cross (%s)' % room_txt(room_big))
         check(not spill, tag + 'every label\'s rates fit inside it' + ('' if not spill else ' (%s)' % ', '.join(spill[:4])))
         check(still is not None and still < 0.5, tag + 'the totals keep their place as the numbers change (%s px)' % still)
         check(lbov == 0 and lbov_big == 0, tag + 'labels don\'t sit on one another (%d in the page\'s view, %d expanded)' % (lbov, lbov_big))

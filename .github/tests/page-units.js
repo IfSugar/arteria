@@ -326,16 +326,15 @@ const gbad = [];
 		if (!(s.cx - 1.2 > g.x0 && s.cx + 1.2 < g.x1 && s.cy - 1.2 > g.y0 && s.cy + 1.2 < g.y1)) gbad.push(tag + 'stand off the floor ' + s.cx + ',' + s.cy);
 		if (keep.some(r => inR(s, r))) gbad.push(tag + 'stand on the router or the WAN pipe ' + s.cx + ',' + s.cy);
 	});
-	const st = g.wifiSlots.concat(...g.nodeSlots.map(ns => ns.dev));
-	st.forEach((a, i) => st.slice(i + 1).forEach(b => { if (Math.abs(a.cx - b.cx) < 2.9 && Math.abs(a.cy - b.cy) < 2.5) gbad.push(tag + 'stands too close ' + a.cx + ',' + a.cy); }));
+	// (how far apart devices stand is up to their drawings and labels: section 12)
 	g.wifiSlots.forEach(s => { if (g.nodeSlots.some(ns => inR(s, ns.zone))) gbad.push(tag + 'a router stand in a node zone ' + s.cx + ',' + s.cy); });
 	const p = (x, y) => [g.OX + (x - y) * Math.cos(Math.PI / 6) * g.U, g.OY + (x + y) * 0.5 * g.U];
 	const corners = [p(g.x0, g.y0), p(g.x1, g.y0), p(g.x0, g.y1), p(g.x1, g.y1)];
 	if (corners.some(c => c[0] < 0 || c[0] > w || c[1] < 0 || c[1] > h)) gbad.push(tag + 'the floor leaves the stage');
 });
-ok(!gbad.length, 'expanded view: stands on the floor, apart, off the router, and the floor fits (5 window sizes)', gbad.slice(0, 6).join('; '));
+ok(!gbad.length, 'expanded view: stands on the floor, off the router, and the floor fits (5 window sizes)', gbad.slice(0, 6).join('; '));
 const gb = T.geomBig(1568, 780, 1);
-ok(gb.wifiSlots.length + gb.nodeSlots[0].dev.length + gb.wiredSlots.length >= 30 && gb.wiredSlots.length === 5, 'a 1600 × 900 window has stands for 30 or more devices, five of them wired',
+ok(gb.wifiSlots.length + gb.nodeSlots[0].dev.length + gb.wiredSlots.length >= 30 && gb.wiredSlots.length === 5, 'a 1600 × 900 window has places for 30 or more stands, five of them wired',
 	gb.wifiSlots.length + '+' + gb.nodeSlots[0].dev.length + '+' + gb.wiredSlots.length);
 
 // ---- 7. names are text: a host name or maker that looks like HTML never becomes markup on the map or the flow
@@ -854,6 +853,53 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	n = AR.buildNet(smp({ up: '11010.0', nodes: [{ mac: ND, ip: '192.168.50.33', model: 'RT-BE58_Go', alias: 'Study', sta: '', state: 'ok', up: '7000.0', c: [row('wl2.1', '6', L1, 0, 1)] }] }));
 	ok(n.byId[M] && n.byId[M].node && n.byId[M].lmac === L1 && n.byId[M].name === 'Galaxy-S26-Ultra', 'a multi-link device on a node: the same', JSON.stringify(n.devs.map(d => d.id)));
 	A.names = AR.parseNames({});
+}
+
+// ---- 29. stands by kind: devices of a kind stand together, in the page's view and an expanded one, and traffic moves none
+{
+	const kinds = ['light', 'laptop', 'tv', 'light', 'phone', 'laptop', 'light', 'tv', 'light', 'laptop', 'phone', 'light', 'light', 'light', 'phone', 'tv'];
+	const mkNet = (seed) => {
+		const devs = kinds.map((k, i) => ({ id: 'K' + i, mac: '02:CC:00:00:09:' + (10 + i), name: k + ' ' + i, kind: k, link: 'wifi', band: '5', st: 'ok', dn: 1, up: 1, sdn: (i * seed) % 7, sup: 1, rssi: -50, s: { dn: 1, up: 1, sdn: (i * seed) % 7, sup: 1, ok: true } }));
+		const net = { router: { model: 'RT-AX86U' }, nodes: [], devs: devs, byId: {}, wan: { dn: 1, up: 1 } };
+		devs.forEach(d => { net.byId[d.id] = d; });
+		return net;
+	};
+	const keepG = T.G(), keepSlot = A.slot, keepAt = A.slotAt, keepAny = A.gotAny, res = [], tight = [];
+	let bad = false;
+	[['page', T.geomSmall()], ['expanded', T.geomBig(1568, 780, 0)]].forEach(([tag, g]) => {
+		T.useGeom(g); A.slot = {}; A.gotAny = true; A.slotAt = Date.now();
+		const L = T.mapLayout(mkNet(3)), at = {};
+		L.devs.forEach(x => { at[x.dev.id] = x.slot; });
+		// a device with others of its kind on the map: one of them is on one of the stands nearest its own (2 in the page's view)
+		const near = (a, b) => Math.hypot(a.slot.cx - b.slot.cx, a.slot.cy - b.slot.cy);
+		const far = L.devs.filter(x => {
+			const same = L.devs.filter(y => y !== x && y.dev.kind === x.dev.kind);
+			if (!same.length) return false;
+			const mine = Math.min(...same.map(y => near(x, y))), any = L.devs.filter(y => y !== x).map(y => near(x, y)).sort((a, b) => a - b);
+			return mine > any[Math.min(tag === 'page' ? 1 : 3, any.length - 1)] + 0.01;
+		}).map(x => x.dev.name);
+		// room for everything: no drawing within 5 px of another's outline, no label on a label or on another device's drawing, every line short
+		const sh = L.wired.concat(L.devs).map(x => ({ x, s: T.shapeAt(x.dev.kind, x.slot, x.group === 'w' ? 'L' : x.slot.face), r: [x.lab.x, x.lab.y + 5, x.lab.x + x.lab.w, x.lab.y + g.hit - 5] }));
+		const meet = (a, b) => !(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]);
+		sh.forEach((a, i) => {
+			sh.slice(i + 1).forEach(b => { if (T.hullsMeet(a.s.hull, b.s.hull, 5)) tight.push(tag + ': ' + a.x.dev.name + ' on ' + b.x.dev.name); if (meet(a.r, b.r)) tight.push(tag + ': labels of ' + a.x.dev.name + ' and ' + b.x.dev.name); });
+			sh.forEach(b => { if (a !== b && meet(a.r, b.s.bb)) tight.push(tag + ': label of ' + a.x.dev.name + ' on ' + b.x.dev.name); });
+			if (Math.hypot(a.x.lab.px - a.x.lab.ax, a.x.lab.py - a.x.lab.ay) > 100) tight.push(tag + ': a long line to ' + a.x.dev.name);
+		});
+		const moved = T.mapLayout(mkNet(5)).devs.filter(x => at[x.dev.id] !== x.slot).length;   // other rates, the same devices
+		res.push(tag + ': ' + L.devs.length + ' stands, ' + far.length + ' away from their kind' + (far.length ? ' (' + far.join(', ') + ')' : '') + ', ' + moved + ' moved');
+		if (L.devs.length < (tag === 'page' ? 4 : 12) || far.length > (tag === 'page' ? 1 : 2) || moved) bad = true;
+	});
+	T.useGeom(keepG); A.slot = keepSlot; A.slotAt = keepAt; A.gotAny = keepAny;
+	// the groups themselves: 9 stands on a 3 x 3 grid, 3 kinds of 3: each kind fills one row or column (or another block of 3 touching)
+	const grid = []; for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) grid.push({ cx: x * 3, cy: y * 3 });
+	const nine = ['a', 'b', 'c', 'a', 'b', 'c', 'a', 'b', 'c'].map((k, i) => ({ kind: k, id: 'G' + i }));
+	const got = T.standGroups(nine, grid), blocks = ['a', 'b', 'c'].every(k => {
+		const ss = got.filter((s, i) => nine[i].kind === k);
+		return ss.every(s => ss.some(t => t !== s && Math.abs(t.cx - s.cx) + Math.abs(t.cy - s.cy) === 3));
+	});
+	ok(!bad && blocks && new Set(got).size === 9, 'devices of a kind stand together, and traffic alone moves none', res.join('; ') + '; grid ' + blocks);
+	ok(!tight.length, 'every drawing on the map has room: none on another, each label next to its own on nothing else', tight.slice(0, 5).join('; '));
 }
 
 process.exit(fails ? 1 : 0);
