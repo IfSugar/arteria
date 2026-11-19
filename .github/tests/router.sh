@@ -261,7 +261,8 @@ EOF
 cat > "$N/brctl" <<EOF
 #!$bb sh
 case "\$1 \$2" in
-	'showstp br0') printf 'br0\n bridge id\neth0 (1)\n port id\neth3 (2)\neth1 (3)\neth2 (4)\nwl0.1 (5)\nwl1.1 (6)\n' ;;
+	'showstp br0') p2=eth3; [ -f "$t/node-bond" ] && p2=bond0   # its LAN ports bonded: the bond is in the bridge in their place
+		printf 'br0\n bridge id\neth0 (1)\n port id\n%s (2)\neth1 (3)\neth2 (4)\nwl0.1 (5)\nwl1.1 (6)\n' \$p2 ;;
 	'showmacs br0') u=4; [ -f "$t/node-wired" ] && u=1
 		printf 'port no\tmac addr\t\tis local?\tageing timer\n  %s\t00:00:5e:00:53:fc\tno\t\t   0.10\n  %s\t02:cc:00:00:00:01\tno\t\t   0.30\n' \$u \$u
 		printf '  2\t02:cc:00:00:00:31\tno\t\t   1.20\n  5\t02:cc:00:00:00:11\tno\t\t   0.50\n  3\t02:10:00:00:00:80\tyes\t\t   0.00\n'
@@ -507,6 +508,21 @@ waitfor 5 seq_at_least 4; t_stop=$(date +%s%N); runi service_event start arteria
 waitfor 6 sampler_gone; ms_stop=$(( ($(date +%s%N) - t_stop) / 1000000 ))
 [ ! -f "$R/tmp/arteria/sampler.pid" ] && [ "$ms_stop" -lt 1500 ] && ok "the sampler stops at once when the page closes ($ms_stop ms, not after its 3 s pause)" \
 	|| bad "the sampler took $ms_stop ms to stop after the page closed (it should not finish its 3 s pause first)"
+# The page closes and opens again at once (a reload) while a sample is being taken (held in the radios' list until the
+# page is back): the sampler that was told to stop sees the page back, and goes on. It stopped after that sample, and the page
+# waited for its next heartbeat.
+mv "$B/wl" "$B/wl.real"
+printf '#!%s sh\ncase "$*" in *assoclist*) if [ -f %s/hold ]; then touch %s/inwl; while [ -f %s/hold ]; do sleep 0.1; done; fi ;; esac\nexec %s/wl.real "$@"\n' \
+	"$bb" "$t" "$t" "$t" "$B" > "$B/wl"; chmod +x "$B/wl"
+runi service_event start arteria; waitfor 12 seq_at_least 2
+rm -f "$t/inwl"; touch "$t/hold"; waitfor 10 test -f "$t/inwl"   # a sample is under way
+runi service_event start arteriastop; sleep 0.3; runi service_event start arteria
+rm -f "$W/live.htm" "$t/hold"; waitfor 6 test -f "$W/live.htm"   # that sample ends
+s=$(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null | cut -d: -f2); waitfor 8 seq_at_least $((${s:-0} + 1))
+if [ -n "$s" ] && seq_at_least $((s + 1)) && [ -f "$R/tmp/arteria/sampler.pid" ]; then ok "a page closed and opened again during a sample (a reload) keeps the sampler going"
+else bad "after a reload during a sample, sampling stopped (seq ${s:-none}, now $(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null))"; fi
+runi service_event start arteriastop; waitfor 6 sampler_gone
+mv "$B/wl.real" "$B/wl"
 sed -i 's/^INTERVAL=3$/INTERVAL=1/' "$R/jffs/addons/arteria/config"
 
 # ---- 2: with the key: the node's clients over the session ------------------------------------------
@@ -647,6 +663,17 @@ if grep -q '^L eth3 1 1000$' "$t/node-last.out" && grep -q '^M eth3 02:CC:00:00:
 	&& [ "$(grep -c '^X ' "$t/node-last.out")" = 1 ] && grep -q '^X eth0$' "$t/node-last.out" && grep -q '^C eth0 8000 9000$' "$t/node-last.out"; then
 	ok "a node on an Ethernet backhaul: its LAN ports' devices are read (one on a VLAN's port); the port leading to the router (with the router's address, on its VLAN too) is its uplink"
 else bad "a node's wired ports on an Ethernet backhaul:"; grep '^[LCMX] ' "$t/node-last.out"; fi
+# A node with a NAS on two of its LAN ports, bonded: its bridge has the bond in their place, and the bond is read as one port,
+# with the NAS on it (the node read nothing there, and the NAS showed beside the node on the router's port)
+nsys=$t/node-sys/class/net; mv "$nsys/eth3/brport" "$nsys/eth3/brport.off"; mkdir -p "$nsys/bond0/brport"
+echo 1 > "$nsys/bond0/carrier"; echo 2000 > "$nsys/bond0/speed"; cp "$t/node-proc/net/dev" "$t/node-dev.before"
+printf '  bond0: 524288 400 0 0 0 0 0 0 3145728 2100 0 0 0 0 0 0\n' >> "$t/node-proc/net/dev"
+touch "$t/node-bond" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-bond" "$t/node-tee"
+rm -rf "$nsys/bond0"; mv "$nsys/eth3/brport.off" "$nsys/eth3/brport"; cp "$t/node-dev.before" "$t/node-proc/net/dev"
+if grep -q '^L bond0 1 2000$' "$t/node-last.out" && grep -q '^M bond0 02:CC:00:00:00:31$' "$t/node-last.out" && grep -q '^C bond0 524288 3145728$' "$t/node-last.out" \
+	&& ! grep -q '^M eth3 ' "$t/node-last.out"; then
+	ok "a node's bonded LAN ports (a NAS on two of them) are read as one port, the bond, with the NAS on it"
+else bad "a node with a bond:"; grep '^[LCMX] ' "$t/node-last.out"; fi
 # A node whose firmware names the interfaces its devices are on as possible uplinks: it reads 0 devices, and nodes test says
 # which interfaces it read and skipped, with the devices on each (interface names only)
 touch "$t/node-all-listed" "$t/node-not-ap"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-all-listed" "$t/node-not-ap"
@@ -890,6 +917,8 @@ if [ "$PART" = install ]; then   # what the sampling half leaves for this one: t
 	mkdir -p "$R/jffs/addons/arteria/.ssh"; chmod 700 "$R/jffs/addons/arteria/.ssh"
 	cp "$script" "$inst"; cp "$asp" "$R/jffs/addons/arteria/arteria.asp"
 	printf 'INTERVAL=1\nIDLE_STOP=10\n' > "$R/jffs/addons/arteria/config"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
+	# and the router's own key list as nodekey left it, with the user's own key beside Arteria's (uninstall takes out only Arteria's)
+	printf 'ssh-ed25519 AAAAown me@laptop\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' > "$t/router-authkeys"
 fi
 # ---- 4: install and uninstall ----------------------------------------------------------------
 printf '#!/bin/sh\n/some/other/script startup &\n' > "$R/jffs/scripts/services-start"
@@ -988,6 +1017,7 @@ case "\$url" in
 	https://raw.githubusercontent.com/IfSugar/arteria/*) f="$srv/raw/\${url#https://raw.githubusercontent.com/IfSugar/arteria/}" ;;
 	https://api.github.com/repos/IfSugar/arteria/releases/latest) f="$srv/api/latest" ;;
 	https://api.github.com/repos/IfSugar/arteria/branches/*) f="$srv/api/branches/\${url#https://api.github.com/repos/IfSugar/arteria/branches/}" ;;
+	https://api.github.com/repos/IfSugar/arteria/compare/*) u=\${url#https://api.github.com/repos/IfSugar/arteria/compare/}; f="$srv/api/compare/\${u%%\?*}" ;;
 	*) f=/nonexistent ;;
 esac
 if [ -f "\$f" ]; then if [ -n "\$o" ]; then cat "\$f" > "\$o"; else cat "\$f"; fi; [ -n "\$w" ] && printf 200; exit 0; fi
@@ -1044,6 +1074,7 @@ else bad "update dev fix/menu:"; cat "$t/upd.out" "$t/curl.log"; fi
 # A development version tells amtm not to compare it with the release by MD5 (amtm took a development version for an MD5 update
 # of the release with the same number, and put the release back over it). Through amtm it's replaced only by a newer release.
 printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"; release 9.9.10 9.9.10
+mkdir -p "$srv/api/compare"; printf '{"status": "ahead", "ahead_by": 2, "behind_by": 0}' > "$srv/api/compare/9.9.10...0123456"   # it has commits the release hasn't
 n_md5=$(grep -c '^# amtm NoMD5check' "$R/jffs/addons/arteria/arteria.sh")
 upd amtmupdate && rc=0 || rc=1
 if [ "$n_md5" = 1 ] && [ "$(sed -n 2p "$R/jffs/addons/arteria/arteria.sh" | cut -c1-17)" = '# amtm NoMD5check' ] && [ $rc = 0 ] \
@@ -1060,6 +1091,15 @@ if [ $rc = 0 ] && [ "$(inst_ver)" = 9.9.11 ] && [ ! -f "$R/jffs/addons/arteria/b
 else bad "amtmupdate, newer release over a development version (rc $rc):"; cat "$t/upd.out" "$R/tmp/arteria/amtmupdate.log"; fi
 cp "$t/dev.sh" "$R/jffs/addons/arteria/arteria.sh"; cp "$t/dev.asp" "$R/jffs/addons/arteria/arteria.asp"; cp "$t/dev.build" "$R/jffs/addons/arteria/build"
 printf '{"tag_name": "9.9.10"}' > "$srv/api/latest"
+# the release with the development version's own number, once it has every commit of it (the branch became the release): it
+# replaces the development version through amtm too, which otherwise kept it until the next release
+printf '{"status": "behind", "ahead_by": 0, "behind_by": 3}' > "$srv/api/compare/9.9.10...0123456"
+upd amtmupdate && rc=0 || rc=1
+if [ $rc = 0 ] && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ] && cmp -s "$R/jffs/addons/arteria/arteria.sh" "$srv/raw/9.9.10/arteria.sh"; then
+	ok "amtmupdate: the release with a development version's number replaces it once it has all of it"
+else bad "amtmupdate, a release that has all of a development version (rc $rc):"; cat "$t/upd.out" "$R/tmp/arteria/amtmupdate.log"; fi
+cp "$t/dev.sh" "$R/jffs/addons/arteria/arteria.sh"; cp "$t/dev.asp" "$R/jffs/addons/arteria/arteria.asp"; cp "$t/dev.build" "$R/jffs/addons/arteria/build"
+rm -f "$srv/api/compare/9.9.10...0123456"
 # back to a release from a development version: the same number is installed again, and install takes the marks away
 upd update || true
 if grep -q "Updating 9.9.10 (development version: fix/menu @ 0123456, installed .*) -> 9.9.10, the release" "$t/upd.out" && [ "$(inst_ver)" = 9.9.10 ] && [ ! -f "$R/jffs/addons/arteria/build" ] \
@@ -1160,7 +1200,8 @@ if grep -q "^  \[WARN\] node 1 (RP-AX56): something crashed on the node running 
 else bad "doctor, a crash on the node:"; cat "$t/doc.out"; fi
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
-grep -q 'arteria' "$t/router-authkeys" 2>/dev/null && { bad "uninstall left the key in the router's list:"; cat "$t/router-authkeys"; } || ok "uninstall takes the key out of the router's own list"
+if [ -f "$t/router-authkeys" ] && ! grep -q 'arteria' "$t/router-authkeys"; then ok "uninstall takes the key out of the router's own list"
+else bad "uninstall left the key in the router's list (or there was no list to check):"; cat "$t/router-authkeys" 2>/dev/null; fi
 cmp -s "$R/jffs/scripts/services-start" "$t/ss.before" && ok "other scripts' hook lines untouched" || { bad "services-start changed:"; cat "$R/jffs/scripts/services-start"; }
 grep -q Arteria "$m" && bad "menu line left behind" || ok "menu line removed"
 

@@ -15,7 +15,7 @@
 #              https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh -o "$d/arteria.sh" && sh "$d/arteria.sh" install
 ###############################################################################
 
-VERSION="2.1.0"
+VERSION="2.2.0"
 NAME="arteria"
 # Files and folders only root can change. Scripts the router starts from service-event run with no umask, which made
 # the page's data files and their folder writable by any program on the router.
@@ -430,9 +430,10 @@ for p in $(nvram get lan_ifnames) $(nvram get wan_ifnames); do
 done
 # and an Ethernet port that is only in another bridge: a LAN port given to a VLAN (Guest Network Pro's LAN: VLAN) leaves
 # lan_ifnames and is in that VLAN's bridge alone (br53), untagged. A bridge port's name, less a VLAN on it, is the port.
+# A bond (a NAS on two of the node's ports) is in the bridge in its ports' place: it is one port, as on the router.
 for d in "$Q"/class/net/*/brport; do
 	p=${d%/brport}; p=${p##*/}; p=${p%.[0-9]*}
-	case "$p" in eth[0-9]*|vlan[0-9]*) ;; *) continue ;; esac
+	case "$p" in eth[0-9]*|vlan[0-9]*|bond[0-9]*) ;; *) continue ;; esac
 	case "$Y$U$E" in *" $p "*) continue ;; esac
 	[ -d "$Q/class/net/$p" ] && E="$E$p "
 done
@@ -583,7 +584,7 @@ nodes_tick() {   # keep a session to every node; restart dead ones, but never re
 # je escapes it one character at a time: what a backslash means in gsub's replacement differs between awks (BusyBox 1.38
 # drops the one in "\\\"", so a network name with a quote broke the JSON).
 NODE_AWK="$ROWS_AWK"'
-function je(s,   o, c, i, n) { gsub(/[[:cntrl:]]/, "", s); n = length(s); for (i = 1; i <= n; i++) { c = substr(s, i, 1); if (c == "\\" || c == "\"") o = o "\\"; o = o c } return o }
+function je(s,   o, c, i, len) { gsub(/[[:cntrl:]]/, "", s); len = length(s); for (i = 1; i <= len; i++) { c = substr(s, i, 1); if (c == "\\" || c == "\"") o = o "\\"; o = o c } return o }
 function nm(s) { return s ~ /^[A-Za-z0-9._-]+$/ && length(s) <= 16 }
 /^#B / { cur = ""; cc = 0; cu = ""; uc = 0; cw = ""; wc = 0; cl = ""; lc = 0; cm = ""; mc = 0; cn = ""; nc = 0; cx = ""; xc = 0; cup = ($2 ~ /^[0-9.]+$/) ? $2 : ""; open = 1; next }
 open && xc < 4 && /^X / && NF == 2 && nm($2) { cx = cx $2 ";"; xc++; next }
@@ -767,10 +768,11 @@ sampler() {
 	exec 8>"$TMPD/sampler.lock"
 	flock -n 8 || { echo "another sampler holds $TMPD/sampler.lock" >&2; exit 0; }
 	lowprio
-	echo $$ > "$TMPD/sampler.pid"
 	trap 'node_stop_all; rm -f "$TMPD/sampler.pid"; exit 0' INT TERM
-	# the page closed (start_arteriastop): stop now, not after the pause before the next sample, which can be 10 s
+	# the page closed (start_arteriastop): its signal cuts the pause before the next sample short, which can be 10 s. Only the
+	# heartbeat decides whether to go on: a page opened again at once (a reload) has put it back. The traps come before the pid.
 	SAMPLER_STOP=""; trap 'SAMPLER_STOP=1' USR1
+	echo $$ > "$TMPD/sampler.pid"
 	sample_init
 	CPUS=$(cpu_count); health
 	if [ "$HEALTH" -ge 2 ]; then pause_sampling "$HWHY"; rm -f "$TMPD/sampler.pid"; exit 0; fi
@@ -779,7 +781,7 @@ sampler() {
 	rm -f "$TMPD"/node.*.fail "$TMPD"/node.*.start "$TMPD"/node.*.last "$TMPD"/node.*.k "$TMPD"/node.*.out "$TMPD"/node.*.err
 	WD=$(web_dir); seq=0; ms=0; over=0; slow=0; paused=0; EFF=$INTERVAL
 	log "sampling started (page open)"
-	while [ -z "$SAMPLER_STOP" ] && hb_fresh; do
+	while SAMPLER_STOP=""; hb_fresh; do
 		t0=$(uptime_cs)
 		health
 		if [ "$HEALTH" -ge 2 ]; then over=$((over + 1)); else over=0; fi
@@ -823,7 +825,7 @@ sampler() {
 # The pause between samples, cut short by the page closing: the shell runs a trap (USR1, above) only once a command it waits
 # for has ended, and 'wait' ends at once when a signal comes, where a 'sleep' in the foreground would run its course.
 # The sleep doesn't get the sampler's lock (fd 8): one left running must not keep the next sampler from starting.
-sampler_nap() { [ -n "$SAMPLER_STOP" ] && return 0; sleep "$1" 8>&- & sn=$!; wait $sn 2>/dev/null; kill $sn 2>/dev/null; }
+sampler_nap() { [ -n "$SAMPLER_STOP" ] && return 0; sleep "$1" 8>&- & sn=$!; wait $sn 2>/dev/null || kill $sn 2>/dev/null; }   # kill only a sleep the stop cut short: a finished one's number is free again
 cl_count() { nvram get custom_clientlist | tr '<' '\n' | grep -c '>'; }   # names in the router's client list
 
 service_event() {   # action service
@@ -1146,7 +1148,7 @@ node_probe() {   # ip [trace-file] -> PROBE_MSG, PROBE_CRASH (1: something crash
 	elif [ $late = 1 ]; then PROBE_MSG="reading its devices took over 30 s"; rc=1
 	else
 		# the last line that isn't the script's own output (a network's name, an address): what the session said when it broke
-		e=$(grep -v -e '^#B' -e '^[SUCLMN] ' -e '^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
+		e=$(grep -v -e '^#B' -e '^[SUCLMNX] ' -e '^#E' "$o" 2>/dev/null | tr -cd '\012\040-\176' | grep . | tail -1 | scrub | cut -c1-120)
 		PROBE_MSG="reading its devices failed${e:+: $e}"; rc=1
 	fi
 	grep -Eq "$CRASH_RE" "$o" 2>/dev/null && PROBE_CRASH=1
@@ -1634,8 +1636,9 @@ update() {   # [force]  fetch the latest release from GitHub and reinstall over 
 		rm -rf "$dl"; say "Already up to date ($VERSION)."; return 0
 	fi
 	# amtm asks for an update when the script differs from the release with the same number: a development version does.
-	# Through amtm, a development version is replaced only by a newer release ('update' itself goes back to the release).
-	if [ -n "$AR_AMTM" ] && [ -f "$BUILD_FILE" ] && ! ver_gt "$new" "$VERSION"; then
+	# Through amtm, a development version is replaced only by a newer release, or by the release with its number once that
+	# has all of it (built from a branch that became the release) ('update' itself goes back to the release).
+	if [ -n "$AR_AMTM" ] && [ -f "$BUILD_FILE" ] && ! ver_gt "$new" "$VERSION" && ! { [ "$new" = "$VERSION" ] && in_release "$new"; }; then
 		rm -rf "$dl"; say "Kept the $(build_text): the latest release, $new, isn't newer. '$SCRIPT update' goes back to it."; return 0
 	fi
 	if ver_gt "$VERSION" "$new" && [ "$1" != "force" ]; then
@@ -1649,6 +1652,12 @@ update() {   # [force]  fetch the latest release from GitHub and reinstall over 
 	install_dl
 }
 
+in_release() {   # tag: true if that release has every commit of this development version (GitHub says so; unsure is no)
+	read -r kind br sha when 2>/dev/null < "$BUILD_FILE"
+	case "$sha" in ''|*[!0-9a-f]*) return 1 ;; esac
+	curl -fsL --proto =https --proto-redir =https --retry 2 --connect-timeout 15 -H 'Accept: application/vnd.github+json' \
+		"https://api.github.com/repos/$REPO/compare/$1...$sha?per_page=1" 2>/dev/null | grep -q '"ahead_by": *0[^0-9]'
+}
 build_text() {   # "" for a release; "development version: main @ 1a2b3c4, installed 2026-11-11 23:30"
 	[ -f "$BUILD_FILE" ] || return 0
 	read -r kind br sha when < "$BUILD_FILE"
