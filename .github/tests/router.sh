@@ -261,7 +261,8 @@ EOF
 cat > "$N/brctl" <<EOF
 #!$bb sh
 case "\$1 \$2" in
-	'showstp br0') printf 'br0\n bridge id\neth0 (1)\n port id\neth3 (2)\neth1 (3)\neth2 (4)\nwl0.1 (5)\nwl1.1 (6)\n' ;;
+	'showstp br0') p2=eth3; [ -f "$t/node-bond" ] && p2=bond0   # its LAN ports bonded: the bond is in the bridge in their place
+		printf 'br0\n bridge id\neth0 (1)\n port id\n%s (2)\neth1 (3)\neth2 (4)\nwl0.1 (5)\nwl1.1 (6)\n' \$p2 ;;
 	'showmacs br0') u=4; [ -f "$t/node-wired" ] && u=1
 		printf 'port no\tmac addr\t\tis local?\tageing timer\n  %s\t00:00:5e:00:53:fc\tno\t\t   0.10\n  %s\t02:cc:00:00:00:01\tno\t\t   0.30\n' \$u \$u
 		printf '  2\t02:cc:00:00:00:31\tno\t\t   1.20\n  5\t02:cc:00:00:00:11\tno\t\t   0.50\n  3\t02:10:00:00:00:80\tyes\t\t   0.00\n'
@@ -507,6 +508,21 @@ waitfor 5 seq_at_least 4; t_stop=$(date +%s%N); runi service_event start arteria
 waitfor 6 sampler_gone; ms_stop=$(( ($(date +%s%N) - t_stop) / 1000000 ))
 [ ! -f "$R/tmp/arteria/sampler.pid" ] && [ "$ms_stop" -lt 1500 ] && ok "the sampler stops at once when the page closes ($ms_stop ms, not after its 3 s pause)" \
 	|| bad "the sampler took $ms_stop ms to stop after the page closed (it should not finish its 3 s pause first)"
+# The page closes and opens again at once (a reload) while a sample is being taken (held in the radios' list until the
+# page is back): the sampler that was told to stop sees the page back, and goes on. It stopped after that sample, and the page
+# waited for its next heartbeat.
+mv "$B/wl" "$B/wl.real"
+printf '#!%s sh\ncase "$*" in *assoclist*) if [ -f %s/hold ]; then touch %s/inwl; while [ -f %s/hold ]; do sleep 0.1; done; fi ;; esac\nexec %s/wl.real "$@"\n' \
+	"$bb" "$t" "$t" "$t" "$B" > "$B/wl"; chmod +x "$B/wl"
+runi service_event start arteria; waitfor 12 seq_at_least 2
+rm -f "$t/inwl"; touch "$t/hold"; waitfor 10 test -f "$t/inwl"   # a sample is under way
+runi service_event start arteriastop; sleep 0.3; runi service_event start arteria
+rm -f "$W/live.htm" "$t/hold"; waitfor 6 test -f "$W/live.htm"   # that sample ends
+s=$(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null | cut -d: -f2); waitfor 8 seq_at_least $((${s:-0} + 1))
+if [ -n "$s" ] && seq_at_least $((s + 1)) && [ -f "$R/tmp/arteria/sampler.pid" ]; then ok "a page closed and opened again during a sample (a reload) keeps the sampler going"
+else bad "after a reload during a sample, sampling stopped (seq ${s:-none}, now $(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null))"; fi
+runi service_event start arteriastop; waitfor 6 sampler_gone
+mv "$B/wl.real" "$B/wl"
 sed -i 's/^INTERVAL=3$/INTERVAL=1/' "$R/jffs/addons/arteria/config"
 
 # ---- 2: with the key: the node's clients over the session ------------------------------------------
@@ -626,6 +642,13 @@ run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
 grep -q "key login OK (Arteria's key), reading its devices failed: dbclient: Connection to user@IP:2222 exited: Remote closed the connection" "$t/nt.out" \
 	&& ok "nodes test: a node whose session breaks says why, without its address or user name" \
 	|| { bad "nodes test, broken session:"; cat "$t/nt.out"; }
+# one that breaks after a round's port lines, with nothing on stderr: none of the script's own lines (X: its wired uplink) is taken
+# for what the session said
+printf 'echo "#B 1"\necho "L eth3 1 1000"\necho "X eth0"\nexit 1\n' > "$t/node-hostile"
+run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-hostile"
+grep -q "key login OK (Arteria's key), reading its devices failed$" "$t/nt.out" \
+	&& ok "nodes test: a session that breaks after its port lines isn't reported with one of them as the reason" \
+	|| { bad "nodes test, broken after the port lines:"; cat "$t/nt.out"; }
 # A node that joins both radios' uplinks into one interface, dpsta (an RP-AX56): each packet is counted on dpsta and on its radio,
 # so its uplink is dpsta alone, or its backhaul reads double
 touch "$t/node-dpsta" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-dpsta" "$t/node-tee"
@@ -647,6 +670,17 @@ if grep -q '^L eth3 1 1000$' "$t/node-last.out" && grep -q '^M eth3 02:CC:00:00:
 	&& [ "$(grep -c '^X ' "$t/node-last.out")" = 1 ] && grep -q '^X eth0$' "$t/node-last.out" && grep -q '^C eth0 8000 9000$' "$t/node-last.out"; then
 	ok "a node on an Ethernet backhaul: its LAN ports' devices are read (one on a VLAN's port); the port leading to the router (with the router's address, on its VLAN too) is its uplink"
 else bad "a node's wired ports on an Ethernet backhaul:"; grep '^[LCMX] ' "$t/node-last.out"; fi
+# A node with a NAS on two of its LAN ports, bonded: its bridge has the bond in their place, and the bond is read as one port,
+# with the NAS on it (the node read nothing there, and the NAS showed beside the node on the router's port)
+nsys=$t/node-sys/class/net; mv "$nsys/eth3/brport" "$nsys/eth3/brport.off"; mkdir -p "$nsys/bond0/brport" "$nsys/eth3/bonding_slave"
+echo 1 > "$nsys/bond0/carrier"; echo 2000 > "$nsys/bond0/speed"; cp "$t/node-proc/net/dev" "$t/node-dev.before"
+printf '  bond0: 524288 400 0 0 0 0 0 0 3145728 2100 0 0 0 0 0 0\n' >> "$t/node-proc/net/dev"
+touch "$t/node-bond" "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-bond" "$t/node-tee"
+rm -rf "$nsys/bond0" "$nsys/eth3/bonding_slave"; mv "$nsys/eth3/brport.off" "$nsys/eth3/brport"; cp "$t/node-dev.before" "$t/node-proc/net/dev"
+if grep -q '^L bond0 1 2000$' "$t/node-last.out" && grep -q '^M bond0 02:CC:00:00:00:31$' "$t/node-last.out" && grep -q '^C bond0 524288 3145728$' "$t/node-last.out" \
+	&& ! grep -q '^[LCM] eth3 ' "$t/node-last.out"; then   # its port (eth3, also on a VLAN's bridge here) isn't read beside it
+	ok "a node's bonded LAN ports (a NAS on two of them) are read as one port, the bond, with the NAS on it"
+else bad "a node with a bond:"; grep '^[LCMX] ' "$t/node-last.out"; fi
 # A node whose firmware names the interfaces its devices are on as possible uplinks: it reads 0 devices, and nodes test says
 # which interfaces it read and skipped, with the devices on each (interface names only)
 touch "$t/node-all-listed" "$t/node-not-ap"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-all-listed" "$t/node-not-ap"
@@ -890,6 +924,8 @@ if [ "$PART" = install ]; then   # what the sampling half leaves for this one: t
 	mkdir -p "$R/jffs/addons/arteria/.ssh"; chmod 700 "$R/jffs/addons/arteria/.ssh"
 	cp "$script" "$inst"; cp "$asp" "$R/jffs/addons/arteria/arteria.asp"
 	printf 'INTERVAL=1\nIDLE_STOP=10\n' > "$R/jffs/addons/arteria/config"; printf 'key\n' > "$R/jffs/addons/arteria/node_key"
+	# and the router's own key list as nodekey left it, with the user's own key beside Arteria's (uninstall takes out only Arteria's)
+	printf 'ssh-ed25519 AAAAown me@laptop\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITEST arteria' > "$t/router-authkeys"
 fi
 # ---- 4: install and uninstall ----------------------------------------------------------------
 printf '#!/bin/sh\n/some/other/script startup &\n' > "$R/jffs/scripts/services-start"
@@ -1158,9 +1194,12 @@ if grep -q "^  \[WARN\] node 1 (RP-AX56): something crashed on the node running 
 	&& grep -q '^== node 1 (RP-AX56)' "$R/tmp/arteria/node-trace.txt" && ! grep -qi '192\.168\|02:CC' "$t/doc.out" "$R/tmp/arteria/node-trace.txt"; then
 	ok "doctor: a command that crashes on a node is named, its trace saved without addresses"
 else bad "doctor, a crash on the node:"; cat "$t/doc.out"; fi
+own_key=$(grep -c '^ssh-ed25519 AAAAown me@laptop$' "$t/router-authkeys" 2>/dev/null)
 AR_ROOT="$R" AR_PROC="$t/proc" AR_SYS="$t/sys" PATH="$B" "$bb" ash "$R/jffs/addons/arteria/arteria.sh" uninstall > "$t/uninstall.out" 2>&1 || bad "uninstall failed"
 [ ! -e "$R/jffs/addons/arteria" ] && [ ! -e "$R/www/user/user1.asp" ] && ok "uninstall removes the addon and its page" || bad "files left after uninstall"
-grep -q 'arteria' "$t/router-authkeys" 2>/dev/null && { bad "uninstall left the key in the router's list:"; cat "$t/router-authkeys"; } || ok "uninstall takes the key out of the router's own list"
+if [ -f "$t/router-authkeys" ] && ! grep -q 'arteria' "$t/router-authkeys" && { [ "$own_key" = 0 ] || grep -q '^ssh-ed25519 AAAAown me@laptop$' "$t/router-authkeys"; }; then
+	ok "uninstall takes the key out of the router's own list$( [ "$own_key" = 1 ] && printf ', and leaves your own')"
+else bad "uninstall left the key in the router's list (or there was no list to check):"; cat "$t/router-authkeys" 2>/dev/null; fi
 cmp -s "$R/jffs/scripts/services-start" "$t/ss.before" && ok "other scripts' hook lines untouched" || { bad "services-start changed:"; cat "$R/jffs/scripts/services-start"; }
 grep -q Arteria "$m" && bad "menu line left behind" || ok "menu line removed"
 

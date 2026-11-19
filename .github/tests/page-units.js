@@ -85,7 +85,13 @@ const CASES = [
 	['GS308EP', 0, 0, 0, 'wired', 'NETGEAR', '', 'switch'],
 	['TL-SG108E', 0, 0, 0, 'wired', '', '', 'switch'],
 	['USW-Lite-8-PoE', 0, 0, 0, 'wired', '', '', 'switch'],
-	['Kids Switch', 0, 0, 0, 'wifi', '', '', 'console'],
+	['Switch', 0, 0, 0, 'wifi', '', '', 'console'],
+	['Switch 2', 0, 0, 0, 'wifi', '', '', 'console'],
+	// on Wi-Fi, any other "… switch" is left to the kinds after it, as before (a smart plug or switch, not a game console)
+	['Fan switch', 0, 0, 0, 'wifi', '', '', 'appliance'],
+	['Garden switch', 0, 0, 0, 'wifi', '', '', 'generic'],
+	['Kids Switch', 0, 0, 0, 'wifi', '', '', 'generic'],
+	['Kids Nintendo Switch', 0, 0, 0, 'wifi', '', '', 'console'],
 	['Hall light switch', 0, 0, 0, 'wired', '', '', 'wallswitch'],
 	['SteamMachine', 0, 0, 0, 'wired', '', '', 'console'],
 	// words run together: a name rule finds "nas" in JohnsNas, nas01, johns_nas and ExampleDSPNAS; a first name that ends in it isn't one
@@ -852,6 +858,50 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	const ND = '02:10:00:00:04:10';
 	n = AR.buildNet(smp({ up: '11010.0', nodes: [{ mac: ND, ip: '192.168.50.33', model: 'RT-BE58_Go', alias: 'Study', sta: '', state: 'ok', up: '7000.0', c: [row('wl2.1', '6', L1, 0, 1)] }] }));
 	ok(n.byId[M] && n.byId[M].node && n.byId[M].lmac === L1 && n.byId[M].name === 'Galaxy-S26-Ultra', 'a multi-link device on a node: the same', JSON.stringify(n.devs.map(d => d.id)));
+	// a station that copies a known device's address can't hide as it: not while that device is on a radio as itself (2.4 GHz
+	// here), nor when it is on a cable (a router port no node is behind); the station shows as a device of its own
+	A.names = AR.parseNames({ leases: '1794400000 ' + M.toLowerCase() + ' 192.168.50.60 Office-laptop *' });
+	['r:' + M].forEach(k => { delete A.prev[k]; delete A.sm[k]; });
+	const sp = (k, more) => AR.buildNet(smp(Object.assign({ up: (11100 + 2 * k).toFixed(1), sta: [row('wl2.1', '6', L1, k, 5)] }, more)));
+	sp(5, { sta: [row('wl2.1', '6', L1, 0, 5), row('wl0.1', '2.4', M, 0, 1)] }); n = sp(6, { sta: [row('wl2.1', '6', L1, 1, 5), row('wl0.1', '2.4', M, 1, 1)] });
+	const air = n.byId[M], fake = n.byId[L1];
+	ok(air && (air.links || 1) === 1 && air.band === '2.4' && !air.lmac && fake && fake.mac === L1,
+		'a station with a copied address isn\'t taken for a device that is on the air as itself', JSON.stringify({ ids: n.devs.map(d => d.id), links: air && air.links, band: air && air.band }));
+	const wired = { ports: ['eth1'], links: [['eth0', 1, 1000], ['eth1', 1, 2500]], ifs: [['eth0', '1', '1'], ['eth1', '1000', '1000']], macs: [['eth1', M]] };
+	sp(7, wired); n = sp(8, wired);
+	const w = n.byId[M], f2 = n.byId[L1];
+	ok(w && w.link === 'wired' && w.port === 'eth1' && f2 && f2.link === 'wifi',
+		'a station with a copied address isn\'t taken for a device on a cable: the device stays on its port', JSON.stringify(n.devs.map(d => d.id + '/' + d.link + '/' + (d.port || ''))));
+	// only a Wi-Fi 7 row: two Wi-Fi 6 devices whose addresses differ in the last part (one has no lease yet) stay two devices
+	const V1 = '52:54:00:12:34:01', V2 = '52:54:00:12:34:02';
+	A.names = AR.parseNames({ leases: '1794400000 ' + V1.toLowerCase() + ' 192.168.50.70 vm-a *' });
+	const ax = (ifn, m, k) => [ifn, '5', m, String(1000 + k * B), '1000', -50, 1201000, 1201000, 100, 1, 'ax', 2, 80];
+	n = AR.buildNet(smp({ up: '11200.0', sta: [ax('wl1.1', V1, 0), ax('wl1.1', V2, 0)] }));
+	const both = n.byId[V1] && n.byId[V2] && n.devs.filter(d => d.link === 'wifi').length === 2;
+	n = AR.buildNet(smp({ up: '11202.0', sta: [ax('wl1.1', V2, 1)] }));   /* the one with the lease has left */
+	ok(both && n.byId[V2] && !n.byId[V1], 'two Wi-Fi 6 devices with near addresses stay two, and one isn\'t taken for the other when that has left (only a Wi-Fi 7 row can be a link address)',
+		JSON.stringify(n.devs.map(d => d.id + '/' + (d.links || 1))));
+	// a node wired behind a node's LAN port (a daisy chain): the first node learns the phone's own address on that port, which
+	// leads to the other node, not to a device on a cable: the phone on the second node is still recognised
+	A.names = AR.parseNames({ leases: '1794400000 ' + M.toLowerCase() + ' 192.168.50.60 Galaxy-S26-Ultra *' });
+	const NA = '02:10:00:00:04:30', NAbh = '02:10:00:00:04:34', NB = '02:10:00:00:04:40';
+	const chain = u => smp({ up: u.toFixed(1), sta: [ax('wl1.1', NAbh, u)], nodes: [
+		{ mac: NA, ip: '192.168.50.12', model: 'RT-BE58', alias: 'Loft', sta: NAbh, state: 'ok', up: (u - 9000).toFixed(1), c: [],
+			w: [['eth3', 1, 1000, String(5000 + u * 100), String(5000 + u * 100)]], m: [['eth3', NB], ['eth3', M]] },
+		{ mac: NB, ip: '192.168.50.13', model: 'RT-BE58', alias: 'Garage', sta: '', state: 'ok', up: (u - 8000).toFixed(1), c: [row('wl2.1', '6', L1, u, 30)] }] });
+	AR.buildNet(chain(11300)); n = AR.buildNet(chain(11302));
+	const ch = n.byId[M];
+	ok(ch && ch.node && ch.node.name === 'Garage' && ch.lmac === L1, 'a multi-link device on a node wired behind another node\'s port: the same', JSON.stringify(n.devs.map(d => d.id + '/' + (d.node ? d.node.name : ''))));
+	// a Wi-Fi 7 station on the router's own radios isn't taken for a named PC on a router port, even a port a node is behind too
+	const PC = '3C:00:5E:00:53:A1', LP = '3E:00:5E:00:53:77', NW = '02:10:00:00:04:50';
+	A.names = AR.parseNames({ leases: '1794400000 ' + PC.toLowerCase() + ' 192.168.50.71 Study-PC *' });
+	const sw = (u, st) => smp({ up: u.toFixed(1), ports: ['eth1'], links: [['eth0', 1, 1000], ['eth1', 1, 2500]], ifs: [['eth0', '1', '1'], ['eth1', '1000', '1000']],
+		macs: [['eth1', NW], ['eth1', PC]], sta: st ? [row('wl2.1', '6', LP, u, 5)] : [],
+		nodes: [{ mac: NW, ip: '192.168.50.14', model: 'RT-BE58', alias: 'Den', sta: '', state: 'ok', up: (u - 9000).toFixed(1), c: [] }] });
+	AR.buildNet(sw(11400, true)); n = AR.buildNet(sw(11402, true));
+	const pc = n.byId[PC];
+	ok(pc && pc.link === 'wired' && pc.port === 'eth1' && n.byId[LP] && n.byId[LP].link === 'wifi',
+		'a Wi-Fi 7 station on the router isn\'t taken for a PC on a port a node is behind too: the PC stays on its port', JSON.stringify(n.devs.map(d => d.id + '/' + d.link + '/' + (d.port || ''))));
 	A.names = AR.parseNames({});
 }
 
@@ -900,6 +950,101 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	});
 	ok(!bad && blocks && new Set(got).size === 9, 'devices of a kind stand together, and traffic alone moves none', res.join('; ') + '; grid ' + blocks);
 	ok(!tight.length, 'every drawing on the map has room: none on another, each label next to its own on nothing else', tight.slice(0, 5).join('; '));
+}
+
+// ---- 30. a node that names a port after something every JavaScript object has (__proto__, constructor, toString): the
+// port is dropped, the page goes on (it stopped at "Connecting…" on every sample), and the node's other port still shows
+{
+	const N = '02:10:00:00:00:F8', bh = '02:10:00:00:00:F9';
+	const odd = up => AR.buildNet(smp({ up: up, nets: [['eth6', 'Home', 1]], sta: [['eth6', '5', bh, '1000', '1000', -55, 864, 864, 100, 0, 'ax', 2, 80]],
+		nodes: [{ mac: N, ip: '192.168.50.16', model: 'RP-AX56', alias: 'Loft', sta: bh, state: 'ok', up: up,
+			w: [['__proto__', 1, 1000, '9', '9'], ['constructor', 1, 1000, '9', '9'], ['toString', 1, 1000, '9', '9'], ['eth3', 1, 1000, '500', '900']],
+			m: [['__proto__', '00:00:5E:00:53:D1'], ['constructor', '00:00:5E:00:53:D2'], ['toString', '00:00:5E:00:53:D3'], ['eth3', '00:00:5E:00:53:D4']],
+			u: [['hasOwnProperty', '1', '1']], n: [['valueOf', 'Home', 1]] }] }));
+	let res;
+	try { odd('9300.0'); const n = odd('9302.0'); res = n.devs.filter(d => d.link === 'wired' && d.node).map(d => d.id + '@' + d.port).join(','); } catch (e) { res = 'ERROR ' + e.message; }
+	ok(res === '00:00:5E:00:53:D4@eth3', 'a node port named __proto__, constructor or toString is dropped; the page goes on and the node\'s real port shows', res);
+}
+
+// ---- 31. traffic swaps which devices have a stand (a busy one comes off the tray): the devices that stay on the map don't move,
+// in the zone of the swap or any other (random homes, the page's view and an expanded one); the newcomer takes a free stand
+{
+	const KINDS = ['tv', 'phone', 'laptop', 'light', 'camera', 'plug', 'tablet', 'speaker', 'desktop', 'nas', 'printer', 'console'];
+	const LONG = ['Living room television', 'Kids tablet', 'X', 'Garden camera north', 'Study desktop PC', 'Plug'];
+	let seed = 7; const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+	const keepG = T.G(), moved = [];
+	let swaps = 0, came = 0, offBefore = 0;
+	for (let trial = 0; trial < 120; trial++) {
+		const big = trial % 2 === 1, nr = 4 + rnd(10), nn = 4 + rnd(5), rk = [], nk = [], rn = [], nnm = [];
+		for (let i = 0; i < nr; i++) { rk.push(KINDS[rnd(KINDS.length)]); rn.push(LONG[rnd(LONG.length)] + ' r' + i); }
+		for (let i = 0; i < nn; i++) { nk.push(KINDS[rnd(KINDS.length)]); nnm.push(LONG[rnd(LONG.length)] + ' n' + i); }
+		const busyR = trial % 3 === 0;   /* a third of the trials: the swap is among the router's own devices */
+		const mk = busy => {
+			const node = { id: 'node:02:10:00:00:00:80', mac: '02:10:00:00:00:80', name: 'Hall', model: 'RT-AX58U', online: true, state: 'ok', bh: { dn: 1, up: 1, sdn: 5, sup: 1, ok: true }, devs: [], sta: [] };
+			const devs = [];
+			const add = (id, kind, name, nd, sdn) => { const d = { id, mac: id, name, kind, link: 'wifi', band: '5', st: 'ok', dn: sdn, up: 0.1, sdn, sup: 0.1, rssi: -50, node: nd || null, s: { dn: sdn, up: 0.1, sdn, sup: 0.1, ok: true } }; devs.push(d); if (nd) nd.devs.push(d); };
+			rk.forEach((k, i) => add('02:CC:00:00:01:' + (10 + i), k, rn[i], null, busy && busyR && i === nr - 1 ? 500 : nr - i));
+			nk.forEach((k, i) => add('02:CC:00:00:02:' + (10 + i), k, nnm[i], node, busy && !busyR && i === nn - 1 ? 500 : nn - i));
+			const net = { router: { model: 'RT-AX86U' }, nodes: [node], devs, byId: {}, wan: { dn: 1, up: 1 }, total: { dn: 1, up: 1, sdn: 1, sup: 1 } };
+			devs.forEach(d => { net.byId[d.id] = d; }); net.byId[node.id] = node;
+			return net;
+		};
+		T.useGeom(big ? T.geomBig(1568, 780, 1) : T.geomSmall());
+		A.slot = {}; A.gotAny = true; A.slotAt = 0; A.stands = null;
+		const pos = L => { const o = {}; L.wired.concat(L.devs).forEach(x => { o[x.dev.id] = x.dev.name + '@' + x.slot.cx + ',' + x.slot.cy; }); return o; };
+		T.mapLayout(mk(false)); const p1 = pos(T.mapLayout(mk(false)));
+		A.slotAt = 0;   /* the 20 s hold is over */
+		const p2 = pos(T.mapLayout(mk(true)));
+		if (Object.keys(p1).some(id => !p2[id])) swaps++;
+		const bz = busyR ? '02:CC:00:00:01:' + (10 + nr - 1) : '02:CC:00:00:02:' + (10 + nn - 1);
+		if (!p1[bz]) { offBefore++; if (p2[bz]) came++; }
+		Object.keys(p1).filter(id => p2[id] && p1[id] !== p2[id]).forEach(id => moved.push((big ? 'expanded ' : 'page ') + trial + ': ' + p1[id] + ' -> ' + p2[id].split('@')[1]));
+	}
+	T.useGeom(keepG); A.stands = null; A.slot = {};
+	ok(swaps >= 20 && !moved.length && came * 5 >= offBefore * 3, 'traffic that swaps a device onto the map moves none of the others (' + swaps + ' swaps; the busy one came on in ' + came + ' of ' + offBefore + ')',
+		moved.slice(0, 4).join('; ') + ' came ' + came + '/' + offBefore);
+}
+
+// ---- 32. the same over time: random homes (wired devices, no node to two nodes), 20 rounds each in which a different device
+// gets busy; only traffic changes, so no device that stays on the map ever moves (two seeds where one moved before: a restored
+// drawing kept off the labels of the ones that stay, and one that gave up its stand to a newcomer stood somewhere else)
+{
+	const KINDS = ['tv', 'phone', 'laptop', 'light', 'camera', 'plug', 'tablet', 'speaker', 'desktop', 'nas', 'printer', 'console', 'vacuum', 'washer', 'air'];
+	const LONG = ['Living room television', 'Kids tablet', 'X', 'Garden camera north', 'Study desktop PC', 'Plug', 'Bedroom ceiling light'];
+	const keepG = T.G(), moved = [];
+	let steps = 0;
+	[[23, 2], [21, 2], [5, -1]].forEach(([sd, fixedNodes]) => {
+		let seed = sd; const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+		for (let trial = 0; trial <= 60; trial++) {
+			const big = trial % 2 === 1, nnodes = fixedNodes >= 0 ? fixedNodes : rnd(3), nr = 3 + rnd(16), nw = rnd(4), per = [], spec = [];
+			for (let j = 0; j < nnodes; j++) per.push(2 + rnd(10));
+			for (let i = 0; i < nr; i++) spec.push({ kind: KINDS[rnd(KINDS.length)], name: LONG[rnd(LONG.length)] + ' r' + i, node: -1, link: 'wifi' });
+			for (let i = 0; i < nw; i++) spec.push({ kind: ['nas', 'desktop', 'tv', 'console'][rnd(4)], name: 'Wired ' + LONG[rnd(LONG.length)] + ' w' + i, node: -1, link: 'wired' });
+			per.forEach((c, j) => { for (let i = 0; i < c; i++) spec.push({ kind: KINDS[rnd(KINDS.length)], name: LONG[rnd(LONG.length)] + ' n' + j + '.' + i, node: j, link: 'wifi' }); });
+			spec.forEach((s, i) => { s.id = '02:CC:00:' + (10 + s.node + 1) + ':' + (10 + (i >> 6)) + ':' + (10 + (i & 63)); s.rate = 1 + rnd(20) / 10; });
+			const mk = () => {
+				const nodes = per.map((c, j) => ({ id: 'node:02:10:00:00:00:8' + j, mac: '02:10:00:00:00:8' + j, name: 'Node ' + j, model: 'RT-AX58U', online: true, state: 'ok', bh: { dn: 1, up: 1, sdn: 5, sup: 1, ok: true }, devs: [], sta: [] }));
+				const devs = spec.map(s => { const nd = s.node >= 0 ? nodes[s.node] : null; const d = { id: s.id, mac: s.id, name: s.name, kind: s.kind, link: s.link, port: s.link === 'wired' ? 'eth1' : undefined, portLabel: 'LAN 1', band: '5', st: 'ok', dn: s.rate, up: 0.1, sdn: s.rate, sup: 0.1, rssi: -50, node: nd, s: { dn: s.rate, up: 0.1, sdn: s.rate, sup: 0.1, ok: true } }; if (nd) nd.devs.push(d); return d; });
+				const net = { router: { model: 'RT-AX86U' }, nodes, devs, byId: {}, wan: { dn: 1, up: 1 }, total: { dn: 1, up: 1, sdn: 1, sup: 1 } };
+				devs.forEach(d => { net.byId[d.id] = d; }); nodes.forEach(x => { net.byId[x.id] = x; });
+				return net;
+			};
+			T.useGeom(big ? T.geomBig(1568, 780, Math.min(nnodes, 3)) : T.geomSmall());
+			A.slot = {}; A.gotAny = true; A.slotAt = 0; A.stands = null; A.nodeZones = null;
+			const pos = L => { const o = {}; L.wired.concat(L.devs).forEach(x => { o[x.dev.id] = x.dev.name + '@' + x.slot.cx + ',' + x.slot.cy; }); return o; };
+			T.mapLayout(mk()); let P = pos(T.mapLayout(mk()));
+			for (let step = 0; step < 20; step++) {
+				spec.forEach(s => { if (s.rate > 50) s.rate = 1 + rnd(20) / 10; });
+				spec[rnd(spec.length)].rate = 200 + rnd(100);
+				A.slotAt = 0;
+				const P2 = pos(T.mapLayout(mk())); steps++;
+				Object.keys(P).filter(id => P2[id] && P[id] !== P2[id]).forEach(id => moved.push(sd + '/' + trial + '/' + step + ' ' + P[id] + ' -> ' + P2[id].split('@')[1]));
+				P = P2;
+			}
+		}
+	});
+	T.useGeom(keepG); A.stands = null; A.slot = {}; A.nodeZones = null;
+	ok(!moved.length, 'over ' + steps + ' rounds of changing traffic in random homes, no device that stays on the map moves', moved.slice(0, 4).join('; '));
 }
 
 process.exit(fails ? 1 : 0);

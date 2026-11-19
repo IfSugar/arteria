@@ -8,7 +8,7 @@
 <link rel="shortcut icon" href="images/favicon.png"/>
 <link rel="icon" href="images/favicon.png"/>
 <title>Arteria</title>
-<!-- arteria-version: 2.1.0 (must match VERSION in arteria.sh) -->
+<!-- arteria-version: 2.2.0 (must match VERSION in arteria.sh) -->
 <link rel="stylesheet" type="text/css" href="index_style.css"/>
 <link rel="stylesheet" type="text/css" href="form_style.css"/>
 <script type="text/javascript" src="/js/jquery.js"></script>
@@ -272,7 +272,7 @@
    Only initial() (called by <body onload>) and the Arteria object (used by the page's buttons) are global. */
 (function () {
 'use strict';
-var VERSION = '2.1.0';
+var VERSION = '2.2.0';
 var BASE = '/ext/arteria/';
 var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', WARN = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';   /* ACC follows the router's theme (theme()) */
 /* Packets: one CSS class per bucket (b0 = busiest). As throughput rises on a log scale, packets grow
@@ -684,12 +684,22 @@ function nameWords(s) {
 }
 /* What a name says a device is: the first rule that matches the name as written, then (only when none did) with words run
    together split apart, so "Somfy TaHoma" stays a hub. Null when no rule matches. */
-function nameKind(s) {
-	var w, i;
+/* wifi: the device is on Wi-Fi, where a network switch isn't: a name that is just "Switch" (Nintendo Switch, Switch 2, Switch
+   OLED) is a game console, and any other "… switch" (Fan switch, Tapo switch) is left to the kinds after it */
+var CONSOLE_SWITCH = /^(nintendo[ _-]?)?switch([ _-]?(\d|oled|lite))?$/i;
+function nameKind(s, wifi) {
+	var w, i, k;
 	if (!s) return null;
-	for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(s)) return { kind: KIND_STRONG[i][0], i: i, split: false };
-	if ((w = nameWords(s)) !== s) for (i = 0; i < KIND_STRONG.length; i++) if (KIND_STRONG[i][1].test(w)) return { kind: KIND_STRONG[i][0], i: i, split: true };
-	return null;
+	var one = function (x, split) {
+		for (i = 0; i < KIND_STRONG.length; i++) {
+			k = KIND_STRONG[i][0];
+			if (!KIND_STRONG[i][1].test(x)) continue;
+			if (k === 'switch' && wifi) { if (CONSOLE_SWITCH.test(x.trim())) return { kind: 'console', i: i, split: split }; continue; }
+			return { kind: k, i: i, split: split };
+		}
+		return null;
+	};
+	return one(s, false) || ((w = nameWords(s)) !== s ? one(w, true) : null);
 }
 /* A Wi-Fi module's maker and the host name its firmware sends, when the two together say what the device is:
    Daikin's Wi-Fi adapters (BRP069…) carry a Murata module and call themselves "Client". */
@@ -737,7 +747,7 @@ function classify(mac, name, link, al) {
 	var KEYS = ['nickname', 'label', 'hostname', 'router name'], names = [al ? c.name : nickOf(c, m), name, l && l.host, m && m.name], i, j, r;
 	/* What a name says: as written first, then with words run together split apart (only when nothing matched as written,
 	   so "Somfy TaHoma" stays a hub) */
-	var byName = function (s, j) { var k = nameKind(s); return k ? res(k.kind === 'switch' && link === 'wifi' ? 'console' : k.kind, 'name', KEYS[j] + ' #' + k.i + (k.split ? ' split' : '')) : null; };
+	var byName = function (s, j) { var k = nameKind(s, link === 'wifi'); return k ? res(k.kind, 'name', KEYS[j] + ' #' + k.i + (k.split ? ' split' : '')) : null; };
 	/* 1. the icon you picked in the router's client list. Saving a nickname there also saves whatever icon the editor showed,
 	   often only the router's guess at the time, so the name comes first when the saved icon is:
 	   - the router's own guess (the same icon it detects), or a loose one (any computer, any phone);
@@ -906,9 +916,10 @@ function zeroRate() { return { dn: 0, up: 0, sdn: 0, sup: 0, ok: false }; }   /*
 /* A Wi-Fi 7 device on a Wi-Fi 7 router can join as a multi-link device (MLD), even over one link. The radio then lists the address it
    uses on that link, made from its own: the same middle four parts, the first with its "private" bit set, the last one changed
    (7E:…:1D:24 for 7C:…:1D:A2). Everything else, DHCP and the router's client list included, has its own address, the MLD address.
-   A radio's private address that nothing else knows, with exactly one known address made like that: it's that device. */
+   A radio's private address that nothing else knows, with exactly one known address made like that: it's that device. Never one
+   that is on a radio as itself, or on a cable (not: buildNet's): copying a known device's address, a station could hide as it. */
 function mldKey(m) { return ('0' + (parseInt(m.slice(0, 2), 16) & 0xfd).toString(16)).slice(-2).toUpperCase() + m.slice(2, 14); }
-function mldOf(m) {
+function mldOf(m, not) {
 	var N = A.names;
 	if (!N || !isMac(m) || !(parseInt(m.slice(0, 2), 16) & 2)) return m;
 	if (N.lease[m] || N.arp[m] || N.nmp[m] || N.custom[m] || N.fixed[m]) return m;   /* known as itself */
@@ -919,7 +930,7 @@ function mldOf(m) {
 		});
 	}
 	var c = (N.mld[mldKey(m)] || []).filter(function (x, i, a) { return x !== m && a.indexOf(x) === i; });
-	return c.length === 1 ? c[0] : m;
+	return c.length === 1 && !(not && not[c[0]]) ? c[0] : m;
 }
 /* two links of one multi-link device (on two bands): one device, the links' traffic together, shown with its busier link */
 function bothLinks(o, x) {
@@ -961,7 +972,9 @@ function linkOf(d, ifn) {
    that is not exactly a MAC address or an interface name is dropped here, wherever it came from. */
 var MAC_RE = /^[0-9A-F]{2}(:[0-9A-F]{2}){5}$/, IF_RE = /^[A-Za-z0-9_.-]{1,16}$/;
 function isMac(m) { return typeof m === 'string' && MAC_RE.test(m); }
-function isIf(i) { return typeof i === 'string' && IF_RE.test(i); }
+/* an interface name; never one every JavaScript object has (__proto__, constructor, toString): names are keys in plain
+   objects, and a node could send one */
+function isIf(i) { return typeof i === 'string' && IF_RE.test(i) && !(i in Object.prototype); }
 /* the firmware's port numbers: "1", or "5-8" for an interface several ports share */
 function plab(o) {
 	var r = Object.create(null);
@@ -1015,13 +1028,33 @@ function buildNet(d) {
 		node.sta.forEach(function (m) { bh[m] = node; });
 		net.nodes.push(node);
 	});
+	/* Only a Wi-Fi 7 row's address can be a link address (mldOf), and it isn't taken for: a station on a radio as itself, a node or
+	   its backhaul station, or a device on a cable (a node's port, a router port), where the device's own address was learned.
+	   A port with a node behind it is the exception for a node's own Wi-Fi devices, whose own addresses are learned there too:
+	   on a router port, or on a node's port another node is behind (a node wired behind a node). A station on the router's own
+	   radios has its own address learned on those radios, never on a port: there, every port's addresses count. */
+	var notMld = Object.create(null), notMldR = Object.create(null), viaNode = Object.create(null);
+	var isNodeAddr = function (m, but) { return net.nodes.some(function (o) { return o !== but && (m === o.mac || o.sta.indexOf(m) >= 0); }); };
+	var link7 = function (r, lk, router) { return r[10] === 'be' ? mldOf(lk, router ? notMldR : notMld) : lk; };
+	(d.sta || []).forEach(function (r) { notMld[r[2]] = 1; });
+	net.nodes.forEach(function (n) {
+		var toNode = {};
+		notMld[n.mac] = 1; n.sta.forEach(function (m) { notMld[m] = 1; });
+		n.rows.forEach(function (r) { notMld[r[2]] = 1; });
+		n.pmacs.forEach(function (pm) { if (isNodeAddr(pm[1], n)) toNode[pm[0]] = 1; });
+		n.pmacs.forEach(function (pm) { if (!toNode[pm[0]]) notMld[pm[1]] = 1; });
+	});
+	(d.macs || []).forEach(function (pm) { if (isNodeAddr(pm[1])) viaNode[pm[0]] = 1; });
+	(d.macs || []).forEach(function (pm) { if (!viaNode[pm[0]]) notMld[pm[1]] = 1; });
+	Object.keys(notMld).forEach(function (m) { notMldR[m] = 1; });
+	(d.macs || []).forEach(function (pm) { notMldR[pm[1]] = 1; });
 	/* the router's own Wi-Fi clients, and the nodes' backhaul stations */
 	var seen = {};
 	(d.sta || []).forEach(function (r) {
 		var mac = r[2], lk = mac;
 		if (bh[mac]) { bh[mac].bhRows.push({ r: r, s: measure('b:' + mac, t, r[3], r[4]) }); return; }
 		if (own[mac]) return;
-		mac = mldOf(lk);   /* a Wi-Fi 7 device's link address: the device's own address (its counters stay the link's) */
+		mac = link7(r, lk, true);   /* a Wi-Fi 7 device's link address: the device's own address (its counters stay the link's) */
 		var s = measure('r:' + lk, t, r[3], r[4]);
 		var x = { ap: 'router', ifn: r[0], band: r[1], mac: mac, lmac: lk !== mac ? lk : '', rssi: r[5], phy: r[6], phyUp: r[7], conn: r[8], idle: r[9], std: r[10], nss: r[11], bw: r[12], s: s, st: 'ok' };
 		seen[mac] = seen[mac] ? bothLinks(seen[mac], x) : x;
@@ -1077,7 +1110,7 @@ function buildNet(d) {
 			node.rows.forEach(function (r) {
 				var mac = r[2], lk = mac;
 				if (own[mac] || bh[mac] || mac === node.mac) return;
-				mac = mldOf(lk);
+				mac = link7(r, lk);
 				var s = measure('n:' + node.mac + ':' + lk, nt, r[3], r[4]);
 				var cand = { ap: node.mac, node: node, ifn: r[0], band: r[1], mac: mac, lmac: lk !== mac ? lk : '', rssi: r[5], phy: r[6], phyUp: r[7], conn: r[8], idle: r[9], std: r[10], nss: r[11], bw: r[12], s: s, st: 'ok' };
 				var o = seen[mac];   /* roaming: the newer association wins; another link of the same device on this node: one device */
@@ -2608,8 +2641,10 @@ Room.prototype.hold = function (c, w) {   /* a label takes its spot */
 };
 /* zones: [{ list: devices picked for the zone, rest: its other devices, n: how many stands it may use, slots, g }], the
    router's ports first, its Wi-Fi stands last (it has the most to choose from). tray: is the tray on the map (then it and its label need room too).
-   -> { at: { device id: { slot, lab } }, labs: { 'router' | 'wan' | node id | 'more': lab } } */
-function fitStands(net, nodes, zones, tray, hidden) {
+   prev: the last fit, when the same devices are there and traffic only changed which of them are picked: then the ones that
+   stay keep their stands and labels as they were, and only the ones new to the map look for one, so nothing else moves.
+   -> { at: { device id: { slot, lab, g } }, labs: { 'router' | 'wan' | node id | 'more': lab } } */
+function fitStands(net, nodes, zones, tray, hidden, prev) {
 	var R = new Room(), out = { at: {}, labs: {} }, fixed = [];
 	if (!G.big) {
 		R.stands = [];
@@ -2625,8 +2660,82 @@ function fitStands(net, nodes, zones, tray, hidden) {
 	fixed.forEach(function (e) {   /* these are always on the map: a label with no free spot takes the nearest one anyway */
 		out.labs[e.id] = R.hold(R.spot(e.bb, e.ax, e.w, e) || labelSpots(e.bb, e.ax, e.w)[0], e.w);
 	});
+	var order = function (z) { return z.list.slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); }); };
+	/* With the last fit (the same devices; traffic only changed which are picked), nothing on the map moves:
+	   1. every zone's picked devices that stood go back where they stood, with their labels (still free, unless a node's
+	      label moved), before anything else, in any zone;
+	   2. then the zones' other devices that stood (in a stand a picked one had no room for), for now;
+	   3. then each picked newcomer takes a free stand, near its kind, or else one of those others' (that one goes to the tray). */
+	var kept = {}, gone = {};   /* gone: an other that gave up its stand to a newcomer waits on the tray, not on another stand */
+	if (prev) {
+		var faceOf = function (z, sl) { return z.g === 'w' ? 'L' : sl.face; };
+		var back = function (z, dv) {
+			var p = prev.at[dv.id], sh;
+			if (!p || p.g !== z.g || z.slots.indexOf(p.slot) < 0) return null;
+			sh = shapeAt(dv.kind || '', p.slot, faceOf(z, p.slot));
+			/* its drawing against the other drawings and the fixed labels only: the labels of the others that stay were checked
+			   against it when they took their spots, as close as a label may come (nearer than a drawing to a label) */
+			var labs = R.labs, lines = R.lines, ok;
+			R.labs = labs.slice(0, fixed.length); R.lines = lines.slice(0, fixed.length);
+			ok = R.clearFor(sh);
+			R.labs = labs; R.lines = lines;
+			if (!ok || !R.spotFree(p.lab, p.lab.w, null)) return null;
+			R.objs.push(sh);
+			var lab = R.hold(p.lab, p.lab.w);
+			return { dv: dv, slot: p.slot, lab: lab, sh: sh, r: R.labs[R.labs.length - 1], l: R.lines[R.lines.length - 1] };
+		};
+		var pull = function (e) { R.objs.splice(R.objs.indexOf(e.sh), 1); R.labs.splice(R.labs.indexOf(e.r), 1); R.lines.splice(R.lines.indexOf(e.l), 1); };
+		var put = function (e) { R.objs.push(e.sh); R.labs.push(e.r); R.lines.push(e.l); };
+		zones.forEach(function (z) {
+			var k = kept[z.g] = { n: 0, at: [], labAt: [], extra: [] };
+			order(z).forEach(function (dv, i) { var e = back(z, dv); if (e) { k.at[i] = e.slot; k.labAt.push([e.slot, e.lab]); k.n++; } });
+		});
+		zones.forEach(function (z) {
+			var k = kept[z.g];
+			(z.rest || []).slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); }).forEach(function (dv) {
+				var e = k.n < z.n && back(z, dv);
+				if (e) { k.extra.push(e); k.n++; }
+			});
+		});
+		zones.forEach(function (z) {
+			var k = kept[z.g], devs = order(z);
+			var taken = function () { return k.at.filter(function (x) { return x; }).concat(k.extra.map(function (e) { return e.slot; })); };
+			var place = function (dv, i) {   /* the free stand nearest one of its kind (or the zone's first free one) with room for it */
+				var kd = dv.kind || '', lw = labelW(dv.id, dv.name, G.big ? thirdLine(dv) : ''), used = taken(), mine = [];
+				devs.forEach(function (o, j) { if (k.at[j] && (o.kind || '') === kd) mine.push(k.at[j]); });
+				k.extra.forEach(function (e) { if ((e.dv.kind || '') === kd) mine.push(e.slot); });
+				var near = function (sl) { return mine.length ? Math.min.apply(null, mine.map(function (t) { return Math.abs(t.cx - sl.cx) + Math.abs(t.cy - sl.cy); })) : 0; };
+				var cand = z.slots.map(function (sl, j) { return [near(sl), j, sl]; }).sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+				for (var q = 0; q < cand.length; q++) {
+					var sl = cand[q][2], sh, c;
+					if (used.indexOf(sl) >= 0) continue;
+					sh = shapeAt(kd, sl, faceOf(z, sl));
+					if (!R.clearFor(sh) || !(c = R.spot(sh.bb, sh.ax, lw, null, sl))) continue;
+					R.objs.push(sh); k.at[i] = sl; k.labAt.push([sl, R.hold(c, lw)]); k.n++;
+					return true;
+				}
+				return false;
+			};
+			/* newcomers in the full fit's order: one on a cable first, then the biggest drawings */
+			var sz = function (dv) { var b = shapeOf(dv.kind || '', z.g === 'w' ? 'L' : undefined).bb; return (b[2] - b[0]) * (b[3] - b[1]); };
+			devs.map(function (dv, i) { return i; }).sort(function (a, b) {
+				var x = devs[a], y = devs[b];
+				return (y.link === 'wired') - (x.link === 'wired') || sz(y) - sz(x) || a - b;
+			}).forEach(function (i) {
+				var dv = devs[i];
+				if (k.at[i]) return;
+				if (k.n < z.n && place(dv, i)) return;
+				for (var x = k.extra.length - 1; x >= 0; x--) {   /* one of the others gives up its stand */
+					var e = k.extra[x];
+					pull(e); k.extra.splice(x, 1); k.n--;
+					if (place(dv, i)) { gone[e.dv.id] = 1; return; }
+					put(e); k.extra.splice(x, 0, e); k.n++;
+				}
+			});
+		});
+	}
 	zones.forEach(function (z) {
-		var devs = z.list.slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); });
+		var devs = order(z);
 		if (!devs.length) return;
 		var w = {}, labAt, added;
 		devs.forEach(function (dv) { var k = dv.kind || ''; w[k] = Math.max(w[k] || 0, labelW(dv.id, dv.name, x3(dv))); });   /* a group's labels: all as wide as its widest, so its devices can stand in any order */
@@ -2647,28 +2756,32 @@ function fitStands(net, nodes, zones, tray, hidden) {
 		   stands, and keep the try that stood the most. So a zone with room stays close to its hub, and a crowded one spreads. */
 		var mark = [R.objs.length, R.labs.length], best = null, m = devs.length, at, n, kin = {};
 		var cut = function (t) { return [R.objs.splice(t[0]), R.labs.splice(t[1]), R.lines.splice(t[1])]; };
-		for (;;) {
-			labAt = []; added = 0;
-			at = standGroups(devs, z.slots.slice(0, m), room);
-			n = added;
-			var took = cut(mark);
-			if (!best || n > best.n) best = { n: n, at: at, labAt: labAt, took: took };
-			if (n === devs.length || m >= z.slots.length) break;
-			m = Math.min(z.slots.length, m + Math.max(2, Math.ceil(m / 2)));
+		if (prev) best = kept[z.g];   /* the ones that stay, put back above */
+		else {
+			for (;;) {
+				labAt = []; added = 0;
+				at = standGroups(devs, z.slots.slice(0, m), room);
+				n = added;
+				var took = cut(mark);
+				if (!best || n > best.n) best = { n: n, at: at, labAt: labAt, took: took };
+				if (n === devs.length || m >= z.slots.length) break;
+				m = Math.min(z.slots.length, m + Math.max(2, Math.ceil(m / 2)));
+			}
+			R.objs = R.objs.concat(best.took[0]); R.labs = R.labs.concat(best.took[1]); R.lines = R.lines.concat(best.took[2]);
 		}
-		R.objs = R.objs.concat(best.took[0]); R.labs = R.labs.concat(best.took[1]); R.lines = R.lines.concat(best.took[2]);
 		devs.forEach(function (dv, i) {
 			var s = best.at[i];
-			if (s) { out.at[dv.id] = { slot: s, lab: best.labAt.filter(function (e) { return e[0] === s; })[0][1] }; (kin[dv.kind || ''] = kin[dv.kind || ''] || []).push(s); }
+			if (s) { out.at[dv.id] = { slot: s, lab: best.labAt.filter(function (e) { return e[0] === s; })[0][1], g: z.g }; (kin[dv.kind || ''] = kin[dv.kind || ''] || []).push(s); }
 		});
+		(best.extra || []).forEach(function (e) { out.at[e.dv.id] = { slot: e.slot, lab: e.lab, g: z.g }; (kin[e.dv.kind || ''] = kin[e.dv.kind || ''] || []).push(e.slot); });
 		/* The ones left out get one more look, each over all the zone's stands (the try that stood the most may not have
 		   had them all). Then a picked device with no room for its drawing leaves a stand unused, and another of the zone's
 		   devices may fit: the ones on a cable first, then the biggest drawings, then by name, never by traffic, so they
 		   don't come and go. Each goes as near its own kind as it can. */
-		var used = best.at.filter(function (s) { return s; }), left = z.n - best.n;
+		var used = best.at.filter(function (s) { return s; }).concat((best.extra || []).map(function (e) { return e.slot; })), left = z.n - best.n;
 		var bySize = function (a, b) { return (b.link === 'wired') - (a.link === 'wired') || size(b.kind || '') - size(a.kind || '') || byName(a, b) || (a.id < b.id ? -1 : 1); };
 		devs.filter(function (dv, i) { return !best.at[i]; }).sort(bySize).concat((z.rest || []).slice().sort(bySize)).forEach(function (dv) {
-			if (left <= 0) return;
+			if (left <= 0 || out.at[dv.id] || gone[dv.id]) return;
 			var k = dv.kind || '', lw = labelW(dv.id, dv.name, x3(dv)), order = z.slots;
 			var away = function (s) { return Math.min.apply(null, kin[k].map(function (t) { return Math.abs(t.cx - s.cx) + Math.abs(t.cy - s.cy); })); };
 			if (kin[k]) order = z.slots.map(function (s, i) { return [away(s), i, s]; }).sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }).map(function (e) { return e[2]; });
@@ -2678,7 +2791,7 @@ function fitStands(net, nodes, zones, tray, hidden) {
 				sh = shapeAt(k, s, face(s));
 				if (!R.clearFor(sh) || !(c = R.spot(sh.bb, sh.ax, lw, null, s))) continue;
 				R.objs.push(sh);
-				out.at[dv.id] = { slot: s, lab: R.hold(c, lw) };
+				out.at[dv.id] = { slot: s, lab: R.hold(c, lw), g: z.g };
 				used.push(s); left--;
 				(kin[k] = kin[k] || []).push(s);
 				return;
@@ -2714,13 +2827,24 @@ function mapLayout(net) {
 	   pickStands). So it is worked out once for a set of devices, and kept until the set changes. */
 	var ids = function (l) { return l.map(function (dv) { return [dv.id, dv.kind, dv.name]; }).sort(); };
 	zones.forEach(function (z) { z.rest = z.all.filter(function (dv) { return z.list.indexOf(dv) < 0; }); });
-	var key = JSON.stringify([G.key, net.router.model, L.nodes.map(function (x) { return [x.node.id, x.node.name, x.node.model]; }), L.hidden.length, visible.length,
-		zones.map(function (z) { return [ids(z.list), ids(z.rest)]; })]);
+	/* (once the first rates are in, the picks are made anew, and so is the fit: the first one had no traffic to go by) */
+	var base = JSON.stringify([G.key, !!A.gotAny, net.router.model, L.nodes.map(function (x) { return [x.node.id, x.node.name, x.node.model]; }), L.hidden.length,
+		zones.map(function (z) { return ids(z.all); })]);
+	var key = JSON.stringify([base, zones.map(function (z) { return ids(z.list); })]);
 	if (!A.stands || A.stands.key !== key) {
+		var f = null, old = A.stands;
+		/* the same devices, and traffic swapped which are picked (a busy one off the tray): the ones on the map don't move */
+		if (old && old.base === base) {
+			f = fitStands(net, L.nodes, zones, old.tray, L.hidden, old); f.tray = old.tray;
+			var all = !L.hidden.length && Object.keys(f.at).length >= visible.length;
+			if (f.tray ? all : !all) f = null;   /* the tray comes or goes: a fit of its own */
+		}
 		/* without the tray first: it is there only when a device has no stand, or a node no zone */
-		var f = fitStands(net, L.nodes, zones, false, L.hidden);
-		if (L.hidden.length || Object.keys(f.at).length < visible.length) f = fitStands(net, L.nodes, zones, true, L.hidden);
-		f.key = key;
+		if (!f) {
+			f = fitStands(net, L.nodes, zones, false, L.hidden); f.tray = false;
+			if (L.hidden.length || Object.keys(f.at).length < visible.length) { f = fitStands(net, L.nodes, zones, true, L.hidden); f.tray = true; }
+		}
+		f.key = key; f.base = base;
 		A.stands = f;
 	}
 	var next = {}, stood = {}, fit = A.stands;
@@ -3688,14 +3812,14 @@ function renameStart() {
 	var dv = renameTarget(A.net), c, inp = $('arRoIn');
 	if (!dv || A.ren) return;
 	c = A.names && A.names.custom && A.names.custom[dv.mac];
-	A.ren = { id: dv.id, mac: dv.mac, kind: dv.kind, saving: false }; A.renMsg = null;
+	A.ren = { id: dv.id, mac: dv.mac, kind: dv.kind, wifi: dv.link === 'wifi', saving: false }; A.renMsg = null;
 	/* your nickname, or the name shown (a device's own, or "Device …53:A1"): left as it is, that saves nothing */
 	inp.value = A.ren.pre = nickOf(c, A.names && A.names.nmp[dv.mac]) || dv.name; renameLock(false);
 	$('arRoNrow').className = 'ar-ro-nrow hide'; $('arRoEd').className = 'ar-ro-ed';
 	renameHint(); inp.focus(); inp.select();
 }
 function renameHint(text, tone) {
-	var v = $('arRoIn').value.trim(), bad = nameProblem(v, A.ren.mac), k = v && !bad ? nameKind(v) : null, ln = $('arRoLink');
+	var v = $('arRoIn').value.trim(), bad = nameProblem(v, A.ren.mac), k = v && !bad ? nameKind(v, A.ren.wifi) : null, ln = $('arRoLink');
 	$('arRoIcon').innerHTML = iconSvg(k ? k.kind : A.ren.kind, 20, '#f0efec'); $('arReadout')._icon = '';
 	ln.style.color = tone || (bad ? BAD : '');
 	ln.textContent = text || bad || (!v ? 'Empty: the router\u2019s own name comes back' : k ? 'Shows as ' + (KIND_LABEL[k.kind] || k.kind)
@@ -3715,7 +3839,7 @@ function renameSave() {
 	if (nameProblem(v, r.mac)) { renameHint(); $('arRoIn').focus(); return; }
 	cur = N.custom && N.custom[r.mac];
 	if (v === r.pre || (v === (cur && cur.name || '') && (v || !cur))) { renameClose(); render(); $('arRoEdit').focus(); return; }   /* nothing changed */
-	k = v ? nameKind(v) : null;
+	k = v ? nameKind(v, r.wifi) : null;
 	r.saving = true; r.name = v; renameLock(true);
 	renameHint('Saving\u2026');
 	var took = function () { var c = A.names && A.names.custom && A.names.custom[r.mac]; return v ? !!(c && c.name === v) : !(c && c.name); };

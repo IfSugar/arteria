@@ -161,16 +161,18 @@ async def scenario(b, scn, port):
             await pg.evaluate("Arteria.pick(null)"); await pg.wait_for_timeout(200)
             back = await pg.evaluate("Math.round(document.getElementById('arCards').getBoundingClientRect().height)")
             check(back == 224, tag + ': with the list closed, the cards are back to their height (%s px)' % back)
-            # another computer's fonts: with every text 15% wider (fewer labels fit), the device on a cable still has its stand
-            wctx = await b.new_context(viewport={'width': 1600, 'height': 900})
-            wpg = await wctx.new_page()
-            await wpg.add_init_script("(() => { const m = CanvasRenderingContext2D.prototype.measureText;"
-                                      " CanvasRenderingContext2D.prototype.measureText = function (t) { return { width: m.call(this, t).width * 1.15 }; }; })()")
-            await wpg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(wpg)
-            wide = await wpg.evaluate("""() => { const L = Arteria.state.layout, node = L.nodes[0].node;
-                return L.devs.filter(x => x.dev.node === node).map(x => x.dev.link + ':' + x.dev.name); }""")
-            await wctx.close()
-            check('wired:Pi-hole' in wide, tag + ': with wider text, a device on a cable keeps its stand before Wi-Fi devices do (%s)' % ', '.join(wide))
+            # another computer's fonts: with every text 15% or 30% wider (fewer labels fit), the device on a cable still has its stand
+            wides = []
+            for scale in (1.15, 1.3):
+                wctx = await b.new_context(viewport={'width': 1600, 'height': 900})
+                wpg = await wctx.new_page()
+                await wpg.add_init_script("(() => { const m = CanvasRenderingContext2D.prototype.measureText;"
+                                          " CanvasRenderingContext2D.prototype.measureText = function (t) { return { width: m.call(this, t).width * %s }; }; })()" % scale)
+                await wpg.goto('http://127.0.0.1:%d/user1.asp' % port); await ready(wpg); await wpg.wait_for_timeout(2500)   # the first rates are in: picked anew
+                wides.append(await wpg.evaluate("""() => { const L = Arteria.state.layout, node = L.nodes[0].node;
+                    return L.devs.filter(x => x.dev.node === node).map(x => x.dev.link + ':' + x.dev.name); }"""))
+                await wctx.close()
+            check(all('wired:Pi-hole' in w for w in wides), tag + ': with wider text, a device on a cable keeps its stand before Wi-Fi devices do (%s)' % ' | '.join(', '.join(w) for w in wides))
         # the page's view: Flow, the list, Details, the report
         await pg.click('#arTabFlow'); await pg.wait_for_timeout(250)
         await pg.click('#arTabMap'); await pg.wait_for_timeout(250)
