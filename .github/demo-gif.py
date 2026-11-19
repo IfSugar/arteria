@@ -45,6 +45,11 @@ frames = []
 box = None
 full = []   # (from, to) screencast times when the expanded view fills the window: those frames show the whole window
 
+async def lowest(pg):
+    """The crop's height: down to the lowest the addon reached, with a little of the page below it, inside the window."""
+    low, vh = await pg.evaluate("[window.demoLow, innerHeight]")
+    box[3] = min(low + 8, vh) - box[1]
+
 async def record():
     global box
     async with async_playwright() as p:
@@ -56,7 +61,12 @@ async def record():
         await pg.evaluate(CURSOR)
         if FORUM:   # a quicker cursor
             await pg.evaluate("document.getElementById('demoCursor').style.transition = 'transform .45s cubic-bezier(.45,.05,.25,1)'")
-        box = await pg.evaluate("() => { const r = document.getElementById('ar').getBoundingClientRect(); const c = document.getElementById('arHist').closest('.ar-cards') || document.getElementById('arHist').parentElement; const cb = c.getBoundingClientRect(); return [r.left, r.top, r.width, cb.bottom - r.top]; }")
+        # the crop: the whole addon, its footer included, as tall as it gets during the recording (the readout grows while a
+        # device is picked or renamed); the expanded view, which fills the window, doesn't count
+        box = await pg.evaluate("() => { const r = document.getElementById('ar').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }")
+        await pg.evaluate("""() => { const ar = document.getElementById('ar'); window.demoLow = 0;
+            const low = () => { if (!ar.classList.contains('big')) window.demoLow = Math.max(window.demoLow, ar.getBoundingClientRect().bottom); };
+            new ResizeObserver(low).observe(ar); setInterval(low, 50); low(); }""")
         cdp = await pg.context.new_cdp_session(pg)
         def on_frame(ev):
             frames.append((ev['metadata']['timestamp'], ev['data']))
@@ -81,6 +91,7 @@ async def record():
             await click('#arTabMap', after=600)                                # back to the map
             await pg.evaluate('demoMove(820, 560)'); await pg.wait_for_timeout(900)   # rest where it started, for a clean loop
             await cdp.send('Page.stopScreencast')
+            await lowest(pg)
             await pg.wait_for_timeout(300)
             await b.close()
             return
@@ -120,6 +131,7 @@ async def record():
         full[-1][1] = time.time() + 0.05; await pg.wait_for_timeout(1300)
         await pg.evaluate('demoMove(820, 560)'); await pg.wait_for_timeout(1700)   # rest where it started, for a clean loop
         await cdp.send('Page.stopScreencast')
+        await lowest(pg)
         await pg.wait_for_timeout(300)
         await b.close()
 
