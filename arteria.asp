@@ -2484,7 +2484,9 @@ function trayName(devs, nodes) {
 function standGroups(list, slots, room) {
 	var free = slots.slice(), at = [], groups = {}, kinds;
 	list.forEach(function (dv, i) { var k = dv.kind || ''; (groups[k] = groups[k] || []).push(i); });
-	kinds = Object.keys(groups).sort(function (a, b) { return (room ? room.size(b) - room.size(a) : 0) || groups[b].length - groups[a].length || (a < b ? -1 : a > b ? 1 : 0); });
+	/* with room to check: a kind with a device on a cable first (there are few, and their cable is on the map anyway), then the biggest drawings */
+	var cable = function (k) { return groups[k].some(function (i) { return list[i].link === 'wired'; }) ? 1 : 0; };
+	kinds = Object.keys(groups).sort(function (a, b) { return (room ? cable(b) - cable(a) || room.size(b) - room.size(a) : 0) || groups[b].length - groups[a].length || (a < b ? -1 : a > b ? 1 : 0); });
 	var d = function (a, b) { return Math.sqrt((a.cx - b.cx) * (a.cx - b.cx) + (a.cy - b.cy) * (a.cy - b.cy)); };
 	kinds.forEach(function (k) {
 		if (!free.length) return;
@@ -2659,10 +2661,10 @@ function fitStands(net, nodes, zones, tray, hidden) {
 		});
 		/* The ones left out get one more look, each over all the zone's stands (the try that stood the most may not have
 		   had them all). Then a picked device with no room for its drawing leaves a stand unused, and another of the zone's
-		   devices may fit: the ones with the biggest drawings are tried first, then by name, never by traffic, so they
+		   devices may fit: the ones on a cable first, then the biggest drawings, then by name, never by traffic, so they
 		   don't come and go. Each goes as near its own kind as it can. */
 		var used = best.at.filter(function (s) { return s; }), left = z.n - best.n;
-		var bySize = function (a, b) { return size(b.kind || '') - size(a.kind || '') || byName(a, b) || (a.id < b.id ? -1 : 1); };
+		var bySize = function (a, b) { return (b.link === 'wired') - (a.link === 'wired') || size(b.kind || '') - size(a.kind || '') || byName(a, b) || (a.id < b.id ? -1 : 1); };
 		devs.filter(function (dv, i) { return !best.at[i]; }).sort(bySize).concat((z.rest || []).slice().sort(bySize)).forEach(function (dv) {
 			if (left <= 0) return;
 			var k = dv.kind || '', lw = labelW(dv.id, dv.name, x3(dv)), order = z.slots;
