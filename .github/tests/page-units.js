@@ -322,7 +322,7 @@ ok(JSON.stringify([gs.U, gs.OX, gs.OY, gs.x0, gs.y0, gs.x1, gs.y1, gs.SW, gs.SH,
 const gbad = [];
 [[1568, 780, 1], [1184, 790, 3], [864, 610, 2], [992, 518, 0], [1504, 970, 2]].forEach(([w, h, n]) => {
 	const g = T.geomBig(w, h, n), inR = (s, r) => s.cx > r[0] && s.cx < r[2] && s.cy > r[1] && s.cy < r[3];
-	const keep = [[4.4, 4.8, 9.8, 9.4], [0.4, 0.6, 3.2, 2.9], [3.2, 0.9, 7.9, 2.5], [6.3, 2.5, 7.9, 4.8]];
+	const keep = [[4.4, 4.8, 9.8, 9.4]].concat(T.wanArea(g));   /* the router, and the internet in the floor's top corner with its pipe */
 	const all = g.wifiSlots.concat(...g.nodeSlots.map(ns => ns.dev), g.wiredSlots);
 	const tag = w + 'x' + h + ': ';
 	if (T.G() !== g0) gbad.push(tag + 'geomBig changed the current geometry');
@@ -938,7 +938,9 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 		});
 		const moved = T.mapLayout(mkNet(5)).devs.filter(x => at[x.dev.id] !== x.slot).length;   // other rates, the same devices
 		res.push(tag + ': ' + L.devs.length + ' stands, ' + far.length + ' away from their kind' + (far.length ? ' (' + far.join(', ') + ')' : '') + ', ' + moved + ' moved');
-		if (L.devs.length < (tag === 'page' ? 4 : 12) || far.length > (tag === 'page' ? 1 : 2) || moved) bad = true;
+		// (in the expanded view a few may stand apart: no label may cover another device's traffic line, which leaves fewer stands
+		// next to one of their kind)
+		if (L.devs.length < (tag === 'page' ? 4 : 12) || far.length > (tag === 'page' ? 1 : Math.ceil(L.devs.length / 4)) || moved) bad = true;
 	});
 	T.useGeom(keepG); A.slot = keepSlot; A.slotAt = keepAt; A.gotAny = keepAny;
 	// the groups themselves: 9 stands on a 3 x 3 grid, 3 kinds of 3: each kind fills one row or column (or another block of 3 touching)
