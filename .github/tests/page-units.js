@@ -772,6 +772,28 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	bz(2, false); const n2 = bz(3, false), sw2 = n2.byId['port:eth1'];
 	ok(sw2 && sw2.count === 2 && sw2.st === 'nodata' && n2.nodes[0].bh.dn.toFixed(1) === '80.0' && n2.total.dn.toFixed(1) === '80.0',
 		'the same with the node not read: the devices show, their traffic in the node\'s figure, the port counted once', JSON.stringify({ st: sw2 && sw2.st, node: n2.nodes[0].bh.dn, total: n2.total.dn }));
+	// two battery sensors on the node's Wi-Fi, asleep: on no list now, but the router still has their addresses on that port.
+	// The node's bridge learned them on its Wi-Fi ("a"): they are the node's, not devices on a switch there; with only them
+	// beside the node, there is no switch at all (an unmanaged one, with nodes behind it). Reported on SNBForums (#140).
+	const S1 = '02:CC:00:00:02:21', S2 = '02:CC:00:00:02:22';
+	const bs = (k, more) => AR.buildNet(smp({ up: (9900 + 2 * k).toFixed(1), ports: ['eth1'], links: [['eth0', 1, 1000], ['eth1', 1, 1000]], plab: { eth1: '2' },
+		ifs: [['eth0', '1', '1'], ['eth1', '1000', String(1000 + k * 80 * B)]],
+		macs: [['eth1', ND], ['eth1', S1], ['eth1', S2]].concat(more ? [['eth1', '00:00:5E:00:53:D1'], ['eth1', '00:00:5E:00:53:D2']] : []),
+		nodes: [{ mac: ND, ip: '192.168.50.31', model: 'GT-AXE16000', alias: 'Lounge', sta: '', state: 'ok', up: (5000 + 2 * k).toFixed(1), c: [], u: [['eth0', String(1000 + k * 30 * B), '1000']], a: [S1, S2] }] }));
+	['p:eth1', 'pb:eth1'].forEach(k => { delete A.prev[k]; delete A.sm[k]; });
+	bs(4, true); const n4 = bs(5, true), sw4 = n4.byId['port:eth1'];
+	bs(6, false); const n5 = bs(7, false), asleep = d => d.mac === S1 || d.mac === S2;
+	ok(sw4 && sw4.count === 2 && !sw4.behind.some(asleep) && !n5.byId['port:eth1'] && !n5.devs.some(asleep) && n5.nodes[0].online,
+		'sleeping sensors on a node\'s Wi-Fi aren\'t devices on a switch on its router port; with only them there, there is no switch',
+		JSON.stringify({ count: sw4 && sw4.count, behind: sw4 && sw4.behind.map(b => b.mac), alone: !!n5.byId['port:eth1'] }));
+	// only on the port the node is behind: one of them on a cable at another of the router's ports (moved from the node's Wi-Fi,
+	// which still remembers it for a few minutes) shows there at once
+	const mv = k => AR.buildNet(smp({ up: (9950 + 2 * k).toFixed(1), ports: ['eth1', 'eth2'], links: [['eth0', 1, 1000], ['eth1', 1, 1000], ['eth2', 1, 1000]], plab: { eth1: '2', eth2: '3' },
+		ifs: [['eth0', '1', '1'], ['eth1', '1000', String(1000 + k * 80 * B)], ['eth2', '1000', String(1000 + k * 8 * B)]], macs: [['eth1', ND], ['eth2', S1]],
+		nodes: [{ mac: ND, ip: '192.168.50.31', model: 'GT-AXE16000', alias: 'Lounge', sta: '', state: 'ok', up: (5000 + 2 * k).toFixed(1), c: [], u: [['eth0', String(1000 + k * 30 * B), '1000']], a: [S1, S2] }] }));
+	['p:eth1', 'pb:eth1', 'p:eth2'].forEach(k => { delete A.prev[k]; delete A.sm[k]; });
+	mv(8); const n6 = mv(9);
+	ok(n6.byId[S1] && n6.byId[S1].port === 'eth2', 'a device a node\'s Wi-Fi still remembers, now on a cable at another port, shows there', JSON.stringify(Object.keys(n6.byId)));
 }
 
 // ---- 26. a bond (LAN 3+4 for a NAS) is named by its ports, whatever their speed together; a port that the firmware maps (LAN 2
@@ -969,13 +991,15 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 }
 
 // ---- 31. traffic swaps which devices have a stand (a busy one comes off the tray): the devices that stay on the map don't move,
-// in the zone of the swap or any other (random homes, the page's view and an expanded one); the newcomer takes a free stand
+// in the zone of the swap or any other (random homes, the page's view and an expanded one); the newcomer takes a free stand.
+// Unless the busy one has no room where the others leave it (a TV where a phone stood): then the map is laid out afresh, as on a
+// reload, and only then may the others move (a busy TV never came on until the page was reloaded: SNBForums, the 2.3.0 tests)
 {
 	const KINDS = ['tv', 'phone', 'laptop', 'light', 'camera', 'plug', 'tablet', 'speaker', 'desktop', 'nas', 'printer', 'console'];
 	const LONG = ['Living room television', 'Kids tablet', 'X', 'Garden camera north', 'Study desktop PC', 'Plug'];
 	let seed = 7; const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
 	const keepG = T.G(), moved = [];
-	let swaps = 0, came = 0, offBefore = 0;
+	let swaps = 0, came = 0, offBefore = 0, refits = 0;
 	for (let trial = 0; trial < 120; trial++) {
 		const big = trial % 2 === 1, nr = 4 + rnd(10), nn = 4 + rnd(5), rk = [], nk = [], rn = [], nnm = [];
 		for (let i = 0; i < nr; i++) { rk.push(KINDS[rnd(KINDS.length)]); rn.push(LONG[rnd(LONG.length)] + ' r' + i); }
@@ -996,15 +1020,16 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 		const pos = L => { const o = {}; L.wired.concat(L.devs).forEach(x => { o[x.dev.id] = x.dev.name + '@' + x.slot.cx + ',' + x.slot.cy; }); return o; };
 		T.mapLayout(mk(false)); const p1 = pos(T.mapLayout(mk(false)));
 		A.slotAt = 0;   /* the 20 s hold is over */
-		const p2 = pos(T.mapLayout(mk(true)));
+		const was = A.stands, L2 = T.mapLayout(mk(true)), p2 = pos(L2), re = A.stands !== was && L2.refit;
+		if (re) refits++;
 		if (Object.keys(p1).some(id => !p2[id])) swaps++;
 		const bz = busyR ? '02:CC:00:00:01:' + (10 + nr - 1) : '02:CC:00:00:02:' + (10 + nn - 1);
 		if (!p1[bz]) { offBefore++; if (p2[bz]) came++; }
-		Object.keys(p1).filter(id => p2[id] && p1[id] !== p2[id]).forEach(id => moved.push((big ? 'expanded ' : 'page ') + trial + ': ' + p1[id] + ' -> ' + p2[id].split('@')[1]));
+		if (!re) Object.keys(p1).filter(id => p2[id] && p1[id] !== p2[id]).forEach(id => moved.push((big ? 'expanded ' : 'page ') + trial + ': ' + p1[id] + ' -> ' + p2[id].split('@')[1]));
 	}
 	T.useGeom(keepG); A.stands = null; A.slot = {};
-	ok(swaps >= 20 && !moved.length && came * 5 >= offBefore * 3, 'traffic that swaps a device onto the map moves none of the others (' + swaps + ' swaps; the busy one came on in ' + came + ' of ' + offBefore + ')',
-		moved.slice(0, 4).join('; ') + ' came ' + came + '/' + offBefore);
+	ok(swaps >= 20 && !moved.length && came * 10 >= offBefore * 7 && refits * 4 <= swaps, 'traffic that swaps a device onto the map moves none of the others, but where it has no room otherwise (' + swaps + ' swaps, ' + refits +
+		' laid out afresh; the busy one came on in ' + came + ' of ' + offBefore + ')', moved.slice(0, 4).join('; ') + ' came ' + came + '/' + offBefore + ' refits ' + refits);
 }
 
 // ---- 32. the same over time: random homes (wired devices, no node to two nodes), 20 rounds each in which a different device
@@ -1014,7 +1039,7 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	const KINDS = ['tv', 'phone', 'laptop', 'light', 'camera', 'plug', 'tablet', 'speaker', 'desktop', 'nas', 'printer', 'console', 'vacuum', 'washer', 'air'];
 	const LONG = ['Living room television', 'Kids tablet', 'X', 'Garden camera north', 'Study desktop PC', 'Plug', 'Bedroom ceiling light'];
 	const keepG = T.G(), moved = [];
-	let steps = 0;
+	let steps = 0, refits = 0;
 	[[23, 2], [21, 2], [5, -1]].forEach(([sd, fixedNodes]) => {
 		let seed = sd; const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
 		for (let trial = 0; trial <= 60; trial++) {
@@ -1039,14 +1064,16 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 				spec.forEach(s => { if (s.rate > 50) s.rate = 1 + rnd(20) / 10; });
 				spec[rnd(spec.length)].rate = 200 + rnd(100);
 				A.slotAt = 0;
-				const P2 = pos(T.mapLayout(mk())); steps++;
-				Object.keys(P).filter(id => P2[id] && P[id] !== P2[id]).forEach(id => moved.push(sd + '/' + trial + '/' + step + ' ' + P[id] + ' -> ' + P2[id].split('@')[1]));
+				const was = A.stands, L2 = T.mapLayout(mk()), P2 = pos(L2), re = A.stands !== was && L2.refit; steps++;
+				if (re) refits++;   /* laid out afresh for a busy one with no room otherwise: the others may move */
+				else Object.keys(P).filter(id => P2[id] && P[id] !== P2[id]).forEach(id => moved.push(sd + '/' + trial + '/' + step + ' ' + P[id] + ' -> ' + P2[id].split('@')[1]));
 				P = P2;
 			}
 		}
 	});
 	T.useGeom(keepG); A.stands = null; A.slot = {}; A.nodeZones = null;
-	ok(!moved.length, 'over ' + steps + ' rounds of changing traffic in random homes, no device that stays on the map moves', moved.slice(0, 4).join('; '));
+	ok(!moved.length && refits * 4 <= steps, 'over ' + steps + ' rounds of changing traffic in random homes, no device that stays on the map moves (but in ' + refits +
+		' laid out afresh for a busy one with no room otherwise)', moved.slice(0, 4).join('; ') + ' refits ' + refits);
 }
 
 process.exit(fails ? 1 : 0);

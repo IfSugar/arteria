@@ -63,7 +63,7 @@ case "\$2" in
 	productid) echo RT-AX86U ;; buildno) echo 388.13 ;; extendno) echo 0 ;; firmver) echo 3.0.0.4 ;;
 	wl0_ifname) echo eth6 ;; wl1_ifname) echo eth7 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
 	wl0_vifs) echo wl0.1 ;; wl0_ssid|wl1_ssid) echo 'Home "net"' ;; wl0.1_ssid) echo 'Guest <net>' ;; lan_netmask) echo 255.255.255.0 ;;
-	lan_ifnames) if [ -f "$t/ax88u" ]; then echo "eth1 eth2 eth3 eth4 eth5 eth6 eth7"; else echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7"; fi ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
+	lan_ifnames) if [ -f "$t/ax88u" ]; then echo "eth1 eth2 eth3 eth4 eth5 eth6 eth7"; elif [ -f "$t/gnp-access" ]; then echo "eth4 eth3 eth1 eth5 eth6 eth7"; else echo "eth4 eth3 eth2 eth1 eth5 eth6 eth7"; fi ;; wan0_gw_ifname|wan0_ifname) echo eth0 ;; wan0_proto) echo dhcp ;;
 	wans_dualwan) cat "$t/dualwan" 2>/dev/null || echo "wan none" ;; wan1_ifname) echo usb0 ;; wan1_proto) echo dhcp ;; wans_mode) echo lb ;;   # a test turns dual WAN on
 	lan_ipaddr) echo 192.168.50.1 ;; http_username) echo admin ;; sshd_port) echo 2222 ;; sshd_enable) echo 1 ;;
 	jffs2_scripts) echo 1 ;; rc_support) echo "mssid 2.4G 5G usbX1 bwdpi wl6 amas" ;;
@@ -112,6 +112,9 @@ case "\$1 \$2" in
 		[ -f "$t/bond" ] && printf '  3\t02:cc:00:00:00:a1\tno\t\t   0.40\n' ;;   # a NAS on LAN 3+4, bonded
 	'showstp br52') printf 'br52\n bridge id\neth3.52 (1)\n port id\nwl0.2 (2)\n' ;;
 	'showmacs br52') printf 'port no\tmac addr\t\tis local?\tageing timer\n  1\t02:cc:00:00:00:52\tno\t\t   1.10\n  1\t02:cc:00:00:00:09\tno\t\t   1.10\n' ;;
+	# a test gives LAN 3 (eth2) to Guest Network Pro's VLAN 53 in Access mode: in br53 alone, untagged, a TV on it
+	'showstp br53') printf 'br53\n bridge id\neth2 (1)\n port id\nwl1.2 (2)\n' ;;
+	'showmacs br53') printf 'port no\tmac addr\t\tis local?\tageing timer\n  1\t02:cc:00:00:00:53\tno\t\t   0.70\n' ;;
 esac
 EOF
 # The firmware's port map ('rc port_status', on stderr), with the router's numbering: the RT-AX86U's, or, when a test says so,
@@ -124,7 +127,8 @@ p 4 W0 eth0 up 1000
 [ -f "$t/rc-usb-first" ] && printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
 if [ -f "$t/ax88u" ]; then p 3 L1 eth4 down 0; p 2 L2 eth3 down 0; p 1 L3 eth2 down 0; p 0 L4 eth1 down 0; p 8 L5 eth5 down 0; p 9 L6 eth5 down 0; p 10 L7 eth5 up 100; p 11 L8 eth5 down 0
 else s2="down 0"; s3="down 0"; [ -f "$t/l2up" ] && s2="up 1000"; [ -f "$t/bond" ] && s3="up 1000"   # tests: LAN 2 up; LAN 3+4 bonded
-	p 3 L1 eth4 down 0; p 2 L2 eth3 \$s2; p 1 L3 eth2 \$s3; p 0 L4 eth1 \$s3; p 7 L5 eth5 up 2500; fi
+	s4=\$s3; [ -f "$t/gnp-access" ] && s3="up 1000"   # LAN 3 alone, given to a VLAN
+	p 3 L1 eth4 down 0; p 2 L2 eth3 \$s2; p 1 L3 eth2 \$s3; p 0 L4 eth1 \$s4; p 7 L5 eth5 up 2500; fi
 [ -f "$t/rc-usb-first" ] || printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
 # the AiMesh nodes' ports, which the firmware prints after the router's own (here in the same format; their L1 is a node's eth1)
 [ -f "$t/rc-nodes" ] && { p 0 W0 eth4 up 1000; p 1 L1 eth1 up 1000; p 2 L2 eth2 up 1000; }
@@ -413,6 +417,32 @@ assert s['plab'] == {'eth4': '1', 'eth3': '2', 'eth2': '3', 'eth1': '4', 'eth5':
 links = {l[0]: l for l in s['links']}
 assert links['eth1'] == ['eth1', 0, -1], links['eth1']   # the node's L1 on its own eth1 is up; the router's LAN 4 isn't
 EOF
+# Guest Network Pro gives LAN 3 (eth2) to a VLAN in Access mode: it leaves lan_ifnames and is in that VLAN's bridge (br53)
+# alone, untagged, with a TV on it. The router reads it as any LAN port: its number, link, counters, and the TV on it. A VLAN
+# of the WAN port in a bridge (an ISP's IPTV profile: eth0.v0, eth0.10) is no LAN port, nor is a VLAN interface the port map
+# doesn't list (a backhaul's, vlan501). Reported on SNBForums (#134, #137): the TV, or a switch, didn't show.
+touch "$t/gnp-access"; cp "$t/proc/net/dev" "$t/dev.before"
+mkdir -p "$t/sys/class/net/eth2/brport" "$t/sys/class/net/eth0.10/brport" "$t/sys/class/net/br53/bridge"
+mkdir -p "$t/sys/class/net/eth0.v0/brport" "$t/sys/class/net/eth1.v0/brport" "$t/sys/class/net/vlan501/brport"
+mkdir -p "$t/sys/class/net/eth9\"x/brport" "$t/sys/class/net/eth7\$(id)/brport" "$t/sys/class/net/eth8*/brport"   # names only root could make
+echo 1 > "$t/sys/class/net/eth2/carrier"; echo 1000 > "$t/sys/class/net/eth2/speed"
+echo '  eth2: 123456789 1000 0 0 0 0 0 0 987654321 2000 0 0 0 0 0 0' >> "$t/proc/net/dev"
+runa sample > "$t/sample-gnp.json" 2>/dev/null || true
+rm -rf "$t/gnp-access" "$t/sys/class/net/eth2/brport" "$t/sys/class/net/eth0.10" "$t/sys/class/net/br53" "$t/sys/class/net/eth9\"x" "$t/sys/class/net/eth7\$(id)" "$t/sys/class/net/eth8*" \
+	"$t/sys/class/net/eth0.v0" "$t/sys/class/net/eth1.v0" "$t/sys/class/net/vlan501"; cp "$t/dev.before" "$t/proc/net/dev"
+echo 0 > "$t/sys/class/net/eth2/carrier"; echo -1 > "$t/sys/class/net/eth2/speed"
+python3 - "$t/sample-gnp.json" <<'EOF' && ok "a LAN port given to a VLAN (Access mode) is read: its number, link, counters and the TV on it; a WAN VLAN isn't a port, nor a name with a quote or a \$ in it" || fail=1
+import json, sys
+s = json.load(open(sys.argv[1]))
+assert s['ports'] == ['eth4', 'eth3', 'eth1', 'eth5', 'eth2'], s['ports']
+assert s['plab'].get('eth2') == '3', s['plab']
+links = {l[0]: l for l in s['links']}
+assert links['eth2'] == ['eth2', 1, 1000], links.get('eth2')
+ifs = {r[0]: r for r in s['ifs']}
+assert ifs['eth2'][1] == '123456789' and ifs['eth2'][2] == '987654321', ifs.get('eth2')
+assert ['eth2', '02:CC:00:00:00:53'] in s['macs'], s['macs']
+assert 'eth0' not in s['ports'] and s['wan'] == 'eth0', s['ports']
+EOF
 # Link aggregation: LAN 3 and 4 (eth2, eth1) bonded as bond0 for a NAS. The bridge has bond0, and learns the NAS there: one
 # port, LAN 3+4, with the bond's own link and counters. And LAN 2 (eth3) as a VLAN interface whose own link says 10 Gb/s
 # while the port map says 1000: the map's link, and its number.
@@ -544,6 +574,9 @@ assert w['eth3'] == ['eth3', 1, 1000, '524288', '3145728'] and w['eth0'][1] == 0
 assert w['eth4'] == ['eth4', 1, 100, '65536', '131072'], n['w']   # a LAN port given to a VLAN: in that VLAN's bridge alone
 # the device on its LAN port, and the TV on the VLAN's; the router and its devices are behind its uplink; a phone on the VLAN's Wi-Fi isn't wired
 assert n['m'] == [['eth3', '02:CC:00:00:00:31'], ['eth4', '02:CC:00:00:00:33']], n['m']
+# what its bridges learned on the Wi-Fi it serves: a device on wl0.1, the phone on the VLAN's Wi-Fi (wl0.1.53); never the router
+# or its device behind its uplink (its 5 GHz radio's own interface, on a Wi-Fi backhaul), nor a wired one
+assert n['a'] == ['02:CC:00:00:00:11', '02:CC:00:00:00:34'], n['a']
 assert ['wl1.1', 'Guest <net> \\1', 0] in n['n'] and ['eth1', 'Home "net"', 1] in n['n'] and ['wl0.1', 'Home "net"', 0] in n['n'] and len(n['n']) == 3, n['n']
 assert c['02:CC:00:00:00:11'][1] == '2.4', c
 assert float(n['up']) > 0, n['up']
@@ -667,9 +700,36 @@ else bad "nodes test, a node on an Ethernet backhaul:"; cat "$t/nt.out" "$t/node
 # but named as its uplink, and its counters are the node's own count of its backhaul
 if grep -q '^L eth3 1 1000$' "$t/node-last.out" && grep -q '^M eth3 02:CC:00:00:00:31$' "$t/node-last.out" && ! grep -q '^[LM] eth0' "$t/node-last.out" \
 	&& [ "$(grep -c '^M ' "$t/node-last.out")" = 2 ] && grep -q '^M eth4 02:CC:00:00:00:33$' "$t/node-last.out" \
-	&& [ "$(grep -c '^X ' "$t/node-last.out")" = 1 ] && grep -q '^X eth0$' "$t/node-last.out" && grep -q '^C eth0 8000 9000$' "$t/node-last.out"; then
-	ok "a node on an Ethernet backhaul: its LAN ports' devices are read (one on a VLAN's port); the port leading to the router (with the router's address, on its VLAN too) is its uplink"
-else bad "a node's wired ports on an Ethernet backhaul:"; grep '^[LCMX] ' "$t/node-last.out"; fi
+	&& [ "$(grep -c '^X ' "$t/node-last.out")" = 1 ] && grep -q '^X eth0$' "$t/node-last.out" && grep -q '^C eth0 8000 9000$' "$t/node-last.out" \
+	&& [ "$(grep '^A ' "$t/node-last.out" | tr '\n' ' ')" = "A 02:CC:00:00:00:11 A 02:CC:00:00:00:34 " ]; then
+	ok "a node on an Ethernet backhaul: its LAN ports' devices are read (one on a VLAN's port); the port leading to the router (with the router's address, on its VLAN too) is its uplink; its Wi-Fi's addresses are sent apart"
+else bad "a node's wired ports on an Ethernet backhaul:"; grep '^[LCMXA] ' "$t/node-last.out"; fi
+# A node whose radios are named wl0 and wl1, on a Wi-Fi backhaul: its 5 GHz radio's own interface wl1 is its uplink (psr), and
+# it serves wl0, wl0.1 and wl1.1. Its bridge learned the router and the router's NAS on wl1 (as it learns everything upstream),
+# a phone on wl1.1, a PC on its LAN port. The phone is sent as one of its Wi-Fi's addresses; the router's NAS never is (wl1 isn't
+# a network it serves, though wl1.1 less its last part reads "wl1"): it would vanish from the router's port.
+cp "$N/nvram" "$t/nvram.keep"; cp "$N/brctl" "$t/brctl.keep"; cp "$F/node-assoc" "$t/assoc.keep"
+cat > "$N/nvram" <<EON
+#!$bb sh
+case "\$1 \$2" in 'get sshd_authkeys') cat "$t/node-authkeys" 2>/dev/null; exit 0 ;; esac
+case "\$2" in wl0_ifname) echo wl0 ;; wl1_ifname) echo wl1 ;; wl0_vifs) echo wl0.1 ;; wl1_vifs) echo wl1.1 ;; wl0_nband) echo 2 ;; wl1_nband) echo 1 ;;
+	wl1_mode) echo psr ;; sta_phy_ifnames) echo wl1 ;; lan_ifnames) echo "eth3 wl0 wl1 wl0.1 wl1.1" ;; wan_ifnames) echo eth0 ;;
+	wl0_ssid|wl1_ssid|wl0.1_ssid|wl1.1_ssid) echo Home ;; esac
+EON
+cat > "$N/brctl" <<EON
+#!$bb sh
+case "\$1 \$2" in
+	'showstp br0') printf 'br0\n bridge id\neth3 (2)\n port id\nwl0 (3)\nwl1 (4)\nwl0.1 (5)\nwl1.1 (6)\n' ;;
+	'showmacs br0') printf 'port no\tmac addr\t\tis local?\tageing timer\n  4\t00:00:5e:00:53:fc\tno\t\t   0.10\n  4\t02:cc:00:00:00:09\tno\t\t   0.30\n  6\t02:cc:00:00:00:12\tno\t\t   0.50\n  2\t02:cc:00:00:00:31\tno\t\t   1.20\n' ;;
+esac
+exit 0
+EON
+chmod +x "$N/nvram" "$N/brctl"; printf 'wl1.1 02:CC:00:00:00:12 5000000 60000\n' > "$F/node-assoc"
+touch "$t/node-tee"; run nodes test > "$t/nt.out" 2>&1 || true; rm -f "$t/node-tee"
+cp "$t/nvram.keep" "$N/nvram"; cp "$t/brctl.keep" "$N/brctl"; cp "$t/assoc.keep" "$F/node-assoc"
+if grep -q '^#E' "$t/node-last.out" && [ "$(grep '^A ' "$t/node-last.out" | tr '\n' ' ')" = "A 02:CC:00:00:00:12 " ]; then
+	ok "a node whose uplink is a Wi-Fi interface named like the network it serves (wl1, wl1.1): only that network's devices are its own"
+else bad "a node's Wi-Fi addresses with its uplink on wl1:"; grep '^[AMXL] ' "$t/node-last.out"; cat "$t/nt.out"; fi
 # A node with a NAS on two of its LAN ports, bonded: its bridge has the bond in their place, and the bond is read as one port,
 # with the NAS on it (the node read nothing there, and the NAS showed beside the node on the router's port)
 nsys=$t/node-sys/class/net; mv "$nsys/eth3/brport" "$nsys/eth3/brport.off"; mkdir -p "$nsys/bond0/brport" "$nsys/eth3/bonding_slave"
