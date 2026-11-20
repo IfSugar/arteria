@@ -67,6 +67,29 @@ LABEL_COVERS = '''() => {
 }'''
 
 
+
+# traffic lines that run under a label: a line may pass under its own device's label, and under the label of the hub it
+# leaves (the router, a node, the internet's) for the first 30% of its length; under any other label, it is hidden. Only a
+# map at its snuggest (a crowd that has room only so) may hide one, where a label had no other spot: those aren't counted
+LINES_UNDER = r"""() => {
+    const L = Arteria.state.layout, from = { wan: 'wan', more: 'router' }, end = { wan: 'router' }, out = [];
+    if (L.snug > 1) return out;
+    L.devs.concat(L.wired).forEach(x => { from[x.dev.id] = x.dev.node ? x.dev.node.id : 'router'; });
+    L.nodes.forEach(x => { const v = x.node.viaWired && x.node.via; from[x.node.id] = v && /^node:/.test(v.id) ? v.id : 'router'; });
+    const labs = [...document.querySelectorAll('#ar .ar-lb')].map(b => [b.getAttribute('data-id'), b.firstElementChild.getBoundingClientRect()]).filter(l => l[1].width);
+    document.querySelectorAll('#arMapScene g.lk[data-link]').forEach(g => {
+        const id = g.getAttribute('data-link'), p = g.querySelectorAll('path')[1], M = p && p.getScreenCTM(), len = p ? p.getTotalLength() : 0, n = 60;
+        if (!M || !len) return;
+        const pts = []; for (let i = 0; i <= n; i++) { const q = p.getPointAtLength(len * i / n); pts.push([M.a * q.x + M.c * q.y + M.e, M.b * q.x + M.d * q.y + M.f]); }
+        labs.forEach(([lid, r]) => {
+            if (lid === (end[id] || id)) return;
+            for (let i = lid === from[id] ? Math.ceil(n * 0.3) : 0; i <= n; i++) { const q = pts[i];
+                if (q[0] > r.left + 2 && q[0] < r.right - 2 && q[1] > r.top + 2 && q[1] < r.bottom - 2) { out.push(id.slice(-5) + ' under ' + lid.slice(-5)); break; } }
+        });
+    });
+    return out;
+}"""
+
 # Room on the map: drawings that overlap (their outlines, worked out here from the shapes in each drawing: the router is left
 # out, its plate is mostly floor and stands keep off it by where they are), the longest label line, and lines that cross.
 ROOM = r'''() => {
@@ -194,16 +217,18 @@ async def scenario(b, scn, port):
         await pg.click('#arBig'); await pg.wait_for_timeout(400)
         lbov_big = await pg.evaluate(LABEL_OVERLAPS)
         cover_big = await pg.evaluate(LABEL_COVERS)
+        under_big = await pg.evaluate(LINES_UNDER)
         room_big = [await pg.evaluate(ROOM)]
         if scn in ('nodecrowd', 'house'):   # a crowded floor in a smaller window, where labels have the least room; and in a large one
             await pg.set_viewport_size({'width': 1456, 'height': 832}); await pg.wait_for_timeout(900)
-            lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS)
+            lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS); under_big += await pg.evaluate(LINES_UNDER)
             room_big.append(await pg.evaluate(ROOM))
             await pg.set_viewport_size({'width': 2540, 'height': 1450}); await pg.wait_for_timeout(900)
-            lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS)
+            lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS); under_big += await pg.evaluate(LINES_UNDER)
             room_big.append(await pg.evaluate(ROOM))
             await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
         check(cover_big == 0, tag + 'expanded view: labels don\'t cover other devices (%d)' % cover_big)
+        check(not under_big, tag + 'expanded view: no traffic line runs under another device\'s label (%s)' % (', '.join(under_big[:4]) or 'none'))
         if scn == 'crowd':   # a smaller window, where a crowd of labels has the least room
             await pg.set_viewport_size({'width': 1280, 'height': 720}); await pg.wait_for_timeout(700)
             lbov_big += await pg.evaluate(LABEL_OVERLAPS)
@@ -248,6 +273,7 @@ async def scenario(b, scn, port):
         }''')
         # a device's label doesn't cover another device's drawing (on a crowded floor, one may have to)
         cover = await pg.evaluate(LABEL_COVERS)
+        under = await pg.evaluate(LINES_UNDER)
         room = await pg.evaluate(ROOM)
         # labels never sit on one another
         lbov = await pg.evaluate(LABEL_OVERLAPS)
@@ -279,6 +305,7 @@ async def scenario(b, scn, port):
         check(after == small, tag + 'closing the expanded view puts the stage back as it was')
         check(inj['els'] == 0 and not inj['xss'], tag + 'nothing that looks like HTML became markup or ran')
         check(cover == 0, tag + 'labels don\'t cover other devices (%d)' % cover)
+        check(not under, tag + 'no traffic line runs under another device\'s label (%s)' % (', '.join(under[:4]) or 'none'))
         check(room_ok(room), tag + 'no drawing overlaps another, every label is next to its device, no lines cross (%s)' % room_txt([room]))
         check(all(room_ok(r) for r in room_big), tag + 'expanded view: no drawing overlaps another, every label is next to its device, no lines cross (%s)' % room_txt(room_big))
         check(not spill, tag + 'every label\'s rates fit inside it' + ('' if not spill else ' (%s)' % ', '.join(spill[:4])))

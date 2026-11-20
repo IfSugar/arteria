@@ -8,7 +8,7 @@
 <link rel="shortcut icon" href="images/favicon.png"/>
 <link rel="icon" href="images/favicon.png"/>
 <title>Arteria</title>
-<!-- arteria-version: 2.2.0 (must match VERSION in arteria.sh) -->
+<!-- arteria-version: 2.2.1 (must match VERSION in arteria.sh) -->
 <link rel="stylesheet" type="text/css" href="index_style.css"/>
 <link rel="stylesheet" type="text/css" href="form_style.css"/>
 <script type="text/javascript" src="/js/jquery.js"></script>
@@ -272,7 +272,7 @@
    Only initial() (called by <body onload>) and the Arteria object (used by the page's buttons) are global. */
 (function () {
 'use strict';
-var VERSION = '2.2.0';
+var VERSION = '2.2.1';
 var BASE = '/ext/arteria/';
 var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', WARN = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';   /* ACC follows the router's theme (theme()) */
 /* Packets: one CSS class per bucket (b0 = busiest). As throughput rises on a log scale, packets grow
@@ -1428,12 +1428,12 @@ Obj.prototype.hull = function () { return hullOf(this.pts); };
 
 /* The fixed parts: the internet terminal and the router. */
 function objWan() {
-	var o = new Obj('wan', 1.675, 1.675, 2.45);
-	o.box(1.15, 1.15, 0, 1.05, 1.05, 0.5, M_BODY, { ao: true, shadow: true });
+	var wx = G.wx, wy = G.wy, o = new Obj('wan', wx, wy, 2.45);   /* in the floor's top corner */
+	o.box(wx - 0.525, wy - 0.525, 0, 1.05, 1.05, 0.5, M_BODY, { ao: true, shadow: true });
 	o.line('L', 0.15, 0.5, 0.85, 0.5, DN, 1.4);
 	o.led('L', 0.5, 0.22, '#3ddc97', 1.9, 0, 1.3);
-	o.box(1.33, 1.33, 0.5, 0.69, 0.69, 0.16, M_DARK);
-	var c0 = P(1.675, 1.675, 0.66), g = P(1.675, 1.675, 1.72);
+	o.box(wx - 0.345, wy - 0.345, 0.5, 0.69, 0.69, 0.16, M_DARK);
+	var c0 = P(wx, wy, 0.66), g = P(wx, wy, 1.72);
 	o.svg.push(ell(c0, 0.24, 'fill:' + DN), ell(c0, 0.24, 'fill:none;stroke:' + DN + ';stroke-width:1.4', 'df-a df-ripple'));
 	o.svg.push(poly([[c0[0] - 6.5, c0[1]], [c0[0] + 6.5, c0[1]], [g[0] + 15, g[1] + 4], [g[0] - 15, g[1] + 4]], 'fill:url(#ar-beam)'));
 	o.svg.push('<circle cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" r="25" style="fill:url(#ar-halo)"/>');
@@ -1441,7 +1441,7 @@ function objWan() {
 	o.svg.push('<path d="M' + n1(g[0] - 15) + ' ' + n1(g[1]) + ' h30 M' + n1(g[0] - 13) + ' ' + n1(g[1] - 7.5) + ' a15 6.5 0 0 0 26 0 M' + n1(g[0] - 13) + ' ' + n1(g[1] + 7.5) + ' a15 6.5 0 0 1 26 0" style="fill:none;stroke:rgba(225,245,255,.6);stroke-width:.9"/>');
 	o.svg.push('<ellipse cx="' + n1(g[0]) + '" cy="' + n1(g[1]) + '" rx="6.5" ry="15" style="fill:none;stroke:rgba(225,245,255,.6);stroke-width:.9"/>');
 	o.pts.push([g[0] - 16, g[1] - 16], [g[0] + 16, g[1] - 16], [g[0] - 16, g[1] + 16], [g[0] + 16, g[1] + 16]);
-	o.collar(2.2, 1.5, 0.2, 0.35);
+	o.collar(wx + 0.525, wy - 0.175, 0.2, 0.35);   /* where its pipe leaves */
 	return o;
 }
 function objRouter(model) {
@@ -2379,7 +2379,7 @@ var TRAY = { cx: 1.7, cy: 5.3 };
    view grows the floor around the same core (internet terminal, router, WAN pipe keep their world
    coordinates; only the origin moves) and generates its stands from the floor size, nearest first. */
 function geomSmall() {
-	return { key: 's', big: false, U: 24, OX: 322, OY: 96, x0: 0, y0: 0, x1: 18, y1: 14, SW: 728, SH: 518, hit: 44,
+	return { key: 's', big: false, U: 24, OX: 322, OY: 96, x0: 0, y0: 0, x1: 18, y1: 14, wx: 1.675, wy: 1.675, SW: 728, SH: 518, hit: 44,
 		nodeSlots: NODE_SLOTS, wifiSlots: WIFI_SLOTS, wiredSlots: WIRED_SLOTS, tray: TRAY,
 		flow: { x: { src: 80, rt: 190, link: 298, mesh: 434, dev: 516 }, rowLeft: 530, rowW: 190, rows: 8, rowMin: 44, target: 230, top: 88, limit: 508 } };
 }
@@ -2396,10 +2396,10 @@ var BIG_WIRED = [
 function geomBig(w, h, nodes) {
 	var U = Math.max(24, Math.min(30, Math.round(h / 28))), cu = CC * U;
 	var n = Math.min(Math.floor((w - 64) / cu), Math.floor((h - 134) * 2 / U));   /* floor cells across both axes that fit */
-	n = Math.max(32, Math.min(n, 52));
+	n = Math.max(32, Math.min(n, 72));   /* as big as the stage takes: room between the devices */
 	var fx = Math.round(n * 9 / 16), fy = n - fx;                                     /* the small floor is 18 × 14 */
 	var x0 = -Math.round((fx - 18) * 0.4) || 0, y0 = -Math.round((fy - 14) * 0.4) || 0;
-	var g = { big: true, U: U, x0: x0, y0: y0, x1: x0 + fx, y1: y0 + fy, SW: w, SH: h, hit: 56, nodes: Math.min(nodes || 0, 3), tray: TRAY };
+	var g = { big: true, U: U, x0: x0, y0: y0, x1: x0 + fx, y1: y0 + fy, wx: x0 + 1.675, wy: y0 + 1.675, SW: w, SH: h, hit: 56, nodes: Math.min(nodes || 0, 3), tray: TRAY };
 	g.OX = Math.round((w - n * cu) / 2 + (g.y1 - x0) * cu);   /* the floor centred across the stage */
 	g.OY = 96 - Math.round((x0 + y0) * U / 2);
 	g.key = 'b' + U + 'x' + fx + 'x' + fy + 'n' + g.nodes + 'w' + w + 'h' + h;
@@ -2409,6 +2409,9 @@ function geomBig(w, h, nodes) {
 	g.flow = flowGeom(w, h);
 	return g;
 }
+/* the internet terminal and its pipe to the router, on the floor (stands keep off them) */
+function wanArea(g) { return [[g.wx - 1.275, g.wy - 1.075, g.wx + 1.525, g.wy + 1.225], [g.wx + 1.525, g.wy - 0.775, 7.9, g.wy + 0.825], [6.3, g.wy + 0.825, 7.9, 4.8]]; }
+function wanRoute() { return [[G.wx + 0.625, G.wy], [7.1, G.wy], [7.1, 6.0]]; }
 function box2(a, b, pad) { return [Math.min(a[0], b[0]) - pad, Math.min(a[1], b[1]) - pad, Math.max(a[0], b[0]) + pad, Math.max(a[1], b[1]) + pad]; }
 function genSlots(g) {
 	var cells = [], pitchX = 1.5, pitchY = 1.3;   /* places a stand may be: far more than are used, and closer than drawings can stand (see fitStands) */
@@ -2428,8 +2431,7 @@ function genSlots(g) {
 		{ zone: z1, cx: g.x0 + 1.3, cy: z1[1] + 1.3 },
 		{ zone: z2, cx: z2[0] + 1.2, cy: z2[1] + 1.2 }
 	].slice(0, g.nodes);
-	var keep = [RT, [0.4, 0.6, 3.2, 2.9], [3.2, 0.9, 7.9, 2.5], [6.3, 2.5, 7.9, 4.8],   /* router, internet terminal, WAN pipe */
-		[1.0, g.y0, 2.4, 1.2], [g.x0, 3.9, 3.2, 6.9]];                                                   /* the fibre from the wall, the tray */
+	var keep = [RT].concat(wanArea(g), [[g.wx - 0.675, g.y0, g.wx + 0.725, g.wy - 0.475], [g.x0, 3.9, 3.2, 6.9]]);   /* router, internet and its pipe, the fibre from the wall, the tray */
 	var inFloor = function (s) { return s.cx - 1.4 > g.x0 && s.cx + 1.4 < g.x1 && s.cy - 1.3 > g.y0 && s.cy + 1.3 < g.y1; };
 	var inZone = function (s) { return g.nodeSlots.some(function (ns) { return inR(s.cx, s.cy, ns.zone) || s.route.some(function (p) { return inR(p[0], p[1], ns.zone); }); }); };
 	g.wiredSlots = BIG_WIRED.filter(function (s) { return inFloor(s) && !inZone(s); });
@@ -2548,13 +2550,13 @@ function shapeOf(kind, face) {
 	var k = G.U + '|' + kind + '|' + (face || ''), sh = SHAPE[k];
 	if (!sh) {
 		var o = objDevice('', kind, 0, 0, face), bb = o.bbox(), p = P(0, 0);
-		sh = SHAPE[k] = { bb: [bb[0] - p[0], bb[1] - p[1], bb[2] - p[0], bb[3] - p[1]], ax: o.anchor[0] - p[0], hull: o.hull().map(function (q) { return [q[0] - p[0], q[1] - p[1]]; }) };
+		sh = SHAPE[k] = { bb: [bb[0] - p[0], bb[1] - p[1], bb[2] - p[0], bb[3] - p[1]], ax: o.anchor[0] - p[0], tg: [o.target[0] - p[0], o.target[1] - p[1]], hull: o.hull().map(function (q) { return [q[0] - p[0], q[1] - p[1]]; }) };
 	}
 	return sh;
 }
 function shapeAt(kind, s, face) {
 	var sh = shapeOf(kind, face), p = P(s.cx, s.cy);
-	return { bb: [sh.bb[0] + p[0], sh.bb[1] + p[1], sh.bb[2] + p[0], sh.bb[3] + p[1]], ax: sh.ax + p[0], hull: sh.hull.map(function (q) { return [q[0] + p[0], q[1] + p[1]]; }) };
+	return { bb: [sh.bb[0] + p[0], sh.bb[1] + p[1], sh.bb[2] + p[0], sh.bb[3] + p[1]], ax: sh.ax + p[0], tg: [sh.tg[0] + p[0], sh.tg[1] + p[1]], hull: sh.hull.map(function (q) { return [q[0] + p[0], q[1] + p[1]]; }) };
 }
 /* A label's width: its name, or the widest rates its second line can show ("↓ 99.9M ↑ 99.9M"), so a busy device's numbers
    never spill out. A node's second line can grow a " · weak" tag, so it gets room for that up front. */
@@ -2565,7 +2567,19 @@ function labelW(id, name, x3) {
 }
 /* The spots a label may take, the shortest line first: against its drawing (above, below, beside), shifted along it, then
    a step or three out. Nothing further: the longest line is about 70 px. bb: the drawing's outline, ax: where its top is. */
-function labelSpots(bb, ax, w) {
+/* They are the same round any drawing of a size, wherever it stands: worked out once, at (0, 0), and moved there. */
+var SPOTS = {}, SPOTN = 0;
+function spotsRel(bb, ax, w) {
+	var k = [G.hit, G.big ? 1 : 0, w, (bb[2] - bb[0]).toFixed(2), (bb[3] - bb[1]).toFixed(2), (ax - bb[0]).toFixed(2)].join('|');
+	if (!SPOTS[k]) {
+		if (++SPOTN > 3000) { SPOTS = {}; SPOTN = 1; }
+		SPOTS[k] = spotsAt([0, 0, bb[2] - bb[0], bb[3] - bb[1]], ax - bb[0], w);
+	}
+	return SPOTS[k];
+}
+function spotMoved(c, X, Y) { return { x: c.x + X, y: c.y + Y, px: c.px + X, py: c.py + Y, ax: c.ax + X, ay: c.ay + Y, just: c.just, d: c.d }; }
+function labelSpots(bb, ax, w) { return spotsRel(bb, ax, w).map(function (c) { return spotMoved(c, bb[0], bb[1]); }); }
+function spotsAt(bb, ax, w) {
 	var HIT = G.hit, mid = (bb[1] + bb[3]) / 2, out = [];
 	var add = function (c) { c.d = Math.sqrt((c.px - c.ax) * (c.px - c.ax) + (c.py - c.ay) * (c.py - c.ay)) + out.length * 0.01; out.push(c); };
 	var clamp = function (v, a, b) { return Math.min(Math.max(v, a), b); };
@@ -2601,41 +2615,114 @@ function stageText() {   /* the map's text, legend and notice, and the expanded 
 	return z;
 }
 /* What the map holds, and where a label may still go: drawings (objs: { bb, hull }), labels, and labels' lines. */
-function Room() { this.objs = []; this.labs = []; this.lines = []; this.text = stageText(); }
-/* Can a drawing stand here: 6 px or more from every other drawing's outline, under no label or line. The router isn't asked:
-   the stands keep off it by where they are, and a device in front of it may cover a corner of its plate. */
+/* paths: the traffic lines that are on the map whatever stands where (the internet's pipe, a node's backhaul, the tray's
+   arc); each standing drawing carries its own (sh.path): labels keep off them all, so no traffic hides under one.
+   cables: a wired node's pipe, as points on the floor: stands keep off it as the pipe keeps off stands (see floorRoute) */
+function Room() { this.objs = []; this.labs = []; this.lines = []; this.paths = []; this.cables = []; this.text = stageText(); }
+/* How snug the map is (see mapLayout): 0, room round everything, more in the expanded view; 1, less room; 2, as close as
+   things may stand, and a traffic line may pass under a label where the label has no other spot. The roomiest that stands
+   as many devices as the snuggest is the one used: room never costs a device its stand. */
+var SNUG = 0;
+/* room between two drawings; between a label and a drawing not its own; between two labels */
+function gapD() { return SNUG ? 6 : G.big ? 14 : 9; }
+function gapL() { return [G.big ? 8 : 5, 3, 0][SNUG]; }
+function gapLL() { return SNUG > 1 ? 1 : 3; }
+/* A traffic line, as points along it a few pixels apart; from, to: the labels at its two ends, which may cover its first or
+   last part (a hub's label sits by the lines leaving it, a device's by the line coming in) */
+function pathOf(pts, from, to) {
+	var out = [];
+	pts.forEach(function (p, i) {
+		if (!i) { out.push(p); return; }
+		var q = pts[i - 1], n = Math.max(1, Math.ceil(Math.hypot(p[0] - q[0], p[1] - q[1]) / 6));
+		for (var k = 1; k <= n; k++) out.push([q[0] + (p[0] - q[0]) * k / n, q[1] + (p[1] - q[1]) * k / n]);
+	});
+	var bb = [Infinity, Infinity, -Infinity, -Infinity];
+	out.forEach(function (p) { bb[0] = Math.min(bb[0], p[0]); bb[1] = Math.min(bb[1], p[1]); bb[2] = Math.max(bb[2], p[0]); bb[3] = Math.max(bb[3], p[1]); });
+	return { pts: out, from: from, to: to, bb: bb };
+}
+function arcPath(p0, p1, bulge, from, to) {   /* as arc() draws it, a point every 6 px or less (its corners' path is longer than it) */
+	var c = arcCtrl(p0, p1, bulge), pts = [], bb = [Infinity, Infinity, -Infinity, -Infinity];
+	var n = Math.max(2, Math.ceil((Math.hypot(c[0] - p0[0], c[1] - p0[1]) + Math.hypot(p1[0] - c[0], p1[1] - c[1])) / 6));
+	for (var i = 0; i <= n; i++) {
+		var t = i / n, x = (1 - t) * (1 - t) * p0[0] + 2 * t * (1 - t) * c[0] + t * t * p1[0], y = (1 - t) * (1 - t) * p0[1] + 2 * t * (1 - t) * c[1] + t * t * p1[1];
+		pts.push([x, y]);
+		if (x < bb[0]) bb[0] = x; if (y < bb[1]) bb[1] = y; if (x > bb[2]) bb[2] = x; if (y > bb[3]) bb[3] = y;
+	}
+	return { pts: pts, from: from, to: to, bb: bb };
+}
+/* Does a traffic line pass under label r (whose id is lid): its first and last 30% are left to the labels at its ends */
+function pathUnder(pa, r, lid) {
+	if (pa.bb[2] <= r[0] + 1 || pa.bb[0] >= r[2] - 1 || pa.bb[3] <= r[1] + 1 || pa.bb[1] >= r[3] - 1) return false;
+	var n = pa.pts.length, lo = lid && lid === pa.from ? Math.ceil(n * 0.3) : 0, hi = lid && lid === pa.to ? Math.floor(n * 0.7) : n;
+	for (var i = lo; i < hi; i++) { var p = pa.pts[i]; if (p[0] > r[0] + 1 && p[0] < r[2] - 1 && p[1] > r[1] + 1 && p[1] < r[3] - 1) return true; }
+	return false;
+}
+/* Can a drawing stand here: gapD() px or more from every other drawing's outline, gapL() from every label, under no label's
+   line, and its traffic line under no label. The router isn't asked: the stands keep off it by where they are, and a device
+   in front of it may cover a corner of its plate. */
 Room.prototype.clearFor = function (sh) {
-	var bb = sh.bb, pad = [bb[0] - 3, bb[1] - 3, bb[2] + 3, bb[3] + 3], far = [bb[0] - 6, bb[1] - 6, bb[2] + 6, bb[3] + 6];
-	return !this.objs.some(function (o) { return !o.wide && rectsMeet(far, o.bb) && hullsMeet(sh.hull, o.hull, 6); }) && !this.labs.some(function (r) { return rectsMeet(pad, r); }) &&
-		!this.lines.some(function (l) { return lineMeets(l, pad); });
+	var bb = sh.bb, d = gapD(), l = gapL(), pad = [bb[0] - l, bb[1] - l, bb[2] + l, bb[3] + l], far = [bb[0] - d, bb[1] - d, bb[2] + d, bb[3] + d];
+	if (this.objs.some(function (o) { return !o.wide && rectsMeet(far, o.bb) && hullsMeet(sh.hull, o.hull, d); }) || this.labs.some(function (r) { return rectsMeet(pad, r); }) ||
+		this.lines.some(function (q) { return lineMeets(q, pad); })) return false;
+	var s = sh.slot;
+	if (s && this.cables.length) {   /* the boxes the map's pipes keep out of (see buildMap): a stand's, and a router's cable's */
+		var e = sh.wired ? 1.0 : 0.9, boxes = [[s.cx - e, s.cy - e, s.cx + e, s.cy + e]];
+		if (sh.wired && s.route) s.route.forEach(function (p, i) { if (i) boxes.push(box2(s.route[i - 1], p, 0.4)); });
+		if (this.cables.some(function (pts) { return pts.some(function (q) { return boxes.some(function (b) { return q[0] > b[0] && q[0] < b[2] && q[1] > b[1] && q[1] < b[3]; }); }); })) return false;
+	}
+	var labs = this.labs, free = function (pa) { return !labs.some(function (r) { return pathUnder(pa, r, r.id); }); };
+	if (!sh.bends) return !sh.path || SNUG > 1 || free(sh.path);
+	/* a Wi-Fi arc bends as it must to pass no label: its usual curve first, then flatter or rounder (the map draws it so) */
+	for (var i = 0; i < sh.bends.length; i++) { var pa = sh.arcAt(sh.bends[i]); if (free(pa)) { sh.path = pa; sh.bend = sh.bends[i]; return true; } }
+	if (SNUG < 2) return false;
+	/* the snuggest map: the curve under the fewest labels */
+	var best = null;
+	sh.bends.forEach(function (b) { var pa = sh.arcAt(b), n = labs.filter(function (r) { return pathUnder(pa, r, r.id); }).length; if (!best || n < best.n) best = { n: n, b: b, pa: pa }; });
+	sh.bend = best.b; sh.path = best.pa;
+	return true;
 };
 /* Can a label go on spot c, for the drawing me (an entry of objs, or null for one not standing yet): inside the stage, off
    the map's text, on no drawing, label or line, and its own line over none either: lines never cross. The router's outline is mostly empty
    floor (its plate is a diamond), so a line may cross its corners; a label keeps off it all the same. */
-Room.prototype.spotFree = function (c, w, me, but) {
-	var r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5], l = [c.px, c.py, c.ax, c.ay];
+Room.prototype.spotFree = function (c, w, me, but, lid, loose) {
+	var r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5], l = [c.px, c.py, c.ax, c.ay], g = gapL(), k = gapLL(), rg = [r[0] - g, r[1] - g, r[2] + g, r[3] + g], rl = [r[0] - k, r[1] - k, r[2] + k, r[3] + k];
 	if (r[0] < 4 || r[1] < 4 || r[2] > G.SW - 4 || r[3] > G.SH - 4) return false;
 	if (this.text.some(function (z) { return rectsMeet(r, z); })) return false;
-	if (this.objs.some(function (o) { return o !== me && rectsMeet(r, o.bb); }) || this.labs.some(function (q, i) { return i !== but && rectsMeet(r, q); })) return false;
+	if (this.objs.some(function (o) { return o !== me && rectsMeet(o.wide ? r : rg, o.bb); }) || this.labs.some(function (q, i) { return i !== but && rectsMeet(rl, q); })) return false;
+	if (!loose && (this.paths.some(function (pa) { return pathUnder(pa, r, lid); }) || this.objs.some(function (o) { return o !== me && o.path && pathUnder(o.path, r, lid); }))) return false;
 	if (this.objs.some(function (o) { return o !== me && !o.wide && lineMeets(l, o.bb); }) || this.labs.some(function (q, i) { return i !== but && lineMeets(l, q); })) return false;
 	return !this.lines.some(function (q, i) { return i !== but && (lineMeets(q, r) || linesCross(q, l)); });
 };
 /* The nearest free spot for a label, or null. The page's view has few stands, each placed by hand: there a label takes a
    spot over no other stand while it has one (own: its own stand), so the stand stays free for a device. */
-Room.prototype.spot = function (bb, ax, w, me, own) {
-	var cs = labelSpots(bb, ax, w), any = null, i, c, r, st = this.stands || [];
+Room.prototype.spot = function (bb, ax, w, me, own, lid) {
+	var cs = spotsRel(bb, ax, w), any = null, i, c, r, st = this.stands || [];
 	var on = function (q) { return q.s !== own && rectsMeet(r, q.r); };
 	for (i = 0; i < cs.length; i++) {
-		c = cs[i];
-		if (!this.spotFree(c, w, me)) continue;
+		c = spotMoved(cs[i], bb[0], bb[1]);
+		if (!this.spotFree(c, w, me, undefined, lid)) continue;
 		r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5];
 		if (!st.some(on)) return c;
 		any = any || c;
 	}
-	return any;
+	if (any || SNUG < 2) return any;
+	/* the snuggest map, with no spot off the traffic lines: the one over the fewest (off the other stands, if it can) */
+	var R = this, best = null;
+	for (i = 0; i < cs.length; i++) {
+		c = spotMoved(cs[i], bb[0], bb[1]);
+		if (!this.spotFree(c, w, me, undefined, lid, true)) continue;
+		r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5];
+		var n = R.paths.filter(function (pa) { return pathUnder(pa, r, lid); }).length + R.objs.filter(function (o) { return o !== me && o.path && pathUnder(o.path, r, lid); }).length;
+		n = n * 2 + (st.some(on) ? 1 : 0);
+		if (!best || n < best.n) best = { n: n, c: c };
+		if (!n) break;
+	}
+	return best && best.c;
 };
-Room.prototype.hold = function (c, w) {   /* a label takes its spot */
-	this.labs.push([c.x, c.y + 5, c.x + w, c.y + G.hit - 5]);
+Room.prototype.hold = function (c, w, id) {   /* a label takes its spot; id: whose (a traffic line may run under its own end of it) */
+	var r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5];
+	r.id = id;
+	this.labs.push(r);
 	this.lines.push([c.px, c.py, c.ax, c.ay]);
 	return { x: Math.round(c.x), y: Math.round(c.y), w: w, px: c.px, py: c.py, ax: c.ax, ay: c.ay, just: c.just };
 };
@@ -2651,15 +2738,40 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 		zones.forEach(function (z) { z.slots.forEach(function (s) { var p = P(s.cx, s.cy); R.stands.push({ s: s, r: [p[0] - 14, p[1] - 30, p[0] + 14, p[1] + 8] }); }); });
 	}
 	var x3 = function (x) { return G.big ? thirdLine(x) : ''; };
-	var thing = function (id, o, name, third, wide) { var e = { id: id, bb: o.bbox(), hull: o.hull(), ax: o.anchor[0], wide: wide, w: labelW(id, name, third) }; R.objs.push(e); fixed.push(e); };
-	thing('router', objRouter(net.router.model), net.router.model || 'Router', '', true);
+	var thing = function (id, o, name, third, wide) { var e = { id: id, bb: o.bbox(), hull: o.hull(), ax: o.anchor[0], wide: wide, w: labelW(id, name, third), hub: o.hub, tg: o.target }; R.objs.push(e); fixed.push(e); return e; };
+	var rt = thing('router', objRouter(net.router.model), net.router.model || 'Router', '', true), HR = rt.hub || P(7.1, 7.1, 2.2);
 	thing('wan', objWan(), 'Internet', '');
-	nodes.forEach(function (x) { thing(x.node.id, objNode(x.node.id, x.slot.cx, x.slot.cy, x.node.model), x.node.name, x3(x.node)); });
-	/* the tray's label is as wide as its longest text: its count changes without the map being drawn again */
-	if (tray) thing('more', objTray(G.tray.cx, G.tray.cy), trayName({ length: 88 }, hidden), '');
-	fixed.forEach(function (e) {   /* these are always on the map: a label with no free spot takes the nearest one anyway */
-		out.labs[e.id] = R.hold(R.spot(e.bb, e.ax, e.w, e) || labelSpots(e.bb, e.ax, e.w)[0], e.w);
+	var hubs = { r: { pt: HR, id: 'router' } };
+	var slotOf = function (node) { for (var i = 0; i < nodes.length; i++) if (nodes[i].node === node) return nodes[i].slot; return null; };
+	nodes.forEach(function (x, i) {
+		var nd = x.node, e = thing(nd.id, objNode(nd.id, x.slot.cx, x.slot.cy, nd.model), nd.name, x3(nd));
+		hubs['n' + i] = { pt: e.hub, id: nd.id };
+		if (!(nd.online && (nd.wiredPort || nd.viaWired))) { R.paths.push(arcPath(HR, e.hub, 0.2, 'router', nd.id)); return; }   /* its Wi-Fi backhaul */
+		/* its pipe, the way buildMap will lay it: round what is on the floor already; the stands then keep off it */
+		var vs = nd.viaWired && nd.via && slotOf(nd.via), avoid = wanArea(G).concat(tray ? [[G.tray.cx - 1.2, G.tray.cy - 1.0, G.tray.cx + 1.2, G.tray.cy + 1.0]] : [],
+			nodes.filter(function (y) { return y !== x && (!vs || y.slot !== vs); }).map(function (y) { return y.slot.zone; }));
+		var r = floorRoute(nodeStarts(vs), [x.slot.cx, x.slot.cy], avoid);
+		R.cables.push(floorPts(r));
+		R.paths.push(pathOf(r.map(function (w) { return P(w[0], w[1], 0.1); }), vs ? nd.via.id : 'router', nd.id));
 	});
+	R.paths.push(pathOf(wanRoute().map(function (w) { return P(w[0], w[1], 0.1); }), 'wan', 'router'));   /* the internet's pipe */
+	/* the tray's label is as wide as its longest text: its count changes without the map being drawn again */
+	if (tray) { var tr = thing('more', objTray(G.tray.cx, G.tray.cy), trayName({ length: 88 }, hidden), ''); R.paths.push(arcPath(HR, tr.tg, 0.2, 'router', 'more')); }
+	fixed.forEach(function (e) {   /* these are always on the map: a label with no free spot takes the nearest one anyway */
+		out.labs[e.id] = R.hold(R.spot(e.bb, e.ax, e.w, e, undefined, e.id) || labelSpots(e.bb, e.ax, e.w)[0], e.w, e.id);
+	});
+	/* a drawing on a stand of zone z, with the traffic line it will have: a pipe from the router's port, or an arc from its hub */
+	/* bend: the one its arc had (a device that stays keeps it); else its usual one, or another if that passes under a label */
+	var shapeIn = function (z, k, s, face, bend) {
+		var sh = shapeAt(k, s, face), h = hubs[z.g], b0 = z.g === 'r' ? 0.22 : 0.3;
+		sh.slot = s; sh.wired = z.g === 'w';
+		if (z.g === 'w' && s.route) sh.path = pathOf(s.route.map(function (w) { return P(w[0], w[1], 0.1); }), 'router', null);
+		else if (h) {
+			sh.arcAt = function (b) { return arcPath(h.pt, sh.tg, b, h.id, null); };
+			sh.bends = bend != null ? [bend] : [b0, b0 - 0.12, b0 + 0.15, b0 - 0.24, b0 + 0.32];   /* its path: once it has room (see clearFor) */
+		}
+		return sh;
+	};
 	var order = function (z) { return z.list.slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); }); };
 	/* With the last fit (the same devices; traffic only changed which are picked), nothing on the map moves:
 	   1. every zone's picked devices that stood go back where they stood, with their labels (still free, unless a node's
@@ -2672,14 +2784,14 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 		var back = function (z, dv) {
 			var p = prev.at[dv.id], sh;
 			if (!p || p.g !== z.g || z.slots.indexOf(p.slot) < 0) return null;
-			sh = shapeAt(dv.kind || '', p.slot, faceOf(z, p.slot));
+			sh = shapeIn(z, dv.kind || '', p.slot, faceOf(z, p.slot), p.bend);
 			/* its drawing against the other drawings and the fixed labels only: the labels of the others that stay were checked
 			   against it when they took their spots, as close as a label may come (nearer than a drawing to a label) */
 			var labs = R.labs, lines = R.lines, ok;
 			R.labs = labs.slice(0, fixed.length); R.lines = lines.slice(0, fixed.length);
 			ok = R.clearFor(sh);
 			R.labs = labs; R.lines = lines;
-			if (!ok || !R.spotFree(p.lab, p.lab.w, null)) return null;
+			if (!ok || !R.spotFree(p.lab, p.lab.w, null, undefined, undefined, SNUG > 1)) return null;   /* (the snuggest map's may be over a line) */
 			R.objs.push(sh);
 			var lab = R.hold(p.lab, p.lab.w);
 			return { dv: dv, slot: p.slot, lab: lab, sh: sh, r: R.labs[R.labs.length - 1], l: R.lines[R.lines.length - 1] };
@@ -2709,7 +2821,7 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 				for (var q = 0; q < cand.length; q++) {
 					var sl = cand[q][2], sh, c;
 					if (used.indexOf(sl) >= 0) continue;
-					sh = shapeAt(kd, sl, faceOf(z, sl));
+					sh = shapeIn(z, kd, sl, faceOf(z, sl));
 					if (!R.clearFor(sh) || !(c = R.spot(sh.bb, sh.ax, lw, null, sl))) continue;
 					R.objs.push(sh); k.at[i] = sl; k.labAt.push([sl, R.hold(c, lw)]); k.n++;
 					return true;
@@ -2744,7 +2856,7 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 		var room = {
 			size: size,
 			take: function (k, s) {
-				var sh = shapeAt(k, s, face(s)), c;
+				var sh = shapeIn(z, k, s, face(s)), c;
 				if (!R.clearFor(sh) || !(c = R.spot(sh.bb, sh.ax, w[k], null, s))) return false;
 				R.objs.push(sh);
 				labAt.push([s, R.hold(c, w[k])]);
@@ -2788,7 +2900,7 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 			for (var q = 0; q < order.length; q++) {
 				var s = order[q], sh, c;
 				if (used.indexOf(s) >= 0) continue;
-				sh = shapeAt(k, s, face(s));
+				sh = shapeIn(z, k, s, face(s));
 				if (!R.clearFor(sh) || !(c = R.spot(sh.bb, sh.ax, lw, null, s))) continue;
 				R.objs.push(sh);
 				out.at[dv.id] = { slot: s, lab: R.hold(c, lw), g: z.g };
@@ -2798,6 +2910,8 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 			}
 		});
 	});
+	/* each standing device's arc, bent as its drawing took its stand */
+	Object.keys(out.at).forEach(function (id) { var a = out.at[id]; R.objs.some(function (o) { return o.slot === a.slot && (a.bend = o.bend, true); }); });
 	return out;
 }
 function mapLayout(net) {
@@ -2835,20 +2949,31 @@ function mapLayout(net) {
 		var f = null, old = A.stands;
 		/* the same devices, and traffic swapped which are picked (a busy one off the tray): the ones on the map don't move */
 		if (old && old.base === base) {
-			f = fitStands(net, L.nodes, zones, old.tray, L.hidden, old); f.tray = old.tray;
+			SNUG = old.snug;
+			f = fitStands(net, L.nodes, zones, old.tray, L.hidden, old); f.tray = old.tray; f.snug = old.snug;
 			var all = !L.hidden.length && Object.keys(f.at).length >= visible.length;
 			if (f.tray ? all : !all) f = null;   /* the tray comes or goes: a fit of its own */
 		}
-		/* without the tray first: it is there only when a device has no stand, or a node no zone */
+		/* without the tray first: it is there only when a device has no stand, or a node no zone. The roomiest map first; a
+		   snugger one only while it stands more devices (see SNUG) */
 		if (!f) {
-			f = fitStands(net, L.nodes, zones, false, L.hidden); f.tray = false;
-			if (L.hidden.length || Object.keys(f.at).length < visible.length) { f = fitStands(net, L.nodes, zones, true, L.hidden); f.tray = true; }
+			var fitAt = function (t) {
+				SNUG = t;
+				var g = fitStands(net, L.nodes, zones, false, L.hidden); g.tray = false;
+				if (L.hidden.length || Object.keys(g.at).length < visible.length) { g = fitStands(net, L.nodes, zones, true, L.hidden); g.tray = true; }
+				g.snug = t; g.n = Object.keys(g.at).length;
+				return g;
+			};
+			var tries = [fitAt(0)];
+			while (tries[tries.length - 1].tray && tries.length < 3) tries.push(fitAt(tries.length));
+			var most = Math.max.apply(null, tries.map(function (g) { return g.n; }));
+			f = tries.filter(function (g) { return g.n === most; })[0];
 		}
 		f.key = key; f.base = base;
 		A.stands = f;
 	}
 	var next = {}, stood = {}, fit = A.stands;
-	L.labs = fit.labs;
+	L.labs = fit.labs; L.snug = SNUG = fit.snug;
 	zones.forEach(function (z) {
 		z.all.slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); }).forEach(function (dv) {
 			var at = fit.at[dv.id];
@@ -2857,7 +2982,7 @@ function mapLayout(net) {
 			if (z.list.indexOf(dv) >= 0) next[dv.id] = { g: z.g, i: at ? z.slots.indexOf(at.slot) : -1 };
 			if (!at) return;
 			stood[dv.id] = 1;
-			(z.g === 'w' ? L.wired : L.devs).push({ dev: dv, slot: at.slot, group: z.g, lab: at.lab });
+			(z.g === 'w' ? L.wired : L.devs).push({ dev: dv, slot: at.slot, group: z.g, lab: at.lab, bend: at.bend });
 		});
 	});
 	L.tray = visible.filter(function (dv) { return !stood[dv.id]; });
@@ -2867,7 +2992,7 @@ function mapLayout(net) {
 function mapSignature(L) {
 	/* a node's backhaul and a node's device going wired or not change the map too: a pipe or an arc */
 	return JSON.stringify([G.key, L.nodes.map(function (x) { return [x.node.mac, formOf(x.node.model, 'tower').form, !!(x.node.online && (x.node.wiredPort || x.node.viaWired)), x.node.via ? x.node.via.mac : '']; }),
-		L.wired.concat(L.devs).map(function (x) { return [x.dev.id, x.group, x.slot.cx, x.slot.cy, x.dev.kind, x.dev.link, x.lab.x, x.lab.y]; }), L.tray.length > 0, L.hidden.map(function (n) { return n.mac; })]);
+		L.wired.concat(L.devs).map(function (x) { return [x.dev.id, x.group, x.slot.cx, x.slot.cy, x.dev.kind, x.dev.link, x.lab.x, x.lab.y, x.bend]; }), L.tray.length > 0, L.hidden.map(function (n) { return n.mac; })]);
 }
 
 /* lanes: one direction of one link, a soft halo plus a bright capsule riding the same dash pattern */
@@ -2923,9 +3048,18 @@ function pipe(id, world) {
 	return { pts: pts, mid: pts[Math.floor(pts.length / 2)], svg: tube(id, world) };
 }
 /* The route of a pipe from a to b on the floor, along its axes like the router's own: of the ways round one corner or two
-   (from each start offered), the one that crosses the fewest things in the way (boxes [x0, y0, x1, y1]), then the shortest,
-   a corner counting as a little more length. */
-function floorRoute(starts, b, avoid) {
+   (from each start offered), the one that crosses the fewest things in the way (boxes [x0, y0, x1, y1]), then passes under
+   the fewest labels (under(route), when given), then the shortest, a corner counting as a little more length. */
+function floorPts(r) {   /* the points along a route that floorRoute checks */
+	var out = [];
+	for (var i = 1; i < r.length; i++) {
+		var p = r[i - 1], q = r[i], L = Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]);
+		for (var s = 0; s <= L; s += 0.25) out.push([p[0] + (q[0] - p[0]) * s / L, p[1] + (q[1] - p[1]) * s / L]);
+	}
+	return out;
+}
+function nodeStarts(vs) { return vs ? [[vs.cx, vs.cy]] : [[7.1, 7.1], [7.1, 6.4], [6.4, 7.1], [7.8, 7.1], [7.1, 7.8]]; }   /* where a node's pipe may leave: the router's ports, or the node it is wired behind */
+function floorRoute(starts, b, avoid, under) {
 	var best = null;
 	starts.forEach(function (a) {
 		var rs = [[a, [b[0], a[1]], b], [a, [a[0], b[1]], b]];
@@ -2944,7 +3078,9 @@ function floorRoute(starts, b, avoid) {
 					avoid.forEach(function (bx) { if (x > bx[0] && x < bx[2] && y > bx[1] && y < bx[3]) hits++; });
 				}
 			}
-			if (r.length > 1 && (!best || hits < best.hits || (hits === best.hits && len < best.len))) best = { r: r, hits: hits, len: len };
+			if (r.length < 2) return;
+			var u = under ? under(r) : 0;
+			if (!best || hits < best.hits || (hits === best.hits && (u < best.u || (u === best.u && len < best.len)))) best = { r: r, hits: hits, u: u, len: len };
 		});
 	});
 	return best ? best.r : [starts[0], b];
@@ -2970,7 +3106,7 @@ function buildMap(net, L) {
 	/* Pipes are cables, arcs are Wi-Fi: a node on a wired backhaul gets a pipe on the floor from the router (or from the node it
 	   is wired behind), and a device on a node's port one from the node. Their routes go round what is on the floor: the
 	   internet terminal and its pipe, the tray, the router's own pipes and stands, and the other nodes' zones. */
-	var around = [[0.4, 0.6, 3.2, 2.9], [3.2, 0.9, 7.9, 2.5], [6.3, 2.5, 7.9, 4.8]];
+	var around = wanArea(G);
 	if (L.tray.length || L.hidden.length) around.push([G.tray.cx - 1.2, G.tray.cy - 1.0, G.tray.cx + 1.2, G.tray.cy + 1.0]);
 	L.wired.forEach(function (x) {
 		around.push([x.slot.cx - 1.0, x.slot.cy - 1.0, x.slot.cx + 1.0, x.slot.cy + 1.0]);
@@ -2978,6 +3114,16 @@ function buildMap(net, L) {
 	});
 	L.devs.forEach(function (x) { if (!x.dev.node) around.push([x.slot.cx - 0.9, x.slot.cy - 0.9, x.slot.cx + 0.9, x.slot.cy + 0.9]); });
 	var slotOf = function (node) { for (var i = 0; i < L.nodes.length; i++) if (L.nodes[i].node === node) return L.nodes[i].slot; return null; };
+	/* and, of the ways round them, one under no label where it can (the labels stand where the fit put them): the traffic shows */
+	var labRs = [];
+	Object.keys(L.labs || {}).forEach(function (id) { var b = L.labs[id]; if (b) labRs.push([id, [b.x, b.y + 5, b.x + b.w, b.y + G.hit - 5]]); });
+	L.devs.concat(L.wired).forEach(function (x) { var b = x.lab; if (b) labRs.push([x.dev.id, [b.x, b.y + 5, b.x + b.w, b.y + G.hit - 5]]); });
+	var underLabs = function (from, to) {
+		return function (r) {
+			var pa = pathOf(r.map(function (w) { return P(w[0], w[1], 0.1); }), from, to);
+			return labRs.filter(function (l) { return l[0] !== to && pathUnder(pa, l[1], l[0]); }).length;
+		};
+	};
 	L.nodes.forEach(function (x, i) {
 		var s = x.slot, o = objNode(x.node.id, s.cx, s.cy, x.node.model);
 		objs.push(o);
@@ -2989,10 +3135,11 @@ function buildMap(net, L) {
 			/* round the router's things, the other zones, and the stands in its own zone */
 			var avoid = around.concat(L.nodes.filter(function (y) { return y !== x && (!vs || y.slot !== vs); }).map(function (y) { return y.slot.zone; }),
 				L.devs.filter(function (y) { return y.dev.node === nd; }).map(function (y) { return [y.slot.cx - 0.9, y.slot.cy - 0.9, y.slot.cx + 0.9, y.slot.cy + 0.9]; }));
-			x.route = floorRoute(vs ? [[vs.cx, vs.cy]] : [[7.1, 7.1], [7.1, 6.4], [6.4, 7.1], [7.8, 7.1], [7.1, 7.8]], [s.cx, s.cy], avoid);
+			x.route = floorRoute(nodeStarts(vs), [s.cx, s.cy], avoid, underLabs(vs ? nd.via.id : 'router', nd.id));
 			a = pipe(nd.id, x.route);
 			links.push(a.svg); pipes.push(a);
 		} else { a = arc(nd.id, HR, o.hub, 0.2, true); arcs.push(a); }
+		a.from = vs ? nd.via.id : 'router'; a.to = nd.id;
 		hubs.push('<ellipse cx="' + n1(o.hub[0]) + '" cy="' + n1(o.hub[1]) + '" rx="' + px(8) + '" ry="' + px(4.6) + '" style="fill:rgba(16,22,25,.6);stroke:' + MESH + ';stroke-width:1.2"/>');
 		hubs.push('<ellipse cx="' + n1(o.hub[0]) + '" cy="' + n1(o.hub[1]) + '" rx="' + px(8) + '" ry="' + px(4.6) + '" class="df-a df-ripple" style="fill:none;stroke:' + MESH + ';stroke-width:1.2;animation-delay:-1.3s"/>');
 		var m = a.mid;
@@ -3009,19 +3156,30 @@ function buildMap(net, L) {
 		if (ns) {   /* on the node's port: a pipe from the node, round the zone's other stands and the node's own pipe */
 			var others = L.devs.filter(function (y) { return y !== x && y.dev.node === x.dev.node; }).map(function (y) { return [y.slot.cx - 0.9, y.slot.cy - 0.9, y.slot.cx + 0.9, y.slot.cy + 0.9]; });
 			L.nodes.forEach(function (y) { if (y.node === x.dev.node && y.route) y.route.forEach(function (p, i) { if (i) others.push(box2(y.route[i - 1], p, 0.35)); }); });
-			var p = pipe(x.dev.id, floorRoute([[ns.cx, ns.cy]], [x.slot.cx, x.slot.cy], others));
+			var p = pipe(x.dev.id, floorRoute([[ns.cx, ns.cy]], [x.slot.cx, x.slot.cy], others, underLabs(x.dev.node.id, x.dev.id)));
 			links.push(p.svg); pipes.push(p);
-		} else arcs.push(arc(x.dev.id, hubOf(x.dev), o.target, x.dev.node ? 0.3 : 0.22, false));
+			p.from = x.dev.node.id; p.to = x.dev.id;
+		} else {
+			var a2 = arc(x.dev.id, hubOf(x.dev), o.target, x.bend != null ? x.bend : x.dev.node ? 0.3 : 0.22, false);   /* bent as the fit chose */
+			a2.from = x.dev.node ? x.dev.node.id : 'router'; a2.to = x.dev.id;
+			arcs.push(a2);
+		}
 	});
-	links.push(tube('wan', [[2.3, 1.675], [7.1, 1.675], [7.1, 6.0]]));
+	var wp = pipe('wan', wanRoute());
+	links.push(wp.svg); pipes.push(wp);
+	wp.from = 'wan'; wp.to = 'router';
 	L.wired.forEach(function (x) {
 		objs.push(objDevice(x.dev.id, x.dev.kind, x.slot.cx, x.slot.cy, 'L'));
-		links.push(tube(x.dev.id, x.slot.route));
+		var wt = pipe(x.dev.id, x.slot.route);
+		links.push(wt.svg); pipes.push(wt);
+		wt.from = 'router'; wt.to = x.dev.id;
 	});
 	if (L.tray.length || L.hidden.length) {
 		var tr = objTray(G.tray.cx, G.tray.cy);
 		objs.push(tr);
-		arcs.push(arc('more', HR, tr.target, 0.2, false));
+		var ta = arc('more', HR, tr.target, 0.2, false);
+		ta.from = 'router'; ta.to = 'more';
+		arcs.push(ta);
 		var tc = P(G.tray.cx, G.tray.cy, 0.02);
 		marks.push('<g data-mk="more:on" class="hide">' + ell(tc, 1.42, 'fill:none;stroke:' + ACC + ';stroke-width:1.4') + ell(tc, 1.42, 'fill:none;stroke:' + ACC + ';stroke-width:1.2', 'df-a df-ripple') + '</g>');
 	}
@@ -3045,12 +3203,12 @@ function buildMap(net, L) {
 	w.box(x0, y0 - WT, 0, FW, WT, WH, M_WALL);
 	w.line('L', 0, 0.12, 1, 0.12, 'rgba(0,0,0,.3)', 1);
 	var bw = w.last;
-	w.face('L', (1.42 - x0) / FW, 0.3, (1.93 - x0) / FW, 0.72, 'fill:#c9d1d4;stroke:#6b777c;stroke-width:.7', bw);
-	var pp = w.fp('L', (1.675 - x0) / FW, 0.5, bw);
+	w.face('L', (G.wx - 0.255 - x0) / FW, 0.3, (G.wx + 0.255 - x0) / FW, 0.72, 'fill:#c9d1d4;stroke:#6b777c;stroke-width:.7', bw);
+	var pp = w.fp('L', (G.wx - x0) / FW, 0.5, bw);
 	w.svg.push('<circle cx="' + n1(pp[0]) + '" cy="' + n1(pp[1]) + '" r="' + px(1.7) + '" style="fill:' + DN + '"/>');
 	floor = floor.concat(w.svg);
-	floor.push(pline([P(1.675, y0, 0.42), P(1.675, y0, 0.06), P(1.675, 1.15, 0.06)], 'fill:none;stroke:#11181b;stroke-width:' + px(4.5) + ';stroke-linecap:round;stroke-linejoin:round'));
-	floor.push(pline([P(1.675, y0, 0.42), P(1.675, y0, 0.06), P(1.675, 1.15, 0.06)], 'fill:none;stroke:#3f7fa6;stroke-width:' + px(1.8) + ';stroke-linecap:round;stroke-linejoin:round'));
+	floor.push(pline([P(G.wx, y0, 0.42), P(G.wx, y0, 0.06), P(G.wx, G.wy - 0.525, 0.06)], 'fill:none;stroke:#11181b;stroke-width:' + px(4.5) + ';stroke-linecap:round;stroke-linejoin:round'));
+	floor.push(pline([P(G.wx, y0, 0.42), P(G.wx, y0, 0.06), P(G.wx, G.wy - 0.525, 0.06)], 'fill:none;stroke:#3f7fa6;stroke-width:' + px(1.8) + ';stroke-linecap:round;stroke-linejoin:round'));
 
 	/* Shadows: every drawing's in one shape, its edge softened by six faint outlines rather than a blur filter. A blur is
 	   worked out again for every frame the map moves, and at 400% that is more than the browser can draw in time. */
@@ -3124,19 +3282,19 @@ function placeLabels(net, L, objs, arcs) {
 		R.labs.push([it.lab.x, it.lab.y + 5, it.lab.x + it.lab.w, it.lab.y + G.hit - 5]);
 		R.lines.push([it.lab.px, it.lab.py, it.lab.ax, it.lab.ay]);
 	});
-	var arcPts = [];
-	arcs.forEach(function (a) { arcPts = arcPts.concat(a.pts.slice(3, -3)); });
-	/* what a spot costs: its line's length in pixels, and a little for every packet's place under it */
-	var cost = function (c, w) {
-		var r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5], v = Math.sqrt((c.px - c.ax) * (c.px - c.ax) + (c.py - c.ay) * (c.py - c.ay));
-		arcPts.forEach(function (p) { if (p[0] > r[0] - 2 && p[0] < r[2] + 2 && p[1] > r[1] && p[1] < r[3]) v += 1.5; });
-		return v;
+	var paths = arcs.map(function (a) { return pathOf(a.pts, a.from, a.to); });
+	/* what a spot costs: its line's length in pixels; a spot over a traffic line (but at the line's own ends) is no spot:
+	   the traffic must show */
+	var cost = function (c, w, id) {
+		var r = [c.x, c.y + 5, c.x + w, c.y + G.hit - 5];
+		if (paths.some(function (pa) { return pa.to !== id && pathUnder(pa, r, id); })) return Infinity;
+		return Math.sqrt((c.px - c.ax) * (c.px - c.ax) + (c.py - c.ay) * (c.py - c.ay));
 	};
 	for (var pass = 0; pass < 2; pass++) items.forEach(function (it, k) {
-		var lab = it.lab, w = lab.w, best = null, bc = cost(lab, w) - 1;
+		var lab = it.lab, w = lab.w, best = null, bc = cost(lab, w, it.id) - 1;
 		labelSpots(it.e.bb, it.o.anchor[0], w).forEach(function (c) {
 			if (c.d >= bc || !R.spotFree(c, w, it.e, k)) return;
-			var v = cost(c, w);
+			var v = cost(c, w, it.id);
 			if (v < bc) { bc = v; best = c; }
 		});
 		if (!best) return;
@@ -4320,7 +4478,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, standGroups: standGroups, placeLabels: placeLabels, shapeAt: shapeAt, hullsMeet: hullsMeet, labelSpots: labelSpots, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, wanArea: wanArea, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, standGroups: standGroups, placeLabels: placeLabels, shapeAt: shapeAt, hullsMeet: hullsMeet, labelSpots: labelSpots, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
