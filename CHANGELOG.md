@@ -2,6 +2,17 @@
 
 What changed in each release of Arteria. The release workflow copies a version's section into its GitHub release notes, so write for people running the addon.
 
+## 2.2.1
+
+More room on the map: labels keep clear of other devices and no longer hide the traffic on other devices' lines, and in the expanded view the internet moves to the floor's top corner. The spacing adapts to how full the floor is, so the map shows as many devices as 2.2.0 did.
+
+### The map
+
+- **Labels no longer hide traffic.** A label could sit over another device's Wi-Fi arc or cable, and the packets on it went out of sight there. A label now keeps off every traffic line but its own device's, and the start of the lines leaving the router or node it stands by. A Wi-Fi arc curves more or less to pass round labels, and a cable to or from a node is laid round them.
+- **More room round each device.** Drawings stand further apart, and a label keeps a gap from the drawings that aren't its own (more in the expanded view), so labels no longer almost touch other devices.
+- **The room adapts to the floor.** The roomy layout is used when it shows every device it can. When the floor is full it moves things closer, at most as close as 2.2.0 did, rather than send devices to the **+N more** tray, so the map never shows fewer devices than 2.2.0. Only on the fullest floors may a line pass under a label, and only where that label has no other spot (8 lines on a 28-device floor in a 1920×960 window, where 2.2.0 had 25).
+- **The internet stands in the floor's top corner in the expanded view**, as it does in the page's view, with its cable along the back wall. The middle of the floor is free for devices.
+
 ## 2.2.0
 
 Wired devices show wherever they are: behind switches (by name, managed switches too), on AiMesh nodes' own ports, on bonded ports, and on ports the firmware maps its own way. Nodes behind one port each show their own traffic. On the map, devices of a kind stand together, no two drawings overlap, and each label sits right next to its device. Also Wi-Fi 7 phones that join as multi-link devices, and amtm no longer putting the release back over a development version. Thanks to everyone in the SNBForums thread who reported problems, tested development versions and posted their output.
