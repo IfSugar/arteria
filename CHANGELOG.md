@@ -2,16 +2,22 @@
 
 What changed in each release of Arteria. The release workflow copies a version's section into its GitHub release notes, so write for people running the addon.
 
-## 2.2.1
+## 2.3.0
 
-More room on the map: labels keep clear of other devices and no longer hide the traffic on other devices' lines, and in the expanded view the internet moves to the floor's top corner. The spacing adapts to how full the floor is, so the map shows as many devices as 2.2.0 did.
+More room on the map: labels keep clear of other devices and no longer hide the traffic on other devices' lines, and in the expanded view the internet moves to the floor's top corner. The spacing adapts to how full the floor is, so the map shows about as many devices as 2.2.0 did, and a device that gets busy comes off the tray by itself, a TV too. Also wired devices on a port given to a Guest Network Pro VLAN or to an IPTV set-top box, and no more sleeping Wi-Fi sensors listed behind a switch that nodes are on. Thanks to K3r1m0 and jksmurf in the SNBForums thread for reporting them.
 
 ### The map
 
 - **Labels no longer hide traffic.** A label could sit over another device's Wi-Fi arc or cable, and the packets on it went out of sight there. A label now keeps off every traffic line but its own device's, and the start of the lines leaving the router or node it stands by. A Wi-Fi arc curves more or less to pass round labels, and a cable to or from a node is laid round them.
 - **More room round each device.** Drawings stand further apart, and a label keeps a gap from the drawings that aren't its own (more in the expanded view), so labels no longer almost touch other devices.
-- **The room adapts to the floor.** The roomy layout is used when it shows every device it can. When the floor is full it moves things closer, at most as close as 2.2.0 did, rather than send devices to the **+N more** tray, so the map never shows fewer devices than 2.2.0. Only on the fullest floors may a line pass under a label, and only where that label has no other spot (8 lines on a 28-device floor in a 1920×960 window, where 2.2.0 had 25).
+- **The room adapts to the floor.** The roomy layout is used when it shows every device it can. When the floor is full it moves things closer, about as close as 2.2.0 did, rather than send devices to the **+N more** tray, so the map shows about as many devices as 2.2.0 (on a few floors, one fewer). Only on the fullest floors may a line pass under a label, and only where that label has no other spot: far fewer than in 2.2.0.
+- **A device that gets busy comes off the tray by itself.** A device waiting on the **+N more** tray that got much busier than one on the map (a TV starting a 4K stream) was picked for the map, but it took only the stand the quieter one left. When that stand was too small for its drawing (a TV where a phone stood), it stayed on the tray until the page was reloaded. The map is now laid out afresh then, as on a reload, and it shows within a sample or two. The devices already on the map may move then; otherwise traffic still never moves them.
 - **The internet stands in the floor's top corner in the expanded view**, as it does in the page's view, with its cable along the back wall. The middle of the floor is free for devices.
+
+### Wired devices and nodes
+
+- **Devices on a port given to a VLAN show.** A router LAN port set to a Guest Network Pro VLAN in Access mode (Network → VLAN, a TV or an IoT switch on VLAN 52 or 53) showed nothing: the firmware takes such a port out of the router's list of LAN ports and puts it in that VLAN's bridge alone, and Arteria read only the list. The router now also reads a port that its firmware's own port map lists as a LAN port and that is still in one of its bridges, with its number, link and traffic, as nodes do since 2.2.0. That is also the port an ISP's IPTV profile gives to a set-top box. In *All* mode the port was read already. The WAN side of an IPTV bridge, backhaul VLANs and internal links aren't LAN ports, and a router without a port map reads only its list, as before.
+- **Sleeping Wi-Fi sensors aren't listed behind a switch.** Battery sensors on a node's Wi-Fi (temperature sensors that wake every few minutes) showed as devices behind a switch on the router port the nodes are on, with no traffic. While one sleeps, it is on no node's list of Wi-Fi devices, but the router still remembers its address on that port for a few minutes. A node now also sends the addresses its own bridge learned on its Wi-Fi, and on the router port it is behind those are the node's, not devices on a switch there. Only on its Wi-Fi networks, never on its uplink, so the router's own devices stay where they are, whatever the node's radios are named (*eth6*, or *wl1* beside *wl1.1* on Wi-Fi 7 models). A device that moved from a node's Wi-Fi to a cable elsewhere shows on its new port at once. With only nodes behind an unmanaged switch, no switch shows there any more. A node that isn't read (no key) can't send them.
 
 ## 2.2.0
 
