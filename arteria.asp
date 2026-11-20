@@ -8,7 +8,7 @@
 <link rel="shortcut icon" href="images/favicon.png"/>
 <link rel="icon" href="images/favicon.png"/>
 <title>Arteria</title>
-<!-- arteria-version: 2.2.1 (must match VERSION in arteria.sh) -->
+<!-- arteria-version: 2.3.0 (must match VERSION in arteria.sh) -->
 <link rel="stylesheet" type="text/css" href="index_style.css"/>
 <link rel="stylesheet" type="text/css" href="form_style.css"/>
 <script type="text/javascript" src="/js/jquery.js"></script>
@@ -272,7 +272,7 @@
    Only initial() (called by <body onload>) and the Arteria object (used by the page's buttons) are global. */
 (function () {
 'use strict';
-var VERSION = '2.2.1';
+var VERSION = '2.3.0';
 var BASE = '/ext/arteria/';
 var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', WARN = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';   /* ACC follows the router's theme (theme()) */
 /* Packets: one CSS class per bucket (b0 = busiest). As throughput rises on a log scale, packets grow
@@ -1000,7 +1000,9 @@ function cleanSample(d) {
 				/* its wired ports [ifname, carrier, Mb/s, rx, tx], the addresses on them, and the networks on its Wi-Fi interfaces */
 				w: arr(n.w, function (r) { return isIf(r[0]) && (r[1] === 0 || r[1] === 1) && typeof r[2] === 'number' && r[2] >= 0 && /^[0-9]{1,20}$/.test(r[3]) && /^[0-9]{1,20}$/.test(r[4]); }, 8),
 				m: arr(n.m, function (r) { return isIf(r[0]) && isMac(r[1]); }, 128),
-				n: arr(n.n, function (r) { return isIf(r[0]) && typeof r[1] === 'string'; }, 16).map(function (x) { return [x[0], x[1].slice(0, 64), x[2] === 1 ? 1 : 0]; }) };
+				n: arr(n.n, function (r) { return isIf(r[0]) && typeof r[1] === 'string'; }, 16).map(function (x) { return [x[0], x[1].slice(0, 64), x[2] === 1 ? 1 : 0]; }),
+				/* the addresses its bridges learned on its Wi-Fi: its devices, asleep ones too */
+				a: (Array.isArray(n.a) ? n.a : []).filter(isMac).slice(0, 128) };
 		}) };
 }
 function buildNet(d) {
@@ -1022,7 +1024,7 @@ function buildNet(d) {
 	/* AiMesh nodes and the addresses they use to reach the router */
 	(d.nodes || []).forEach(function (n, i) {
 		var node = { id: 'node:' + n.mac, mac: n.mac, ip: n.ip, model: n.model || 'AiMesh node', alias: n.alias || '', state: n.state, nup: n.up,
-			rows: n.c || [], up: n.u || [], ports: n.w || [], pmacs: n.m || [], nets: n.n || [],
+			rows: n.c || [], up: n.u || [], ports: n.w || [], pmacs: n.m || [], nets: n.n || [], wmacs: n.a || [],
 			sta: String(n.sta || '').split(/\s+/).filter(Boolean), bh: zeroRate(), bhRows: [], devs: [], idx: i };
 		node.name = node.alias || node.model;
 		node.sta.forEach(function (m) { bh[m] = node; });
@@ -1181,12 +1183,15 @@ function buildNet(d) {
 		net.devs.push(dev);
 	};
 	/* addresses known to be at a node (its own, the devices on its ports, a node behind it): the router learns them all on the
-	   port the node is behind, and they are the node's, not that port's */
-	var atNode = {};
-	net.nodes.forEach(function (n) { atNode[n.mac] = 1; n.sta.forEach(function (m) { atNode[m] = 1; }); n.pmacs.forEach(function (pm) { atNode[pm[1]] = 1; }); });
+	   port the node is behind, and they are the node's, not that port's. And on a port a node is behind, what its bridges learned
+	   on its Wi-Fi, not only who is on it now: a battery sensor asleep between readings is on no node's list then, while the
+	   router still has its address on that port for minutes, and it showed as a device on a switch there. Only there: a device
+	   that went from a node's Wi-Fi to a cable elsewhere shows on its new port at once. */
+	var atNode = {}, onWifi = {};
+	net.nodes.forEach(function (n) { atNode[n.mac] = 1; n.sta.forEach(function (m) { atNode[m] = 1; }); n.pmacs.forEach(function (pm) { atNode[pm[1]] = 1; }); n.wmacs.forEach(function (m) { onWifi[m] = 1; }); });
 	var onPort = {};
 	(d.macs || []).forEach(function (pm) {
-		if (seen[pm[1]] || own[pm[1]] || bh[pm[1]] || atNode[pm[1]]) return;
+		if (seen[pm[1]] || own[pm[1]] || bh[pm[1]] || atNode[pm[1]] || (onWifi[pm[1]] && byPort[pm[0]])) return;
 		(onPort[pm[0]] = onPort[pm[0]] || []).push(pm[1]);
 	});
 	(d.ports || []).forEach(function (p) {
@@ -2640,11 +2645,21 @@ function pathOf(pts, from, to) {
 	out.forEach(function (p) { bb[0] = Math.min(bb[0], p[0]); bb[1] = Math.min(bb[1], p[1]); bb[2] = Math.max(bb[2], p[0]); bb[3] = Math.max(bb[3], p[1]); });
 	return { pts: out, from: from, to: to, bb: bb };
 }
-function arcPath(p0, p1, bulge, from, to) {   /* as arc() draws it, a point every 6 px or less (its corners' path is longer than it) */
-	var c = arcCtrl(p0, p1, bulge), pts = [], bb = [Infinity, Infinity, -Infinity, -Infinity];
-	var n = Math.max(2, Math.ceil((Math.hypot(c[0] - p0[0], c[1] - p0[1]) + Math.hypot(p1[0] - c[0], p1[1] - c[1])) / 6));
-	for (var i = 0; i <= n; i++) {
-		var t = i / n, x = (1 - t) * (1 - t) * p0[0] + 2 * t * (1 - t) * c[0] + t * t * p1[0], y = (1 - t) * (1 - t) * p0[1] + 2 * t * (1 - t) * c[1] + t * t * p1[1];
+/* A Wi-Fi arc as arc() draws it: points evenly along it, 6 px apart or less, so the 30% at each end is 30% of its length, as the
+   eye sees it, not of the curve's parameter (on a big floor that was up to 40% of an arc under the router's label) */
+function arcPath(p0, p1, bulge, from, to) {
+	var c = arcCtrl(p0, p1, bulge), fx = [], fy = [], cl = [0], pts = [], bb = [Infinity, Infinity, -Infinity, -Infinity], i;
+	var n = Math.max(4, Math.ceil((Math.hypot(c[0] - p0[0], c[1] - p0[1]) + Math.hypot(p1[0] - c[0], p1[1] - c[1])) / 3));
+	for (i = 0; i <= n; i++) {
+		var t = i / n;
+		fx.push((1 - t) * (1 - t) * p0[0] + 2 * t * (1 - t) * c[0] + t * t * p1[0]); fy.push((1 - t) * (1 - t) * p0[1] + 2 * t * (1 - t) * c[1] + t * t * p1[1]);
+		if (i) cl.push(cl[i - 1] + Math.hypot(fx[i] - fx[i - 1], fy[i] - fy[i - 1]));
+	}
+	var len = cl[n], m = Math.max(2, Math.ceil(len / 6)), j = 1;
+	for (i = 0; i <= m; i++) {
+		var d = len * i / m;
+		while (j < n && cl[j] < d) j++;
+		var a = cl[j] - cl[j - 1], f = a > 0 ? Math.min(1, Math.max(0, (d - cl[j - 1]) / a)) : 0, x = fx[j - 1] + (fx[j] - fx[j - 1]) * f, y = fy[j - 1] + (fy[j] - fy[j - 1]) * f;
 		pts.push([x, y]);
 		if (x < bb[0]) bb[0] = x; if (y < bb[1]) bb[1] = y; if (x > bb[2]) bb[2] = x; if (y > bb[3]) bb[3] = y;
 	}
@@ -2889,12 +2904,15 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 		/* The ones left out get one more look, each over all the zone's stands (the try that stood the most may not have
 		   had them all). Then a picked device with no room for its drawing leaves a stand unused, and another of the zone's
 		   devices may fit: the ones on a cable first, then the biggest drawings, then by name, never by traffic, so they
-		   don't come and go. Each goes as near its own kind as it can. */
-		var used = best.at.filter(function (s) { return s; }).concat((best.extra || []).map(function (e) { return e.slot; })), left = z.n - best.n;
+		   don't come and go. Each goes as near its own kind as it can. One with no room says another of its kind with a label
+		   as wide has none either (each that stands only takes room), and at most twice as many as the zone has stands get
+		   a look: a crowd of devices that keeps changing doesn't make every fit try every one of them on every stand. */
+		var used = best.at.filter(function (s) { return s; }).concat((best.extra || []).map(function (e) { return e.slot; })), left = z.n - best.n, none = {}, looks = 0;
 		var bySize = function (a, b) { return (b.link === 'wired') - (a.link === 'wired') || size(b.kind || '') - size(a.kind || '') || byName(a, b) || (a.id < b.id ? -1 : 1); };
 		devs.filter(function (dv, i) { return !best.at[i]; }).sort(bySize).concat((z.rest || []).slice().sort(bySize)).forEach(function (dv) {
 			if (left <= 0 || out.at[dv.id] || gone[dv.id]) return;
 			var k = dv.kind || '', lw = labelW(dv.id, dv.name, x3(dv)), order = z.slots;
+			if (none[k + '|' + lw] || looks++ >= Math.max(8, 2 * z.n)) return;
 			var away = function (s) { return Math.min.apply(null, kin[k].map(function (t) { return Math.abs(t.cx - s.cx) + Math.abs(t.cy - s.cy); })); };
 			if (kin[k]) order = z.slots.map(function (s, i) { return [away(s), i, s]; }).sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; }).map(function (e) { return e[2]; });
 			for (var q = 0; q < order.length; q++) {
@@ -2908,6 +2926,7 @@ function fitStands(net, nodes, zones, tray, hidden, prev) {
 				(kin[k] = kin[k] || []).push(s);
 				return;
 			}
+			none[k + '|' + lw] = 1;
 		});
 	});
 	/* each standing device's arc, bent as its drawing took its stand */
@@ -2947,33 +2966,46 @@ function mapLayout(net) {
 	var key = JSON.stringify([base, zones.map(function (z) { return ids(z.list); })]);
 	if (!A.stands || A.stands.key !== key) {
 		var f = null, old = A.stands;
+		/* without the tray first: it is there only when a device has no stand, or a node no zone. The roomiest map first; a
+		   snugger one only while it stands more devices (see SNUG) */
+		var fitAt = function (t) {
+			SNUG = t;
+			var g = fitStands(net, L.nodes, zones, false, L.hidden); g.tray = false;
+			if (L.hidden.length || Object.keys(g.at).length < visible.length) { g = fitStands(net, L.nodes, zones, true, L.hidden); g.tray = true; }
+			g.snug = t; g.n = Object.keys(g.at).length;
+			return g;
+		};
+		var fresh = function () {
+			var tries = [fitAt(0)];
+			while (tries[tries.length - 1].tray && tries.length < 3) tries.push(fitAt(tries.length));
+			var most = Math.max.apply(null, tries.map(function (g) { return g.n; }));
+			return tries.filter(function (g) { return g.n === most; })[0];
+		};
+		var picked = function (g) { return zones.reduce(function (n, z) { return n + z.list.filter(function (dv) { return g.at[dv.id]; }).length; }, 0); };
 		/* the same devices, and traffic swapped which are picked (a busy one off the tray): the ones on the map don't move */
 		if (old && old.base === base) {
 			SNUG = old.snug;
 			f = fitStands(net, L.nodes, zones, old.tray, L.hidden, old); f.tray = old.tray; f.snug = old.snug;
 			var all = !L.hidden.length && Object.keys(f.at).length >= visible.length;
 			if (f.tray ? all : !all) f = null;   /* the tray comes or goes: a fit of its own */
+			/* unless the busy one has no room where the others leave it (a TV where a phone stood): then the map is laid out
+			   afresh, as on a reload, if that stands it and as many of the picked ones. The others may move then: only when a
+			   device comes off the tray, which happens at most once every 20 s (see pickStands) */
+			else {
+				var waits = [];
+				zones.forEach(function (z) { z.list.forEach(function (dv) { if (!f.at[dv.id] && !old.at[dv.id]) waits.push(dv.id); }); });
+				if (waits.length) {
+					var g = fresh();
+					if (picked(g) >= picked(f) && waits.some(function (id) { return g.at[id]; })) { f = g; f.refit = true; } else SNUG = f.snug;
+				}
+			}
 		}
-		/* without the tray first: it is there only when a device has no stand, or a node no zone. The roomiest map first; a
-		   snugger one only while it stands more devices (see SNUG) */
-		if (!f) {
-			var fitAt = function (t) {
-				SNUG = t;
-				var g = fitStands(net, L.nodes, zones, false, L.hidden); g.tray = false;
-				if (L.hidden.length || Object.keys(g.at).length < visible.length) { g = fitStands(net, L.nodes, zones, true, L.hidden); g.tray = true; }
-				g.snug = t; g.n = Object.keys(g.at).length;
-				return g;
-			};
-			var tries = [fitAt(0)];
-			while (tries[tries.length - 1].tray && tries.length < 3) tries.push(fitAt(tries.length));
-			var most = Math.max.apply(null, tries.map(function (g) { return g.n; }));
-			f = tries.filter(function (g) { return g.n === most; })[0];
-		}
+		if (!f) f = fresh();
 		f.key = key; f.base = base;
 		A.stands = f;
 	}
 	var next = {}, stood = {}, fit = A.stands;
-	L.labs = fit.labs; L.snug = SNUG = fit.snug;
+	L.labs = fit.labs; L.snug = SNUG = fit.snug; L.refit = !!fit.refit;
 	zones.forEach(function (z) {
 		z.all.slice().sort(function (a, b) { return byName(a, b) || (a.id < b.id ? -1 : 1); }).forEach(function (dv) {
 			var at = fit.at[dv.id];
