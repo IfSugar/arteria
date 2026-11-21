@@ -44,11 +44,18 @@ async def page(b, port, w=900, h=1000, scale=2, warm=WARM):
     return pg
 
 
+MARGIN = 16   # px of the page round the addon, so nothing at its edges (the tabs, the footer's links) is cut
+
+
 async def shot(pg, name, full=False):
     png = os.path.join(DOCS, name + '.png')
     await pg.mouse.move(2, 2); await pg.wait_for_timeout(400)
     if full: await pg.screenshot(path=png)
-    else: await (await pg.query_selector('#ar')).screenshot(path=png)
+    else:   # the addon with a margin of the page round it, as far as the page goes
+        clip = await pg.evaluate('''(m) => { const b = document.getElementById('ar').getBoundingClientRect(), d = document.documentElement;
+            const x = Math.max(0, b.left + scrollX - m), y = Math.max(0, b.top + scrollY - m);
+            return { x: x, y: y, width: Math.min(d.scrollWidth, b.right + scrollX + m) - x, height: Math.min(d.scrollHeight, b.bottom + scrollY + m) - y }; }''', MARGIN)
+        await pg.screenshot(path=png, clip=clip, full_page=True)
     webp(png, name + '.webp')
     await pg.close()
 

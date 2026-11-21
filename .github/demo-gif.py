@@ -45,10 +45,12 @@ frames = []
 box = None
 full = []   # (from, to) screencast times when the expanded view fills the window: those frames show the whole window
 
+MARGIN = 16   # px of the page round the addon, so nothing at its edges (the tabs, the footer's links) is cut
+
 async def lowest(pg):
-    """The crop's height: down to the lowest the addon reached, with a little of the page below it, inside the window."""
+    """The crop's height: down to the lowest the addon reached, with a margin of the page below it, inside the window."""
     low, vh = await pg.evaluate("[window.demoLow, innerHeight]")
-    box[3] = min(low + 8, vh) - box[1]
+    box[3] = min(low + MARGIN, vh) - box[1]
 
 async def record():
     global box
@@ -61,9 +63,10 @@ async def record():
         await pg.evaluate(CURSOR)
         if FORUM:   # a quicker cursor
             await pg.evaluate("document.getElementById('demoCursor').style.transition = 'transform .45s cubic-bezier(.45,.05,.25,1)'")
-        # the crop: the whole addon, its footer included, as tall as it gets during the recording (the readout grows while a
-        # device is picked or renamed); the expanded view, which fills the window, doesn't count
-        box = await pg.evaluate("() => { const r = document.getElementById('ar').getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }")
+        # the crop: the whole addon, its footer included, with a margin of the page round it, as tall as it gets during the
+        # recording (the readout grows while a device is picked or renamed); the expanded view, which fills the window, doesn't count
+        box = await pg.evaluate("""(m) => { const r = document.getElementById('ar').getBoundingClientRect(), x = Math.max(0, r.left - m), y = Math.max(0, r.top - m);
+            return [x, y, Math.min(innerWidth, r.right + m) - x, r.bottom + m - y]; }""", MARGIN)
         await pg.evaluate("""() => { const ar = document.getElementById('ar'); window.demoLow = 0;
             const low = () => { if (!ar.classList.contains('big')) window.demoLow = Math.max(window.demoLow, ar.getBoundingClientRect().bottom); };
             new ResizeObserver(low).observe(ar); setInterval(low, 50); low(); }""")
