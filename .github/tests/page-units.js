@@ -851,6 +851,21 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	const n4 = ms(4, [['eth1', '00:00:5E:00:53:B4']]), sw4 = n4.byId['port:eth1'], tuner = sw4 && sw4.behind.filter(b => b.mac === '00:00:5E:00:53:B4')[0];
 	ok(sw4 && sw4.name === 'Switch on LAN 2' && sw4.count === 4 && !sw4.self && tuner && tuner.kind === 'switch' && tuner.why.rule === 'router icon',
 		'a device only the router detected as a switch (a TV tuner): listed, not taken as the switch', JSON.stringify({ name: sw4 && sw4.name, count: sw4 && sw4.count, why: tuner && tuner.why }));
+	// the same tuner given a nickname in the router's client list, which saved the router icon the editor showed: once the router's
+	// own guess is gone or changed, that icon reads as one you chose. Still not the switch: its name doesn't say so. (2: Router, 24: Repeater)
+	const T4 = '00:00:5E:00:53:B4', took = [];
+	[['', 2], [null, 2], ['23', 2], ['0', 24]].forEach(([nt, ct], i) => {
+		A.names.custom[T4] = { name: 'HDHomeRun', type: ct };
+		if (nt === null) delete A.names.nmp[T4]; else A.names.nmp[T4] = { name: 'HDHR-10A1B2C3', type: nt };
+		const sx = ms(5 + i, [['eth1', T4]]).byId['port:eth1'];
+		if (!sx || sx.name !== 'Switch on LAN 2' || sx.self || sx.count !== 4) took.push([nt, ct, sx && sx.name]);
+	});
+	// a switch you named so, whatever icon it has: the switch
+	A.names.custom[T4] = { name: 'Office switch', type: 2 }; A.names.nmp[T4] = { name: 'GS724T', type: '2' };
+	const sw5 = ms(9, [['eth1', T4]]).byId['port:eth1'];
+	ok(!took.length && sw5 && sw5.name === 'Office switch' && sw5.self && sw5.count === 3,
+		'a router or repeater icon kept from the router\'s guess doesn\'t make a device the switch; a name saying switch does',
+		JSON.stringify({ took, name: sw5 && sw5.name, count: sw5 && sw5.count }));
 	A.names = AR.parseNames({});
 }
 

@@ -1253,11 +1253,13 @@ function buildNet(d) {
 	});
 	/* A managed switch has an address of its own, which the router learns on the port with the devices behind it. That one is the
 	   switch itself, not a device behind it: the switch takes its name and details (renaming it renames the switch), and lists
-	   only the others. Picking it from anywhere picks the switch. Two that both look like switches: neither is taken. Only one you
-	   gave a switch's icon, or whose name says "switch": the type the router detected can be wrong (it called a TV tuner a router),
-	   and a switch's model name (GS724T) may be any of several switches chained on the port. */
+	   only the others. Picking it from anywhere picks the switch. Two that both look like switches: neither is taken. Only one whose
+	   name says "switch" (yours, or the one it gives itself), not its maker's: the type the router detected can be wrong (it called a
+	   TV tuner a router), and so can an icon in the router's client list. That list has no switch icon, only a router's and a
+	   repeater's, the ones the router hands out itself to what it can't place, and saving a nickname there keeps the icon the router
+	   showed then. A switch's model name (GS724T) may be any of several switches chained on the port. */
 	net.devs.forEach(function (dv) {
-		var me = dv.behind ? dv.behind.filter(function (b) { return b.kind === 'switch' && b.why && (b.why.rule === 'your icon' || (b.why.rule === 'name' && /switch/i.test(b.name))); }) : [];
+		var me = dv.behind ? dv.behind.filter(function (b) { return b.kind === 'switch' && (b.nameSrc === 'nick' || b.nameSrc === 'alias' || b.nameSrc === 'device') && /switch/i.test(b.name); }) : [];
 		if (me.length !== 1) return;
 		me = me[0];
 		dv.self = me; dv.behind = dv.behind.filter(function (b) { return b !== me; }); dv.count = dv.behind.length;
