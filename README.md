@@ -1,6 +1,6 @@
 # Arteria for Asuswrt-Merlin
 
-A live, animated map of how traffic flows through your home network: from the internet, through your router and its AiMesh nodes, to every device. Written on an RT-AX86U (3004.388.x) with an AiMesh node, and reported working on the RT-BE88U, GT-AX6000, GT-AX11000 Pro, ZenWiFi Pro XT12, RT-AX88U, GT-BE98 Pro, GT-BE19000AI, RT-BE92U and DSL-AX82U. `arteria.sh check` tells you whether your router can run it before anything is installed.
+A live, animated map of how traffic flows through your home network: from the internet, through your router and its AiMesh nodes, to every device. Written on an RT-AX86U (3004.388.x) with an AiMesh node, and reported working on the RT-AX86U Pro, RT-BE88U, GT-AX6000, GT-AX11000 Pro, GT-AXE16000, ZenWiFi Pro XT12, RT-AX88U, RT-AX88U Pro, GT-BE98 Pro, GT-BE19000AI, RT-BE92U and DSL-AX82U, with nodes read per device on the RP-AX56, RT-BE86U, ZenWiFi BD4, ZenWiFi XD6, ZenWiFi Pro XT12 and RT-AC86U. `arteria.sh check` tells you whether your router can run it before anything is installed.
 
 It only works while you're looking: sampling starts when you open its page and stops when you close it. No cron jobs, no background service, nothing written to flash while it runs, and it backs off by itself when the router is busy.
 
