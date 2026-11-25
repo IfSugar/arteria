@@ -21,6 +21,7 @@ An **Arteria** tab in **Traffic Analyzer** (or the last tab of **Network Tools**
 - **Expanded view**: fills the window (or the screen), with room for 20 to 30 devices (fewer when they are big, like TVs; the rest wait on the **+N more** tray) and a third line on each label. Its map **zooms and pans** like a whiteboard: the mouse wheel or a pinch zooms around the pointer, dragging or two fingers move around, and **− / 100% / +** zoom in steps or show the whole map.
 - **AiMesh nodes, per device**: the router reads each node's own clients over SSH while the page is open, the ones on its LAN ports too. Without that, each node shows its backhaul total. **Dual WAN** counts both WANs as internet, devices on a **Guest Network Pro** LAN port are placed on it, and a device on a guest network, on the router or a node, shows that network's name.
 - **Mb/s or MB/s** with one switch, and notices for a weak or offline backhaul, a node that can't be read, or a router that's too busy. A backhaul is weak when it's slow under traffic (under 200 Mb/s), or its signal is low (under -75 dBm, -80 on 6 GHz) and it isn't running fast.
+- **Leave it open to watch**: like the router's own System Log page, it doesn't log you out automatically while it's open (the router's *Auto Logout*, under Administration > System).
 
 <details>
 <summary>How the numbers are made</summary>

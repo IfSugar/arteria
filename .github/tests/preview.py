@@ -154,6 +154,7 @@ NODE_ONLINE = SCN != 'offline'
 WEAK = SCN == 'weak'
 LIVES = []
 THEME = os.environ.get('AR_THEME', '') if os.environ.get('AR_THEME', '') in ('rog', 'tuf') else ''
+LOGOUT = int(os.environ['AR_LOGOUT']) if os.environ.get('AR_LOGOUT', '').isdigit() else 0
 
 
 def wobble(k, t):
@@ -308,8 +309,17 @@ class H(BaseHTTPRequestHandler):
             return self.send('ok', 'text/plain')
         if path == '/_custom':   # for the tests: the router's client list as it is now
             return self.send(json.dumps(names()['custom']), 'application/json')
-        if path == '/state.js' and THEME:   # the firmware's theme on ROG and TUF models (AR_THEME=rog or tuf)
-            return self.send('var %s_support = true;' % THEME, 'application/javascript')
+        if path == '/state.js' and (THEME or LOGOUT):
+            js = 'var %s_support = true;\n' % THEME if THEME else ''   # the firmware's theme on ROG and TUF models (AR_THEME=rog or tuf)
+            if LOGOUT:   # its Auto Logout (AR_LOGOUT=ticks): a count down from the page's load, 0: none, 1: off to Logout.asp
+                js += ('var AUTOLOGOUT_MAX_MINUTE = %d;\n'
+                       'window.addEventListener("load", function () { (function tick() {\n'
+                       '  if (AUTOLOGOUT_MAX_MINUTE == 1) location = "Logout.asp";\n'
+                       '  if (AUTOLOGOUT_MAX_MINUTE != 0) AUTOLOGOUT_MAX_MINUTE--;\n'
+                       '  setTimeout(tick, 200); })(); });\n') % LOGOUT
+            return self.send(js, 'application/javascript')
+        if path == '/Logout.asp':
+            return self.send('<html><body>Logged out</body></html>')
         if path.endswith('.js'):
             return self.send('', 'application/javascript')
         if path.endswith('.css'):

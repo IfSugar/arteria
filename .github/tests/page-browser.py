@@ -361,6 +361,22 @@ async def heartbeat_pace(b, port):
         srv.terminate()
 
 
+async def stay_logged_in(b, port):
+    """The router's Auto Logout, counted by its state.js from the page's load, doesn't log you out of the open page: the page
+    sets the count to 0, as the router's own System Log does. The stand-in counts 3 ticks of 0.2 s, so without that the page
+    would be at Logout.asp within a second."""
+    srv = await serve('home', port, {'AR_LOGOUT': '3'})
+    try:
+        ctx = await b.new_context(viewport={'width': 1440, 'height': 900})
+        pg = await ctx.new_page(); await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
+        await pg.wait_for_timeout(3000)   # 15 ticks
+        st = await pg.evaluate("() => [location.pathname, window.AUTOLOGOUT_MAX_MINUTE, !!document.getElementById('ar')]")
+        check(st == ['/user1.asp', 0, True], 'stays logged in: the router\'s Auto Logout is off while the page is open (%s)' % st)
+        await ctx.close()
+    finally:
+        srv.terminate()
+
+
 async def speed_test(b, port):
     """A speed test on one laptop: in the expanded Flow view the river fits the window, nothing scrolls."""
     srv = await serve('speedtest', port)
@@ -736,7 +752,7 @@ async def main():
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path=CHROME, args=['--no-sandbox'])
         # every scenario at once, each in its own browser context against its own preview server
-        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798))
+        await asyncio.gather(*[scenario(b, s, 8700 + i) for i, s in enumerate(SCENARIOS)], two_tabs(b, 8790), speed_test(b, 8791), zoom(b, 8792), rename(b, 8793), outlines(b, 8794), guard(b, 8795, 8796), rename_safe(b, 8797), heartbeat_pace(b, 8798), stay_logged_in(b, 8799))
         await start_theme_motion(b, 8780, 8781)   # on its own: it times the page's first requests, which every other check would slow
         await b.close()
 
