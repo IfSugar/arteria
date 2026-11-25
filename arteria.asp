@@ -8,7 +8,7 @@
 <link rel="shortcut icon" href="images/favicon.png"/>
 <link rel="icon" href="images/favicon.png"/>
 <title>Arteria</title>
-<!-- arteria-version: 2.3.0 (must match VERSION in arteria.sh) -->
+<!-- arteria-version: 2.3.1 (must match VERSION in arteria.sh) -->
 <link rel="stylesheet" type="text/css" href="index_style.css"/>
 <link rel="stylesheet" type="text/css" href="form_style.css"/>
 <script type="text/javascript" src="/js/jquery.js"></script>
@@ -276,7 +276,7 @@
    state.js. A page you leave open to watch, like its own System Log and real-time Traffic Monitor, turns that off for as
    long as it's open, the same way: 0 means no automatic logout. */
 if ('AUTOLOGOUT_MAX_MINUTE' in window) window.AUTOLOGOUT_MAX_MINUTE = 0;
-var VERSION = '2.3.0';
+var VERSION = '2.3.1';
 var BASE = '/ext/arteria/';
 var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', WARN = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';   /* ACC follows the router's theme (theme()) */
 /* Packets: one CSS class per bucket (b0 = busiest). As throughput rises on a log scale, packets grow
