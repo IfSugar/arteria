@@ -272,6 +272,10 @@
    Only initial() (called by <body onload>) and the Arteria object (used by the page's buttons) are global. */
 (function () {
 'use strict';
+/* The router logs you out after its Auto Logout time (Administration > System, 30 minutes by default), counted by its
+   state.js. A page you leave open to watch, like its own System Log and real-time Traffic Monitor, turns that off for as
+   long as it's open, the same way: 0 means no automatic logout. */
+if ('AUTOLOGOUT_MAX_MINUTE' in window) window.AUTOLOGOUT_MAX_MINUTE = 0;
 var VERSION = '2.3.0';
 var BASE = '/ext/arteria/';
 var DN = '#59c3ff', UP = '#ff8a3d', DNT = '#9bdcff', UPT = '#ffb27a', MESH = '#a99cf5', ACC = '#ffcc00', WARN = '#ffcc00', BAD = '#ff9c8a', MUTED = '#93a9b1', INK2 = '#c3c2b7';   /* ACC follows the router's theme (theme()) */
