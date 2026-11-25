@@ -2,6 +2,13 @@
 
 What changed in each release of Arteria. The release workflow copies a version's section into its GitHub release notes, so write for people running the addon.
 
+## 2.3.1
+
+The router no longer logs you out while Arteria's page is open, and a switch is no longer named after a TV tuner behind it. Thanks to Slapdaddy in the SNBForums thread for the report, and to Squall Leonhart, who suggested the first for WiFi Insight.
+
+- **The router no longer logs you out while the page is open.** The router's *Auto Logout* (Administration > System, 30 minutes by default) is a countdown kept by each of its pages, so with Arteria open to watch, you were logged out mid-view. The page now turns it off while it's open, as the router's own System Log and real-time Traffic Monitor pages do. On the router's other pages it works as before.
+- **A switch is named after a device only when that device's name says "switch".** A switch on a port could take the name of a device behind it that had the router's Router or Repeater icon, a TV tuner for example, with the real switch listed behind it. The router's client list has no switch icon, the router gives its Router icon to devices it can't identify, and giving a device a nickname there keeps that icon. So an icon is no longer enough: a device behind a switch becomes the switch only when its name says so (*Office switch*, *Switch-01*), whether you named it or it names itself. A managed switch with only the Router icon now shows as *Switch on LAN 2*, listed behind it with its IP and MAC; put "switch" in its name to make it the switch.
+
 ## 2.3.0
 
 More room on the map: labels keep clear of other devices and no longer hide the traffic on other devices' lines, and in the expanded view the internet moves to the floor's top corner. The spacing adapts to how full the floor is, so the map shows about as many devices as 2.2.0 did, and a device that gets busy comes off the tray by itself, a TV too. Also wired devices on a port given to a Guest Network Pro VLAN or to an IPTV set-top box, and no more sleeping Wi-Fi sensors listed behind a switch that nodes are on. Thanks to K3r1m0 and jksmurf in the SNBForums thread for reporting them.
