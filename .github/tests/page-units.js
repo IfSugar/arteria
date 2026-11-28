@@ -1126,10 +1126,18 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 		JSON.stringify({ chain: n2.hubs.length, unread: n3.hubs.length, alone: alone.hubs.length }));
 	const n4 = two(k => [nd(N1, 'Annex', k)], [['eth1', PC], ['eth1', NAS]]), h4 = n4.hubs[0];
 	const n5 = two(k => [nd(N1, 'Annex', k)], [['eth1', PC]]), h5 = n5.hubs[0];
-	ok(h4 && n4.devs.indexOf(h4) >= 0 && h4.count === 2 && h4.hub.nodes.length === 1 && h4.s.dn < h4.hub.s.dn && h5 && h5.kind === 'switch' && h5.name === 'Switch on LAN 1'
-		&& h5.count === 1 && h5.behind[0].mac === PC && n5.clients === 1,
-		'a node with devices on its port: the switch lists them, with what the port carries beyond the node; one device is behind the switch too',
-		JSON.stringify({ c4: h4 && h4.count, own: h4 && h4.s.dn, port: h4 && h4.hub.s.dn, n5: h5 && h5.name, c5: h5 && h5.count }));
+	ok(h4 && n4.devs.indexOf(h4) >= 0 && h4.count === 2 && h4.hub.nodes.length === 1 && h4.s.dn < h4.hub.s.dn && h5 && h5.hubOnly && h5.name === 'Switch on LAN 1'
+		&& h5.with === n5.byId[PC] && n5.devs.indexOf(n5.byId[PC]) >= 0 && n5.byId[PC].beside && n5.clients === 1,
+		'a node with devices on its port: the switch lists them, with what the port carries beyond the node; one device keeps its own name and figure',
+		JSON.stringify({ c4: h4 && h4.count, own: h4 && h4.s.dn, port: h4 && h4.hub.s.dn, n5: h5 && h5.name, with: h5 && h5.with && h5.with.id }));
+	// a node busy or not answering for a while: the switch stays (the same nodes on it); a node with no access (its key): it goes
+	const as = (k, i, st) => three(k).map((x, j) => j === i ? Object.assign(x, { state: st, up: null, u: undefined }) : x);
+	mk(2, three(2));
+	const n6 = mk(3, as(3, 1, 'busy')), n7 = mk(4, three(4)), n8 = mk(5, as(5, 1, 'nokey'));
+	mk(6, three(6)); const n9 = mk(7, [nd(N1, 'Annex', 7), nd(N2, 'Kitchen', 7, { state: 'busy', up: null, u: undefined })]);
+	ok(n6.hubs.length === 1 && n6.hubs[0].hub.nodes.length === 3 && n7.hubs.length === 1 && !n8.hubs.length && !n9.hubs.length,
+		'a switch in front of the nodes stays while a node is busy or not answering, and goes when one has no access or the nodes change',
+		JSON.stringify({ busy: n6.hubs.length, back: n7.hubs.length, nokey: n8.hubs.length, other: n9.hubs.length }));
 	// on the map: in an expanded view with room, by a corner of the router's plate, the nodes' cables from it; never with a device
 	// fewer on a stand than without it
 	const keepG = T.G();

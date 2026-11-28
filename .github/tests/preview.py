@@ -5,7 +5,7 @@
 
 Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, nodecrowd, house, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones),
 wired (a managed switch with four devices on a LAN port, a device on the node's LAN port, a phone on the node's guest network),
-meshswitch, meshswitch2, meshchain, meshnokey (three nodes on a switch; with devices on it too; a node wired behind another; a node not read).
+meshswitch, meshswitch1, meshswitch2, meshchain, meshnokey (three nodes on a switch; with one device on it, or two; a node wired behind another; a node not read).
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -138,9 +138,9 @@ if SCN == 'quiet':
     DEVICES = [(m, n, w, b, d * 0.003, u * 0.003, r) for (m, n, w, b, d, u, r) in DEVICES]
 if SCN == 'nonode':
     DEVICES = [d for d in DEVICES if d[2] != 'node']
-# Nodes on a switch (meshswitch: three nodes on an unmanaged switch on the router's LAN 2; meshswitch2: two devices on that
-# switch too, and a NAS on LAN 4; meshchain: two nodes, the second wired behind the first; meshnokey: one of the three not read)
-MESH = SCN in ('meshswitch', 'meshswitch2', 'meshchain', 'meshnokey')
+# Nodes on a switch (meshswitch: three nodes on an unmanaged switch on the router's LAN 2; meshswitch1: one device on that switch
+# too; meshswitch2: two, and a NAS on LAN 4; meshchain: two nodes, the second wired behind the first; meshnokey: one not read)
+MESH = SCN in ('meshswitch', 'meshswitch1', 'meshswitch2', 'meshchain', 'meshnokey')
 MESH_NODES = [('02:10:00:00:07:01', 'Annex', 'RT-AX58U', '192.168.50.31'), ('02:10:00:00:07:02', 'Kitchen', 'RT-AX58U', '192.168.50.32'),
               ('02:10:00:00:07:03', 'Master Bedroom', 'RT-AX58U', '192.168.50.33')][:2 if SCN == 'meshchain' else 3]
 if MESH:
@@ -149,9 +149,11 @@ if MESH:
     for k, (nm, alias, model, ip) in enumerate(MESH_NODES):
         for j, (dn, band, d, u) in enumerate([('TV', '5', 6.0 - k, 0.3), ('iPad', '5', 1.2 + k, 0.2), ('sensor', '2.4', 0.01, 0.01)]):
             DEVICES.append(('02:CC:00:00:0F:%02X' % (3 + 3 * k + j), '%s %s' % (alias, dn), 'mesh%d' % k, band, d, u, -50 - 4 * j - k))
+    if SCN == 'meshswitch1':   # one device on the switch with the nodes: it keeps its own name and figure
+        DEVICES += [('02:CC:00:00:06:0A', 'Garage PC', 'wired', 'eth3', 3.0, 0.4, None)]
     if SCN == 'meshswitch2':
-        DEVICES += [('02:CC:00:00:0F:0C', 'Garage PC', 'wired', 'eth3', 3.0, 0.4, None), ('02:CC:00:00:0F:0D', 'Media NAS', 'wired', 'eth3', 0.8, 5.0, None),
-                    ('02:CC:00:00:0F:0E', 'Loft NAS', 'wired', 'eth5', 1.0, 2.0, None)]
+        DEVICES += [('02:CC:00:00:06:0A', 'Garage PC', 'wired', 'eth3', 3.0, 0.4, None), ('02:CC:00:00:06:0B', 'Media NAS', 'wired', 'eth3', 0.8, 5.0, None),
+                    ('02:CC:00:00:06:0C', 'Loft NAS', 'wired', 'eth5', 1.0, 2.0, None)]
 
 
 def sample_mesh(seq):

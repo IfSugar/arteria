@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
 SCENARIOS = ['home', 'bulbs', 'crowd', 'house', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd', 'wired',
-             'meshswitch', 'meshswitch2', 'meshchain', 'meshnokey']
+             'meshswitch', 'meshswitch1', 'meshswitch2', 'meshchain', 'meshnokey']
 fails = []
 
 
@@ -237,16 +237,31 @@ async def scenario(b, scn, port):
                     const lb = document.querySelector('#arMapLabels .ar-lb[data-id="' + sw.id + '"]'); r.label = lb ? lb.innerText.replace(/\s+/g, ' ') : '';
                     Arteria.pick(sw.id); r.note = Arteria._t.readoutFor(net).note; Arteria.pick(null);
                     const nd = L.nodes.find(x => L.hubOf[x.node.id]); r.chain = Arteria._t.chainOf(net, nd.node.id).slice(0, 2).join(',');
-                    r.port = sw.hub.s.dn > 0 && Math.abs(sw.hub.s.dn - net.byId[sw.id].hub.s.dn) < 1e-9;
+                    /* one figure for it: its label, its readout and the list of the busiest show the same (the cable carries the whole port) */
+                    const lab = (document.querySelector('#arMapLabels .ar-lb[data-id="' + sw.id + '"] .v') || {}).textContent || '';
+                    Arteria.pick(sw.id); const ro = Arteria._t.readoutFor(net); Arteria.pick(null);
+                    const dv = net.byId[sw.id], sh = x => Arteria._t.short(x);
+                    r.same = lab.indexOf(sh(dv.dn)) >= 0 && Math.abs(parseFloat(ro.dnN) - (dv.dn >= 1 ? dv.dn : dv.dn * 1000)) < 0.06 * Math.max(1, dv.dn >= 1 ? dv.dn : dv.dn * 1000);
                     /* the same devices laid out without the switch: no fewer on the tray */
                     const key = A.hubFit.key; A.hubFit = { key: key, spot: null }; A.stands = null; Arteria.render(); r.trayNo = A.layout.tray.length;
                     A.hubFit = null; A.stands = null; Arteria.render(); r.trayAgain = A.layout.tray.length;
                 }
                 return r; }""")
-            if scn in ('meshswitch', 'meshswitch2'):
+            if scn in ('meshswitch', 'meshswitch1', 'meshswitch2'):
+                extra = {'meshswitch': '', 'meshswitch1': ' and Garage PC', 'meshswitch2': ' and 2 devices'}[scn]
                 check(hub['hubs'] == 1 and hub['nodes'] == 3 and hub['pipe'] == 'pipe' and 'Switch on LAN 2' in hub['label'] and hub['chain'].startswith('port:eth3,node:')
-                      and hub['note'].startswith('On it: Annex, Kitchen') and 'Master Bedroom' in hub['note'] and hub['port'] and hub['tray'] <= hub['trayNo'] and hub['trayAgain'] == hub['tray'],
-                      tag + ': nodes on a switch: the switch is drawn between the router and them, their cables leave from it, a node is traced through it (%s)' % hub)
+                      and hub['note'].startswith('On it: Annex, Kitchen' + (', Master Bedroom' + extra if extra else ' and Master Bedroom')) and hub['tray'] <= hub['trayNo'] and hub['trayAgain'] == hub['tray']
+                      and hub['same'], tag + ': nodes on a switch: the switch is drawn between the router and them, their cables leave from it, a node is traced through it, '
+                      'one figure for it everywhere (%s)' % hub)
+                # in smaller windows too: the switch never on a node's drawing or behind the router, and nothing under or over a label
+                fit = []
+                for w, h in ((1440, 900), (1180, 760)):
+                    await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(700)
+                    r = await pg.evaluate(ROOM); u = await pg.evaluate(LINES_UNDER); c = await pg.evaluate(LABEL_COVERS)
+                    behind = await pg.evaluate("""() => { const L = Arteria.state.layout; return L.wired.filter(x => x.hub && x.slot.cx + x.slot.cy < 14.2).length; }""")
+                    fit.append((w, [o for o in r['on'] if 'port:' in o], u, c, behind))
+                await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
+                check(all(not f[1] and not f[2] and f[3] == 0 and f[4] == 0 for f in fit), tag + ': in smaller windows, the switch is on no node\'s drawing, not behind the router, and lines and labels keep apart (%s)' % fit)
             else:
                 check(hub['hubs'] == 0 and hub['nodes'] == 0, tag + ': a node wired behind another, or a node not read: no switch drawn in front of the nodes (%s)' % hub)
         check(cover_big == 0, tag + 'expanded view: labels don\'t cover other devices (%d)' % cover_big)

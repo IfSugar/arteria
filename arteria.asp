@@ -1176,12 +1176,11 @@ function buildNet(d) {
 	/* wired: what the bridge has learned on each port. A port has one counter, so it is one device: the device on it, or the
 	   switch it leads to, with the port's figures. A switch also lists the devices behind it (sw.behind): each is named and
 	   can be picked like any device, but has no figures of its own (st 'shared'), and isn't drawn or counted again. */
-	var wiredDev = function (dev, list, where, sw) {   /* where: what the name says it's on (the port's label, or a node's name); sw: a switch for sure */
-		if (list.length === 1 && !sw) { dev.id = list[0]; dev.mac = list[0]; }
+	var wiredDev = function (dev, list, where) {   /* where: what the name says it's on (the port's label, or a node's name) */
+		if (list.length === 1) { dev.id = list[0]; dev.mac = list[0]; }
 		else {
-			var many = list.length > 1 || sw;
-			dev.count = list.length; dev.kind = many ? 'switch' : 'generic'; dev.name = (many ? 'Switch on ' : 'Device on ') + (where || dev.portLabel);
-			if (many) dev.behind = list.map(function (m) {
+			dev.count = list.length; dev.kind = list.length > 1 ? 'switch' : 'generic'; dev.name = (list.length > 1 ? 'Switch on ' : 'Device on ') + (where || dev.portLabel);
+			if (list.length > 1) dev.behind = list.map(function (m) {
 				return { id: m, mac: m, link: 'wired', port: dev.port, portLabel: dev.portLabel, speed: dev.speed, ap: dev.ap, node: dev.node || null, sw: dev, s: zeroRate(), st: 'shared' };
 			});
 		}
@@ -1199,6 +1198,7 @@ function buildNet(d) {
 		if (seen[pm[1]] || own[pm[1]] || bh[pm[1]] || atNode[pm[1]] || (onWifi[pm[1]] && byPort[pm[0]])) return;
 		(onPort[pm[0]] = onPort[pm[0]] || []).push(pm[1]);
 	});
+	var holdNow = {};
 	(d.ports || []).forEach(function (p) {
 		var lk = linkOf(d, p), list = onPort[p] || [], pr = ifs[p], ns = byPort[p] || [];
 		if (!lk.up) return;
@@ -1209,23 +1209,29 @@ function buildNet(d) {
 			/* A switch the nodes are on, drawn between the router and them (their cables go through it): only where it is sure
 			   to be there. Two or more things on the port (nodes, or a node and other devices) are on a switch, unless one node
 			   is wired behind another (router, node, node: the router learns both on the port too). Which are is known only from
-			   the nodes themselves, read over SSH: with a node that isn't read, the port is shown as before. Its figure on the map
-			   is the port's, all of it: everything on the switch goes through that cable. One device beside a node is then behind
-			   that switch too, not the port's device. */
+			   the nodes themselves, read over SSH: with a node that isn't read, the port is shown as before. Once sure, a port
+			   stays so while the same nodes are on it and none has lost access (its key): a node that is busy, or not answering
+			   for a while, doesn't make the switch come and go. On the map its cable carries the port's traffic, all of it. */
 			var front = ns.filter(function (n) { return !(n.via && ns.indexOf(n.via) >= 0); });
-			var sure = ns.every(function (n) { return n.state === 'ok'; }) && front.length + (list.length ? 1 : 0) >= 2;
+			var read = ns.every(function (n) { return n.state === 'ok'; }), nkey = ns.map(function (n) { return n.mac; }).sort().join(' '), was = (A.hubHold || {})[p];
+			var held = !read && was && was.key === nkey && ns.every(function (n) { return n.state === 'ok' || HUB_HOLD[n.state]; });
+			if (held) front = ns.filter(function (n) { return was.front.indexOf(n.mac) >= 0; });
+			var sure = (read || held) && front.length + (list.length ? 1 : 0) >= 2;
+			if (sure) holdNow[p] = { key: nkey, front: front.map(function (n) { return n.mac; }) };
 			var all = ns.every(function (n) { return n.bhOwn; }), pt = portRate(p), s = zeroRate(), sw = null;
 			if (list.length) {
 				if (all) ['dn', 'up', 'sdn', 'sup'].forEach(function (k) { s[k] = Math.max(0, pt[k] - ns.reduce(function (a, n) { return a + n.bh[k]; }, 0)); });
 				s.ok = all && pt.ok;
 				sw = { id: 'port:' + p, link: 'wired', port: p, portLabel: portLabel(d, p), speed: lk.speed, s: s, st: all ? 'ok' : 'nodata', ap: 'router', beside: ns };
-				wiredDev(sw, list, '', sure);
+				wiredDev(sw, list);
 			}
 			if (sure) {
-				var pr2 = { dn: pt.dn, up: pt.up, sdn: pt.sdn, sup: pt.sup, ok: pt.ok };
-				if (!sw) {   /* only nodes on it: a switch of its own, which the map draws, and nothing else lists */
+				var pr2 = { dn: pt.dn, up: pt.up, sdn: pt.sdn, sup: pt.sup, ok: pt.ok }, one = sw && !sw.behind ? sw : null;
+				/* the devices on the port listed by a switch of their own: that one is it. Else (only nodes, or one device, which
+				   keeps its own name and figure) a switch of its own, which the map draws and nothing else lists */
+				if (!sw || one) {
 					sw = { id: 'port:' + p, link: 'wired', port: p, portLabel: portLabel(d, p), speed: lk.speed, s: pr2, st: 'ok', ap: 'router', beside: ns,
-						kind: 'switch', name: 'Switch on ' + portLabel(d, p), hubOnly: true };
+						kind: 'switch', name: 'Switch on ' + portLabel(d, p), hubOnly: true, count: 0, with: one };
 					sw.dn = pr2.dn; sw.up = pr2.up; sw.sdn = pr2.sdn; sw.sup = pr2.sup;
 					net.byId[sw.id] = sw;
 				}
@@ -1237,6 +1243,7 @@ function buildNet(d) {
 		var s2 = pr ? measure('p:' + p, t, pr[2], pr[1]) : smooth('p:' + p, null);
 		wiredDev({ id: 'port:' + p, link: 'wired', port: p, portLabel: portLabel(d, p), speed: lk.speed, s: s2, st: 'ok', ap: 'router' }, list);
 	});
+	A.hubHold = holdNow;
 	/* a node's wired ports, read on the node as the router reads its own (its uplink to the router is left out there). A port
 	   with an address known elsewhere (the router's, a node's, a Wi-Fi device's) leads back into the network, not to a device of
 	   this node's: it is left out too, whole. Its devices are the node's, counted in its backhaul like its Wi-Fi ones. */
@@ -1549,8 +1556,8 @@ function formOf(model, fallback) {
 var FORM_ICON = { plug: 'repeater', tower: 'mesh', cube: 'cube', puck: 'puck', gaming: 'router', router: 'router' };
 function ringSvg(id, c, r) {
 	if (id === 'router') return ell(c, r, 'fill:' + ACC + ';stroke:#ffe9a3;stroke-width:.9');
-	return '<g data-ring="' + id + ':lit">' + ell(c, r, 'fill:' + MESH + ';stroke:#d6cffc;stroke-width:.9') + '</g>' +
-		'<g data-ring="' + id + ':dead" class="hide">' + ell(c, r, 'fill:#5a6569;stroke:' + BAD + ';stroke-width:1.2') + '</g>';
+	return '<g data-ring="' + esc(id) + ':lit">' + ell(c, r, 'fill:' + MESH + ';stroke:#d6cffc;stroke-width:.9') + '</g>' +
+		'<g data-ring="' + esc(id) + ':dead" class="hide">' + ell(c, r, 'fill:#5a6569;stroke:' + BAD + ';stroke-width:1.2') + '</g>';
 }
 /* One body per form, built around (cx, cy). The accent is violet on a node and yellow on the main router.
    Each sets o.hub, where the Wi-Fi arcs meet above it. */
@@ -2454,15 +2461,15 @@ function geomBig(w, h, nodes) {
 function wanArea(g) { return [[g.wx - 1.275, g.wy - 1.075, g.wx + 1.525, g.wy + 1.225], [g.wx + 1.525, g.wy - 0.775, 7.9, g.wy + 0.825], [6.3, g.wy + 0.825, 7.9, 4.8]]; }
 function wanRoute() { return [[G.wx + 0.625, G.wy], [7.1, G.wy], [7.1, 6.0]]; }
 function box2(a, b, pad) { return [Math.min(a[0], b[0]) - pad, Math.min(a[1], b[1]) - pad, Math.max(a[0], b[0]) + pad, Math.max(a[1], b[1]) + pad]; }
+var HUB_HOLD = { busy: 1, wait: 1, down: 1, crash: 1 };   /* a node's states that don't end a switch drawn in front of it (see buildNet) */
 var RT_AREA = [3.9, 4.3, 10.3, 9.9];   /* the router and its base plate, with half a cell of room */
 var RT_PLATE = [5.3, 5.7, 8.9, 8.5];   /* its plate */
 /* Where a switch that nodes are on stands: by a corner of the router's plate, in the room kept round it, clear of the router's
    own pipes (the internet's from the back, its ports' from the front and the right side); a short cable from the router */
-var HUB_SPOTS = [
+var HUB_SPOTS = [   /* not behind it: the router hides what stands there */
 	{ cx: 9.4, cy: 9.15, route: [[8.6, 7.7], [9.4, 7.7], [9.4, 9.15]] },
 	{ cx: 9.4, cy: 5.0, route: [[8.6, 6.4], [9.4, 6.4], [9.4, 5.0]] },
-	{ cx: 4.75, cy: 9.15, route: [[5.6, 7.7], [4.75, 7.7], [4.75, 9.15]] },
-	{ cx: 4.7, cy: 5.0, route: [[5.6, 6.4], [4.7, 6.4], [4.7, 5.0]] }
+	{ cx: 4.45, cy: 9.2, route: [[5.6, 7.7], [4.45, 7.7], [4.45, 9.2]] }
 ];
 function genSlots(g) {
 	var cells = [], pitchX = 1.5, pitchY = 1.3;   /* places a stand may be: far more than are used, and closer than drawings can stand (see fitStands) */
@@ -2714,9 +2721,9 @@ function arcPath(p0, p1, bulge, from, to) {
 /* Does a traffic line pass under label r (whose id is lid): its first and last 30% are left to the labels at its ends */
 function pathUnder(pa, r, lid) {
 	if (pa.bb[2] <= r[0] + 1 || pa.bb[0] >= r[2] - 1 || pa.bb[3] <= r[1] + 1 || pa.bb[1] >= r[3] - 1) return false;
-	/* the hub's label may cover the first 30% of a line leaving it: kept to 28% here, so a line drawn a little differently
-	   (its lanes, its corners) still isn't under it past 30% */
-	var n = pa.pts.length, lo = lid && lid === pa.from ? Math.ceil(n * 0.28) : 0, hi = lid && lid === pa.to ? Math.floor(n * 0.7) : n;
+	/* the hub's label may cover the first 30% of a line leaving it; of a node's cable, 28% here, so the cable as drawn (its lanes,
+	   its corners) still isn't under it past 30% */
+	var n = pa.pts.length, lo = lid && lid === pa.from ? Math.ceil(n * (pa.nodeCable ? 0.28 : 0.3)) : 0, hi = lid && lid === pa.to ? Math.floor(n * 0.7) : n;
 	for (var i = lo; i < hi; i++) { var p = pa.pts[i]; if (p[0] > r[0] + 1 && p[0] < r[2] - 1 && p[1] > r[1] + 1 && p[1] < r[3] - 1) return true; }
 	return false;
 }
@@ -2821,7 +2828,9 @@ function fitStands(net, nodes, zones, tray, hidden, prev, hubs0) {
 			nodes.filter(function (y) { return y !== x && (!vs || y.slot !== vs); }).map(function (y) { return y.slot.zone; }));
 		var r = floorRoute(hb ? [[hb.slot.cx, hb.slot.cy]] : nodeStarts(vs), [x.slot.cx, x.slot.cy], hb ? avoid.concat([RT_PLATE]) : avoid);   /* from a switch: round the router too */
 		R.cables.push(floorPts(r));
-		R.paths.push(pathOf(r.map(function (w) { return P(w[0], w[1], 0.1); }), vs ? nd.via.id : hb ? hb.dev.id : 'router', nd.id));
+		var np = pathOf(r.map(function (w) { return P(w[0], w[1], 0.1); }), vs ? nd.via.id : hb ? hb.dev.id : 'router', nd.id);
+		np.nodeCable = true;
+		R.paths.push(np);
 	});
 	R.paths.push(pathOf(wanRoute().map(function (w) { return P(w[0], w[1], 0.1); }), 'wan', 'router'));   /* the internet's pipe */
 	/* the tray's label is as wide as its longest text: its count changes without the map being drawn again */
@@ -2995,23 +3004,37 @@ function mapLayout(net) {
 	var visible = net.devs.filter(function (dv) { return dv.st !== 'off'; });
 	var nodeB = shownNodes.length > 1;
 	var ids = function (l) { return l.map(function (dv) { return [dv.id, dv.kind, dv.name]; }).sort(); };
-	/* The zones and who may stand in them; on: with the switches nodes are on between the router and them. A switch with nodes
-	   on it (see buildNet) stands by a corner of the router's plate, the one nearest to its nodes, where no stand is, and their
-	   cables leave from it. Only with a node of its on the map. */
-	var plan = function (on, first) {   /* first: the spot for the first switch (else the nearest) */
+	/* The zones and who may stand in them, with or without the switches nodes are on between the router and them. A switch with
+	   nodes on it (see buildNet) stands by a corner of the router's plate, where no stand is, and their cables leave from it.
+	   Only with a node of its on the map. */
+	var near = function (mine) { return function (sl) { return mine.reduce(function (a, x) { return a + Math.abs(sl.cx - x.slot.cx) + Math.abs(sl.cy - x.slot.cy); }, 0); }; };
+	/* a corner where a switch's drawing is clear of the nodes' zones and drawings (the floor of a node's zone is its own), and
+	   of the router where it would be behind it */
+	var fixedObjs = null, rtDepth = 14.2;
+	var spotClear = function (sl) {
+		var b = [sl.cx - 0.8, sl.cy - 0.4, sl.cx + 0.8, sl.cy + 0.4];
+		if (L.nodes.some(function (x) { return rectsMeet(b, x.slot.zone); })) return false;
+		if (!fixedObjs) fixedObjs = [objRouter(net.router.model)].concat(L.nodes.map(function (x) { return objNode(x.node.id, x.slot.cx, x.slot.cy, x.node.model); }));
+		var o = objDevice('hub', 'switch', sl.cx, sl.cy, 'L'), h = o.hull(), d = gapD();
+		return !fixedObjs.some(function (f) { return (f.id !== 'router' || o.depth < rtDepth) && hullsMeet(h, f.hull(), d); });
+	};
+	var hubsFor = function (first) {   /* which switches stand where; first: the spot for the first one (else the nearest) */
 		var p = { hubs: [], hubOf: {} };
-		/* wired */
-		var wslots = G.wiredSlots.filter(function (s) { return !(s.needsNoNodeB && nodeB); });
-		var wired = visible.filter(function (dv) { return dv.link === 'wired' && !dv.node; });   /* the router's ports; a node's are in its zone */
-		if (on) (net.hubs || []).forEach(function (sw) {
+		(net.hubs || []).forEach(function (sw) {
 			var mine = L.nodes.filter(function (x) { return sw.hub.nodes.indexOf(x.node) >= 0; });
-			var free = HUB_SPOTS.filter(function (sl) { return !p.hubs.some(function (h) { return h.slot === sl; }); });
+			var free = HUB_SPOTS.filter(function (sl) { return spotClear(sl) && !p.hubs.some(function (h) { return h.slot === sl; }); }), far = near(mine);
 			if (!mine.length || !free.length) return;
-			var far = function (sl) { return mine.reduce(function (a, x) { return a + Math.abs(sl.cx - x.slot.cx) + Math.abs(sl.cy - x.slot.cy); }, 0); };
-			var at = !p.hubs.length && first ? first : free.reduce(function (a, sl) { return far(sl) < far(a) - 1e-9 ? sl : a; });
+			var at = !p.hubs.length && first && free.indexOf(first) >= 0 ? first : free.reduce(function (a, sl) { return far(sl) < far(a) - 1e-9 ? sl : a; });
 			p.hubs.push({ dev: sw, slot: at });
 			mine.forEach(function (x) { p.hubOf[x.node.id] = sw.id; });
 		});
+		return p;
+	};
+	var plan = function (hs) {   /* hs: the switches, from hubsFor, or none */
+		var p = { hubs: hs ? hs.hubs : [], hubOf: hs ? hs.hubOf : {} };
+		/* wired */
+		var wslots = G.wiredSlots.filter(function (s) { return !(s.needsNoNodeB && nodeB); });
+		var wired = visible.filter(function (dv) { return dv.link === 'wired' && !dv.node; });   /* the router's ports; a node's are in its zone */
 		if (p.hubs.length) wired = wired.filter(function (dv) { return !p.hubs.some(function (h) { return h.dev === dv; }); });
 		var wk = pickStands(wired, wslots.length, 'w');
 		p.needed = visible.length - p.hubs.filter(function (h) { return !h.dev.hubOnly; }).length;   /* the devices that need a stand of the fit's */
@@ -3053,25 +3076,42 @@ function mapLayout(net) {
 		var most = Math.max.apply(null, tries.map(function (g) { return g.n; }));
 		return tries.filter(function (g) { return g.n === most; })[0];
 	};
-	/* The switches nodes are on are drawn only where they cost no device its stand: laid out afresh without them, then with
-	   the first one by each corner of the router's plate in turn, nearest to its nodes first, until one has no more devices
-	   on the tray. Worked out once for a set of devices, and kept until the set changes. */
-	var pl = plan(false), done = null;
-	if ((net.hubs || []).length) {
-		var ph = plan(true);
-		if (ph.hubs.length) {
-			var hk = JSON.stringify([pl.base, ph.hsig.map(function (h) { return [h[0], h[1], h[3]]; })]), hc = A.hubFit;
-			if (!hc || hc.key !== hk) {
-				var g0 = fresh(pl), mine = L.nodes.filter(function (x) { return ph.hubs[0].dev.hub.nodes.indexOf(x.node) >= 0; });
-				var far = function (sl) { return mine.reduce(function (a, x) { return a + Math.abs(sl.cx - x.slot.cx) + Math.abs(sl.cy - x.slot.cy); }, 0); };
-				var spots = HUB_SPOTS.slice().sort(function (a, b) { return far(a) - far(b) || HUB_SPOTS.indexOf(a) - HUB_SPOTS.indexOf(b); });
-				hc = A.hubFit = { key: hk, spot: null }; done = g0;
-				for (var i = 0; i < spots.length; i++) {
-					var pi = plan(true, spots[i]), gi = fresh(pi);
-					if (pi.needed - gi.n <= pl.needed - g0.n) { hc.spot = spots[i]; done = gi; break; }
-				}
+	/* The switches nodes are on are drawn only where they cost no device its stand: every device that stands without them
+	   stands with them, the busy ones as much as the quiet. Decided once for the switches and their nodes: the first one by
+	   each corner of the router's plate in turn, nearest to its nodes first; the map without them is laid out only when one
+	   leaves a device on the tray, to see whether it costs that device its stand. Kept while the devices change,
+	   with one fit each time (and the one without them only when a device is left on the tray); after a "no", tried again (the
+	   two nearest corners) only once the devices have changed and 20 s have passed. So a crowded, changing network lays its
+	   map out at most twice for a change, as before once. */
+	var hs0 = (net.hubs || []).length ? hubsFor(null) : null, pl = null, done = null;
+	if (!hs0 || !hs0.hubs.length) pl = plan(null);
+	else {
+		var hk = JSON.stringify([G.key, hs0.hubs.map(function (h) { return [h.dev.id, h.dev.name, L.nodes.filter(function (x) { return hs0.hubOf[x.node.id] === h.dev.id; }).map(function (x) { return x.node.id; })]; })]);
+		var hc = A.hubFit && A.hubFit.key === hk ? A.hubFit : null, now = Date.now(), p0, g0, retry = false;
+		var covers = function (g, g0) { return Object.keys(g0.at).every(function (id) { return !!g.at[id]; }); };   /* every device that stands without the switches stands with them */
+		if (hc) {
+			pl = plan(hc.spot ? hubsFor(hc.spot) : null);
+			if (hc.devs !== pl.base) {   /* other devices */
+				if (hc.spot) {
+					var g1 = fresh(pl), lost = pl.needed - g1.n;
+					done = g1;
+					if (lost > 0) { p0 = plan(null); g0 = fresh(p0); if (!covers(g1, g0)) { pl = p0; done = g0; hc.spot = null; hc.at = now; } }
+				} else if (now - hc.at >= 20000) { hc = null; retry = true; }
+				if (hc) hc.devs = pl.base;
 			}
-			if (hc.spot) pl = plan(true, hc.spot);
+		}
+		if (!hc) {   /* every corner for new switches or nodes; on a retry, the two nearest */
+			var far = near(L.nodes.filter(function (x) { return hs0.hubs[0].dev.hub.nodes.indexOf(x.node) >= 0; }));
+			var spots = HUB_SPOTS.filter(spotClear).sort(function (a, b) { return far(a) - far(b) || HUB_SPOTS.indexOf(a) - HUB_SPOTS.indexOf(b); }).slice(0, retry ? 2 : 3);
+			hc = A.hubFit = { key: hk, spot: null, at: now };
+			p0 = null; g0 = null;
+			for (var i = 0; i < spots.length; i++) {
+				var pi = plan(hubsFor(spots[i])), gi = fresh(pi), li = pi.needed - gi.n;
+				if (li > 0 && !p0) { p0 = plan(null); g0 = fresh(p0); }
+				if (li <= 0 || covers(gi, g0)) { hc.spot = spots[i]; pl = pi; done = gi; break; }
+			}
+			if (!hc.spot) { pl = p0 || plan(null); done = g0; }
+			hc.devs = pl.base;
 		}
 	}
 	L.hubs = pl.hubs; L.hubOf = pl.hubOf;
@@ -3129,8 +3169,8 @@ function mapSignature(L) {
 /* lanes: one direction of one link, a soft halo plus a bright capsule riding the same dash pattern */
 function lane(d, color, glow, key, tube) {
 	var dl = -(hash(key) % 100) / 100 * 2, t = tube ? ' t' : '';
-	return '<path d="' + d + '" data-lane="' + key + '" data-cls="df-a pk h' + t + '" class="df-a pk h' + t + ' bx" style="fill:none;stroke:' + glow + ';stroke-opacity:.3;stroke-linecap:round;animation-delay:' + dl.toFixed(2) + 's"/>' +
-		'<path d="' + d + '" data-lane="' + key + '" data-cls="df-a pk' + t + '" class="df-a pk' + t + ' bx" style="fill:none;stroke:' + color + ';stroke-linecap:round;animation-delay:' + dl.toFixed(2) + 's"/>';
+	return '<path d="' + d + '" data-lane="' + esc(key) + '" data-cls="df-a pk h' + t + '" class="df-a pk h' + t + ' bx" style="fill:none;stroke:' + glow + ';stroke-opacity:.3;stroke-linecap:round;animation-delay:' + dl.toFixed(2) + 's"/>' +
+		'<path d="' + d + '" data-lane="' + esc(key) + '" data-cls="df-a pk' + t + '" class="df-a pk' + t + ' bx" style="fill:none;stroke:' + color + ';stroke-linecap:round;animation-delay:' + dl.toFixed(2) + 's"/>';
 }
 function qd(p0, c, p1) { return 'M' + n1(p0[0]) + ' ' + n1(p0[1]) + ' Q' + n1(c[0]) + ' ' + n1(c[1]) + ' ' + n1(p1[0]) + ' ' + n1(p1[1]); }
 function offQ(p0, c, p1, o) {
@@ -3160,7 +3200,7 @@ function tube(id, world) {
 	var dl = function (ps, dx, dy) { return 'M' + ps.map(function (p) { return n1(p[0] + (dx || 0)) + ' ' + n1(p[1] + (dy || 0)); }).join(' L'); };
 	var dn = offPoly(world, 0.085).map(function (w) { return P(w[0], w[1], 0.1); });
 	var up = offPoly(world.slice().reverse(), 0.085).map(function (w) { return P(w[0], w[1], 0.1); });
-	return '<g data-link="' + id + '" class="lk">' +
+	return '<g data-link="' + esc(id) + '" class="lk">' +
 		'<path d="' + dl(sp, 2.5, 3.5) + '" style="fill:none;stroke:#000000;stroke-opacity:.22;stroke-width:' + px(13) + j + '"/>' +
 		'<path d="' + dl(sp) + '" style="fill:none;stroke:#0e1417;stroke-width:' + px(14) + j + '"/>' +
 		'<path d="' + dl(sp) + '" style="fill:none;stroke:#33424a;stroke-width:' + px(11.5) + j + '"/>' +
@@ -3222,10 +3262,10 @@ function arc(id, p0, p1, bulge, mesh) {
 	var a = offQ(p0, c, p1, 3.0), b = offQ(p1, c, p0, 3.0);
 	var pts = [];
 	for (var i = 0; i <= 40; i++) { var t = i / 40; pts.push([(1 - t) * (1 - t) * p0[0] + 2 * t * (1 - t) * c[0] + t * t * p1[0], (1 - t) * (1 - t) * p0[1] + 2 * t * (1 - t) * c[1] + t * t * p1[1]]); }
-	return { pts: pts, mid: pts[20], svg: '<g data-link="' + id + '" class="lk">' +
+	return { pts: pts, mid: pts[20], svg: '<g data-link="' + esc(id) + '" class="lk">' +
 		'<path d="' + d + '" style="fill:none;' + track + ';stroke-linecap:round"/>' +
 		'<path d="' + d + '" style="fill:none;stroke:rgba(255,255,255,.16);stroke-width:1;stroke-linecap:round"/>' +
-		'<path d="' + d + '" data-alt="' + id + '" class="hide" style="fill:none;stroke-width:2;stroke-linecap:round;stroke-dasharray:1 7"/>' +
+		'<path d="' + d + '" data-alt="' + esc(id) + '" class="hide" style="fill:none;stroke-width:2;stroke-linecap:round;stroke-dasharray:1 7"/>' +
 		'<ellipse cx="' + n1(p1[0]) + '" cy="' + n1(p1[1]) + '" rx="' + px(6.5) + '" ry="' + px(3.7) + '" style="fill:rgba(16,22,25,.55);stroke:rgba(255,255,255,.55);stroke-width:1"/>' +
 		lane(qd(a[0], a[1], a[2]), DNT, DN, id + '|dn') + lane(qd(b[0], b[1], b[2]), UPT, UP, id + '|up') + '</g>' };
 }
@@ -3256,6 +3296,7 @@ function buildMap(net, L) {
 	var underLabs = function (from, to) {
 		return function (r) {
 			var pa = pathOf(r.map(function (w) { return P(w[0], w[1], 0.1); }), from, to);
+			pa.nodeCable = /^node:/.test(to);
 			return labRs.filter(function (l) { return l[0] !== to && pathUnder(pa, l[1], l[0]); }).length;
 		};
 	};
@@ -3263,7 +3304,7 @@ function buildMap(net, L) {
 		var s = x.slot, o = objNode(x.node.id, s.cx, s.cy, x.node.model);
 		objs.push(o);
 		var z = s.zone, t = P(s.text[0], s.text[1]);
-		zones.push('<g data-zone="' + x.node.id + '" class="ob">' + poly([P(z[0], z[1]), P(z[2], z[1]), P(z[2], z[3]), P(z[0], z[3])], 'fill:rgba(169,156,245,.09);stroke:rgba(169,156,245,.55);stroke-width:1;stroke-dasharray:5 5') +
+		zones.push('<g data-zone="' + esc(x.node.id) + '" class="ob">' + poly([P(z[0], z[1]), P(z[2], z[1]), P(z[2], z[3]), P(z[0], z[3])], 'fill:rgba(169,156,245,.09);stroke:rgba(169,156,245,.55);stroke-width:1;stroke-dasharray:5 5') +
 			'<text transform="matrix(' + CC.toFixed(4) + ' 0.5 ' + (-CC).toFixed(4) + ' 0.5 ' + n1(t[0]) + ' ' + n1(t[1]) + ')" style="font-size:11px;font-weight:700;letter-spacing:.12em;fill:rgba(205,197,252,.9)">' + esc(('via ' + x.node.name).toUpperCase().slice(0, 22)) + '</text></g>');
 		var nd = x.node, vs = nd.viaWired && nd.via && slotOf(nd.via), hb = !vs && hubAt(nd), a;
 		if (nd.online && (nd.wiredPort || nd.viaWired)) {
@@ -3275,15 +3316,15 @@ function buildMap(net, L) {
 			x.route = floorRoute(hb ? [[hb.slot.cx, hb.slot.cy]] : nodeStarts(vs), [s.cx, s.cy], avoid, underLabs(from, nd.id));
 			a = pipe(nd.id, x.route);
 			links.push(a.svg); pipes.push(a);
-			a.from = from;
+			a.from = from; a.nodeCable = true;
 		} else { a = arc(nd.id, HR, o.hub, 0.2, true); arcs.push(a); a.from = 'router'; }
 		a.to = nd.id;
 		hubs.push('<ellipse cx="' + n1(o.hub[0]) + '" cy="' + n1(o.hub[1]) + '" rx="' + px(8) + '" ry="' + px(4.6) + '" style="fill:rgba(16,22,25,.6);stroke:' + MESH + ';stroke-width:1.2"/>');
 		hubs.push('<ellipse cx="' + n1(o.hub[0]) + '" cy="' + n1(o.hub[1]) + '" rx="' + px(8) + '" ry="' + px(4.6) + '" class="df-a df-ripple" style="fill:none;stroke:' + MESH + ';stroke-width:1.2;animation-delay:-1.3s"/>');
 		var m = a.mid;
-		marks.push('<g data-mk="' + x.node.id + ':off" class="hide"><circle cx="' + n1(m[0]) + '" cy="' + n1(m[1]) + '" r="9" style="fill:var(--surface);stroke:' + BAD + ';stroke-width:1.4"/>' +
+		marks.push('<g data-mk="' + esc(x.node.id) + ':off" class="hide"><circle cx="' + n1(m[0]) + '" cy="' + n1(m[1]) + '" r="9" style="fill:var(--surface);stroke:' + BAD + ';stroke-width:1.4"/>' +
 			'<path d="M' + n1(m[0] - 3.5) + ' ' + n1(m[1] - 3.5) + ' l7 7 M' + n1(m[0] + 3.5) + ' ' + n1(m[1] - 3.5) + ' l-7 7" style="fill:none;stroke:' + BAD + ';stroke-width:1.8;stroke-linecap:round"/></g>');
-		marks.push('<g data-mk="' + x.node.id + ':warn" class="hide"><circle cx="' + n1(m[0]) + '" cy="' + n1(m[1]) + '" r="9" style="fill:var(--surface);stroke:' + WARN + ';stroke-width:1.4"/>' +
+		marks.push('<g data-mk="' + esc(x.node.id) + ':warn" class="hide"><circle cx="' + n1(m[0]) + '" cy="' + n1(m[1]) + '" r="9" style="fill:var(--surface);stroke:' + WARN + ';stroke-width:1.4"/>' +
 			'<path d="M' + n1(m[0]) + ' ' + n1(m[1] - 4.5) + ' v6 M' + n1(m[0]) + ' ' + n1(m[1] + 4.5) + ' v.01" style="fill:none;stroke:' + WARN + ';stroke-width:2;stroke-linecap:round"/></g>');
 		x.obj = o;
 	});
@@ -3365,7 +3406,7 @@ function buildMap(net, L) {
 	/* labels: real buttons over the scene, placed where they hit nothing */
 	var labels = placeLabels(net, L, objs, arcs.concat(pipes));
 	var leaders = labels.map(function (lb) {
-		return '<g data-lead="' + lb.id + '" class="ob"><path d="M' + n1(lb.px) + ' ' + n1(lb.py) + ' L' + n1(lb.ax) + ' ' + n1(lb.ay) + '" style="fill:none;stroke:rgba(255,255,255,.4);stroke-width:1"/>' +
+		return '<g data-lead="' + esc(lb.id) + '" class="ob"><path d="M' + n1(lb.px) + ' ' + n1(lb.py) + ' L' + n1(lb.ax) + ' ' + n1(lb.ay) + '" style="fill:none;stroke:rgba(255,255,255,.4);stroke-width:1"/>' +
 			'<circle cx="' + n1(lb.ax) + '" cy="' + n1(lb.ay) + '" r="2" style="fill:#f0efec"/></g>';
 	});
 	var grad = function (id, a, b, c) {
@@ -3383,7 +3424,7 @@ function buildMap(net, L) {
 		'</defs>';
 	var svg = '<svg width="' + G.SW + '" height="' + G.SH + '" viewBox="0 0 ' + G.SW + ' ' + G.SH + '" role="img" aria-label="Isometric map of your network: traffic moving between the internet, the router, its AiMesh nodes and each device">' +
 		defs + floor.join('') + zones.join('') + links.join('') + '<g style="opacity:.3">' + sh.join('') + '</g>' +
-		objs.map(function (o) { return '<g data-obj="' + o.id + '" class="ob">' + o.svg.join('') + '</g>'; }).join('') +
+		objs.map(function (o) { return '<g data-obj="' + esc(o.id) + '" class="ob">' + o.svg.join('') + '</g>'; }).join('') +
 		arcs.map(function (a) { return a.svg; }).join('') + hubs.join('') + marks.join('') + leaders.join('') + '</svg>';
 	var html = labels.map(function (lb) {
 		return '<button type="button" class="ar-lb' + (lb.x3 ? ' x3' : '') + '" data-id="' + esc(lb.id) + '" style="left:' + lb.x + 'px;top:' + lb.y + 'px;width:' + lb.w + 'px;height:' + G.hit + 'px;justify-content:' + lb.just + '" aria-pressed="false">' +
@@ -3420,7 +3461,7 @@ function placeLabels(net, L, objs, arcs) {
 		R.labs.push([it.lab.x, it.lab.y + 5, it.lab.x + it.lab.w, it.lab.y + G.hit - 5]);
 		R.lines.push([it.lab.px, it.lab.py, it.lab.ax, it.lab.ay]);
 	});
-	var paths = arcs.map(function (a) { return pathOf(a.pts, a.from, a.to); });
+	var paths = arcs.map(function (a) { var pa = pathOf(a.pts, a.from, a.to); pa.nodeCable = !!a.nodeCable; return pa; });
 	/* what a spot costs: its line's length in pixels; a spot over a traffic line (but at the line's own ends) is no spot:
 	   the traffic must show */
 	var cost = function (c, w, id) {
@@ -3601,19 +3642,19 @@ function renderMap(net) {
 	var trayDev = inTray(sel) ? net.byId[sel] : null, trayOn = isMore(sel) || !!trayDev;   /* a tray device is selected: the tray's arc carries its packets */
 	var trayDn = 0, trayUp = 0, traySdn = 0, traySup = 0;
 	L.tray.forEach(function (dv) { trayDn += dv.dn; trayUp += dv.up; traySdn += dv.sdn; traySup += dv.sup; });
-	var hubIds = {};   /* the switches nodes are on, drawn: their cable carries the whole port */
+	var hubIds = {};   /* the switches nodes are on, drawn: their cable carries the whole port (their label, what they show elsewhere) */
 	L.wired.forEach(function (x) { if (x.hub) hubIds[x.dev.id] = 1; });
 	var rateOf = function (id) {
 		if (id === 'wan') return net.wan;
 		if (id === 'more') return { dn: trayDn, up: trayUp, sdn: traySdn, sup: traySup };
 		var x = net.byId[id];
 		if (!x) return zeroRate();
-		if (hubIds[id] && x.hub) return x.hub.s;
 		return x.bh ? x.bh : x;
 	};
 	R.lanes.forEach(function (el) {
-		var k = el.getAttribute('data-lane').split('|'), r = k[0] === 'more' && trayDev ? trayDev : rateOf(k[0]), x = net.byId[k[0]];
-		var bk = x && x.st && x.st !== 'ok' && !hubIds[k[0]] ? 'bx' : bucketOf(k[0] + '|' + k[1], k[1] === 'dn' ? r.sdn : r.sup);
+		var k = el.getAttribute('data-lane').split('|'), x = net.byId[k[0]], hub = hubIds[k[0]] && x && x.hub;
+		var r = k[0] === 'more' && trayDev ? trayDev : hub ? hub.s : rateOf(k[0]);
+		var bk = x && x.st && x.st !== 'ok' && !hub ? 'bx' : bucketOf(k[0] + '|' + k[1], k[1] === 'dn' ? r.sdn : r.sup);
 		if (x && x.mac && k[0].indexOf('node:') === 0 && !x.online) bk = 'bx';
 		var cls = el.getAttribute('data-cls') + ' ' + bk;
 		if (el.getAttribute('class') !== cls) el.setAttribute('class', cls);
@@ -3628,7 +3669,7 @@ function renderMap(net) {
 	Object.keys(R.alts).forEach(function (id) {
 		var x = net.byId[id], c = 'hide';
 		if (x && id.indexOf('node:') === 0) c = !x.online ? 'alt-off' : (x.weak ? 'alt-warn' : 'hide');
-		else if (x && x.st === 'nodata' && !hubIds[id]) c = 'alt-nd';
+		else if (x && x.st === 'nodata') c = 'alt-nd';
 		R.alts[id].setAttribute('class', c);
 	});
 	net.nodes.forEach(function (n) {
@@ -3642,7 +3683,7 @@ function renderMap(net) {
 		if (id === 'router') html = '<span class="c-mut">' + net.clients + ' clients</span>';
 		else if (id.indexOf('node:') === 0 && x && !x.online) html = '<span class="c-bad">Offline</span>';
 		else if (x && x.st === 'off') html = '<span class="c-bad">Offline</span>';
-		else if (x && x.st === 'nodata' && !hubIds[id]) html = '<span class="c-mut">Not reported</span>';
+		else if (x && x.st === 'nodata') html = '<span class="c-mut">Not reported</span>';
 		else html = '<span class="c-dn">↓ ' + esc(short(r.dn)) + '</span><span class="c-up" style="margin-left:6px">↑ ' + esc(short(r.up)) + '</span>' +
 			(x && x.weak ? '<span class="c-warn"> · weak</span>' : '');
 		if (v.innerHTML !== html) v.innerHTML = html;
@@ -3985,9 +4026,9 @@ function renderFlow(net) {
    and addresses are in the readout and on Flow's rows; on the map they would make the labels too wide. */
 function thirdLine(x) {
 	if (!x.link) return !x.online ? 'Offline' : (x.wiredPort || x.viaWired ? 'Wired backhaul' : bandName(x.bhBand) + ' backhaul') + (dbm(x.bhRssi, '') ? ' · ' + dbm(x.bhRssi) : '');
-	if (x.hub) {   /* a switch nodes are on: what is on it */
+	if (x.hubOnly) {   /* a switch of its own that nodes are on: what is on it */
 		var nn = x.hub.nodes.length;
-		return x.portLabel + ' · ' + nn + (nn === 1 ? ' node' : ' nodes') + (x.count ? ', ' + devsTxt(x.count) : '');
+		return x.portLabel + ' · ' + nn + (nn === 1 ? ' node' : ' nodes') + (x.with ? ', ' + devsTxt(1) : '');
 	}
 	return x.st === 'off' ? 'Offline' : linkShort(x);
 }
@@ -4051,7 +4092,8 @@ function readoutFor(net) {
 		sdn = pct(dn, net.total.dn) + '% of all download'; sup = pct(up, net.total.up) + '% of all upload';
 		if (dv.link === 'wired') { k1 = 'Port'; v1 = dv.portLabel; k2 = 'Link rate'; v2 = dv.speed ? dv.speed + ' Mb/s' : '—'; }
 		else { k1 = 'Signal'; v1 = dbm(dv.rssi); k2 = 'Link rate'; v2 = dv.phy ? dv.phy + ' Mb/s' : '—'; }
-		path = rname + (dv.node ? ' → ' + dv.node.name : '') + (dv.sw ? ' → switch' : '') + ' → ' + dv.name;
+		var hd = dv.node && A.layout && A.layout.hubOf && net.byId[A.layout.hubOf[dv.node.id]];   /* its node on a switch drawn by the router */
+		path = rname + (hd ? ' → ' + hd.name : '') + (dv.node ? ' → ' + dv.node.name : '') + (dv.sw ? ' → switch' : '') + ' → ' + dv.name;
 		note = dv.link === 'wired' ? (dv.behind ? (dv.self ? 'The port counts the switch and its ' + devsTxt(dv.count) + ' together.' : dv.count + ' devices share this port: their traffic is added up.')
 				: (dv.node ? 'Measured on ' + dv.node.name + '\'s port counters, read over SSH.' : 'Measured on the port counters.'))
 			: (dv.node ? 'Counted on ' + dv.node.name + ' and read over SSH.' : 'Measured from Wi-Fi client counters on the router.');
@@ -4062,12 +4104,13 @@ function readoutFor(net) {
 		if (dv.st === 'nodata') { sdn = sup = bn ? 'counted with ' + bn : 'not reported by the node'; note = bn ? 'On a switch with ' + bn + ': its traffic is in ' + (dv.beside.length > 1 ? 'theirs' : 'its figure') + '.' : (dv.node ? dv.node.name + ' isn\'t reporting per-device traffic: see its backhaul total.' : ''); }
 		/* behind a switch: the port counts all its devices together, so this one's own traffic isn't known */
 		if (dv.st === 'shared') { d.link = 'Wired · ' + dv.portLabel + ' · through a switch'; sdn = sup = 'counted with ' + dv.sw.name; note = 'Behind a switch: its port counts ' + (dv.sw.count > 1 ? 'all ' + dv.sw.count + ' of its devices' : 'this one') + (dv.sw.self ? ' and the switch' : '') + ' together.'; }
-		/* a switch nodes are on, drawn between the router and them: the port's figure, all of it, as its cable on the map */
+		/* a switch nodes are on, drawn between the router and them: what is on it. One of its own has the port's figure, all
+		   of it; one that lists devices keeps theirs, as everywhere else (its cable on the map carries the whole port) */
 		if (dv.hub && hubDrawn(dv.id)) {
-			var hn = dv.hub.nodes.map(function (n) { return n.name; }), hs = dv.hub.s;
-			dn = hs.dn; up = hs.up; sdn = pct(dn, net.total.dn) + '% of all download'; sup = pct(up, net.total.up) + '% of all upload';
+			var hn = dv.hub.nodes.map(function (n) { return n.name; });
 			path = rname + ' → ' + dv.name + ' → ' + andList(hn);
-			note = 'On it: ' + andList(hn.concat(dv.count ? [devsTxt(dv.count)] : [])) + ', all counted on the port.';
+			note = 'On it: ' + andList(hn.concat(dv.count ? [devsTxt(dv.count)] : dv.with ? [dv.with.name] : [])) +
+				(dv.hubOnly ? ', all counted on the port.' : '. These are its devices\' figures; its cable carries the whole port.');
 		}
 		if (dv.st === 'off') { sdn = sup = 'offline'; note = 'Offline.'; tone = BAD; }
 	}
