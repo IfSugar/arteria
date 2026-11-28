@@ -216,6 +216,12 @@ const CASES = [
 	['Device', 0, 0, 0, 'wired', 'Raspberry Pi Trading Ltd', '', 'pi'],
 	['RP-AX56', 0, 0, 4, 'wifi', 'ASUSTek COMPUTER INC.', '', 'generic'],      // an ASUS repeater, not a Pi
 	['Echo Studio', 0, 45, 0, 'wifi', 'Amazon Technologies Inc.', '', 'smartspeaker'],
+	['Living room', 0, 43, 0, 'wifi', '', '', 'smartspeaker'],              // the router's Google Home icon: a smart speaker
+	['Living room', 44, 0, 0, 'wifi', '', '', 'smartspeaker'],              // its Amazon Alexa icon, picked
+	['Smart Speaker', 43, 0, 0, 'wifi', '', '', 'smartspeaker'],            // named so (GitHub #62)
+	['SmartSpeaker', 0, 0, 0, 'wifi', '', '', 'smartspeaker'],
+	['Kitchen Sonos', 43, 0, 0, 'wifi', '', '', 'speaker'],                 // the Google Home icon Arteria saved for a speaker before: the name says plain
+	['Bedroom speaker', 0, 0, 0, 'wifi', '', '', 'speaker'],
 	['Alexa Kitchen', 0, 0, 0, 'wifi', '', '', 'smartspeaker'],
 	["Alexa's iPhone", 0, 0, 5, 'wifi', 'Apple', '', 'phone'],
 	['Fire TV Bedroom', 0, 0, 0, 'wifi', 'Amazon Technologies Inc.', '', 'stick'],
@@ -492,6 +498,10 @@ eq(RL('<A>' + M1 + '>0>7>>', M1, '', 0), '', 'the last entry removed: an empty l
 eq(RL('', M1, 'Ünïcode lamp ✓', 60), '<Ünïcode lamp ✓>' + M1 + '>0>60>>', 'an empty list, any letters');
 /* each kind's saved icon reads back as that kind: the same icon, or a broader one its name narrows (LED strip -> light) */
 Object.keys(T.ASUS_TYPE).forEach(k => { const b = T.TYPE_KIND[T.ASUS_TYPE[k]]; if (b !== k && T.SUB[k] !== b) rlbad.push('icon ' + T.ASUS_TYPE[k] + ' for ' + k + ' reads back as ' + b); });
+// a smart speaker renamed saves the router's icon for its maker; a plain speaker none (the router has no icon for one)
+{ const at = (k, x) => T.asusType(k, x), got = [at('smartspeaker', 'Kitchen Echo '), at('smartspeaker', 'Smart Speaker Amazon Technologies Inc.'), at('smartspeaker', 'Smart Speaker Google, Inc.'),
+	at('smartspeaker', 'Bedroom HomePod '), at('speaker', 'Sonos One '), at('tv', 'LG TV ')];
+  if (JSON.stringify(got) !== '[44,44,43,45,0,23]') rlbad.push('icons saved for speakers: ' + JSON.stringify(got)); }
 ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s client list, as the router writes it', rlbad.join('; '));
 
 // ---- 15. the short rates on labels and lists carry their unit's letter: small for bits (k, m, g), capital for bytes (K, M, G)
