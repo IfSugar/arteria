@@ -4,7 +4,8 @@
     python3 .github/tests/preview.py [scenario] [port]      then open http://localhost:8000/user1.asp
 
 Scenarios: home (default), overload (the router paused itself), dead (no samples ever), nokey, offline, weak, busy, speedtest, quiet, nonode, bulbs, crowd, nodecrowd, house, kinds1..kinds6, newer, hostile, mesh4 (four nodes: more than the map has zones),
-wired (a managed switch with four devices on a LAN port, a device on the node's LAN port, a phone on the node's guest network).
+wired (a managed switch with four devices on a LAN port, a device on the node's LAN port, a phone on the node's guest network),
+meshswitch, meshswitch2, meshchain, meshnokey (three nodes on a switch; with devices on it too; a node wired behind another; a node not read).
 Counters grow with the clock at each device's rate, so the page computes live rates exactly as it
 does on a router. All names and addresses are made up.
 """
@@ -137,6 +138,68 @@ if SCN == 'quiet':
     DEVICES = [(m, n, w, b, d * 0.003, u * 0.003, r) for (m, n, w, b, d, u, r) in DEVICES]
 if SCN == 'nonode':
     DEVICES = [d for d in DEVICES if d[2] != 'node']
+# Nodes on a switch (meshswitch: three nodes on an unmanaged switch on the router's LAN 2; meshswitch2: two devices on that
+# switch too, and a NAS on LAN 4; meshchain: two nodes, the second wired behind the first; meshnokey: one of the three not read)
+MESH = SCN in ('meshswitch', 'meshswitch2', 'meshchain', 'meshnokey')
+MESH_NODES = [('02:10:00:00:07:01', 'Annex', 'RT-AX58U', '192.168.50.31'), ('02:10:00:00:07:02', 'Kitchen', 'RT-AX58U', '192.168.50.32'),
+              ('02:10:00:00:07:03', 'Master Bedroom', 'RT-AX58U', '192.168.50.33')][:2 if SCN == 'meshchain' else 3]
+if MESH:
+    DEVICES = [('02:CC:00:00:0F:00', 'iPhone 15', 'router', '5', 4.0, 0.5, -50), ('02:CC:00:00:0F:01', 'Office laptop', 'router', '5', 12.0, 1.5, -45),
+               ('02:CC:00:00:0F:02', 'Coffee machine', 'router', '2.4', 0.01, 0.01, -60)]
+    for k, (nm, alias, model, ip) in enumerate(MESH_NODES):
+        for j, (dn, band, d, u) in enumerate([('TV', '5', 6.0 - k, 0.3), ('iPad', '5', 1.2 + k, 0.2), ('sensor', '2.4', 0.01, 0.01)]):
+            DEVICES.append(('02:CC:00:00:0F:%02X' % (3 + 3 * k + j), '%s %s' % (alias, dn), 'mesh%d' % k, band, d, u, -50 - 4 * j - k))
+    if SCN == 'meshswitch2':
+        DEVICES += [('02:CC:00:00:0F:0C', 'Garage PC', 'wired', 'eth3', 3.0, 0.4, None), ('02:CC:00:00:0F:0D', 'Media NAS', 'wired', 'eth3', 0.8, 5.0, None),
+                    ('02:CC:00:00:0F:0E', 'Loft NAS', 'wired', 'eth5', 1.0, 2.0, None)]
+
+
+def sample_mesh(seq):
+    t = time.time() - T0
+    wrow = lambda ifn, band, mac, d, u, rssi, k: [ifn, band, mac, counter(d, t, k, 9e9), counter(u, t, k + 50, 1e9), rssi, 600, 600, 5000, 0, 'ax', 2, 80]
+    sta = [wrow('eth7' if b == '5' else 'eth6', b, m, d, u, r, 400 + i) for i, (m, n, w, b, d, u, r) in enumerate(DEVICES) if w == 'router']
+    own = []   # each node's own figures: its clients, and with the node behind it (meshchain) that one's too
+    for k, (nm, alias, model, ip) in enumerate(MESH_NODES):
+        cl = [x for x in DEVICES if x[2] == 'mesh%d' % k]
+        own.append((cl, sum(x[4] for x in cl) + 0.05, sum(x[5] for x in cl) + 0.02))
+    nodes, macs, port = [], [], {}
+    for k, (nm, alias, model, ip) in enumerate(MESH_NODES):
+        cl, d, u = own[k]
+        behind = SCN == 'meshchain' and k == 0
+        if behind:   # the second node is on its LAN port: its traffic goes through this one
+            d += own[1][1]; u += own[1][2]
+        read = not (SCN == 'meshnokey' and k == 1)
+        n = {'mac': nm, 'ip': ip, 'model': model, 'alias': alias, 'sta': '', 'state': 'ok' if read else 'nokey', 'up': '%.2f' % (30000.0 + k * 7 + t) if read else None,
+             'c': [wrow('wl1.1' if b == '5' else 'wl0.1', b, m, dd, uu, r, 500 + 20 * k + j) for j, (m, nn, w, b, dd, uu, r) in enumerate(cl)] if read else []}
+        if read:
+            n['u'] = [['eth0', counter(d, t, 600 + k, 4e8), counter(u, t, 610 + k, 6e7)]]
+            n['n'] = [['wl0.1', 'Home', 0], ['wl1.1', 'Home', 0]]
+            if behind:
+                n['w'] = [['eth3', 1, 1000, counter(own[1][2], t, 620, 5e7), counter(own[1][1], t, 621, 3e8)]]
+                n['m'] = [['eth3', MESH_NODES[1][0]]] + [['eth3', x[0]] for x in own[1][0]]
+        nodes.append(n)
+        if not (SCN == 'meshchain' and k == 1):
+            port['eth3'] = (port.get('eth3', (0.0, 0.0))[0] + d, port.get('eth3', (0.0, 0.0))[1] + u)
+        macs.append(['eth3', nm])
+        macs += [['eth3', x[0]] for x in cl]
+    for (m, nn, w, b, d, u, r) in DEVICES:
+        if w == 'wired':
+            macs.append([b, m])
+            port[b] = (port.get(b, (0.0, 0.0))[0] + d, port.get(b, (0.0, 0.0))[1] + u)
+    tot_d = sum(x[4] for x in DEVICES) + 0.2
+    tot_u = sum(x[5] for x in DEVICES) + 0.1
+    ifs = [['eth0', counter(max(tot_d - 20.0, 0.01), t, 700, 2.9e10), counter(max(tot_u - 3.0, 0.01), t, 701, 7.8e9)]]
+    for k, (p, (d, u)) in enumerate(sorted(port.items())):
+        ifs.append([p, counter(u, t, 710 + k, 7.8e7), counter(d, t, 720 + k, 4.6e8)])
+    for p in ('eth1', 'eth2', 'eth4', 'eth5'):
+        if p not in port:
+            ifs.append([p, '0', '0'])
+    return {'v': 1, 'seq': seq, 'up': '%.2f' % (25588.76 + t), 'epoch': int(time.time()), 'ms': 41, 'router': {'model': 'RT-AX86U', 'fw': '3004.388.13_0', 'load': '1.39'},
+            'interval': 2, 'nodes_mode': 'on', 'wan': 'eth0', 'ports': ['eth4', 'eth3', 'eth2', 'eth1', 'eth5'], 'own': OWN,
+            'links': [['eth0', 1, 1000]] + [[p, 1 if p in port else 0, 1000 if p in port else -1] for p in ('eth1', 'eth2', 'eth3', 'eth4', 'eth5')],
+            'macs': macs, 'ifs': ifs, 'sta': sta, 'nodes': nodes, 'nets': [['eth6', 'Home', 1], ['eth7', 'Home', 1]]}
+
+
 # Ordinary made-up devices get addresses from the IEEE documentation range 00:00:5E:00:53:xx (RFC 7042). A
 # 02:... address is locally administered, which the page reads as a private (randomised) Wi-Fi address; the
 # fixtures' private ones start 06:, 0A: or 0E: and are kept as they are.
@@ -169,6 +232,8 @@ def counter(rate_mbps, t, k, base):
 
 
 def sample(seq):
+    if MESH:
+        return sample_mesh(seq)
     t = time.time() - T0
     up = 25588.76 + t
     sta, node_c = [], []
