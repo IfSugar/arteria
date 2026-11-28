@@ -91,7 +91,7 @@ ssh admin@192.168.50.1 'sh /tmp/arteria-install/arteria.sh install; rm -rf /tmp/
 
 **How a kind is chosen**, first match wins:
 
-1. **The icon you chose** for the device in the router's client list (*Network Map → Clients*), when it's a specific one. When the icon is just the router's own guess, or a computer, phone, tablet, watch or console icon on a device named after a home device, the name decides instead.
+1. **The icon you chose** for the device in the router's client list (*Network Map → Clients*), when it's a specific one. When the icon is just the router's own guess, or a computer, phone, tablet, watch or console icon on a device named after a home device, or a smart speaker's icon on one named as a plain speaker (*Kitchen Sonos*), the name decides instead.
 2. **Its name**: the nickname you gave it, or its own host name (`DESKTOP-…` is a Windows PC, `wiz_…` a bulb, `LGwebOSTV` a TV). The rules look for words, not your device names, and words run together count too: *JohnsNas*, *KidsTV* and *office_printer* are read like *John's NAS*.
 3. **What the router detected**, and whether a Windows device is wired (a desktop) or on Wi-Fi (a laptop).
 4. **Its maker** and the DHCP vendor class it sent.
