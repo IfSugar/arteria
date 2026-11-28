@@ -2,6 +2,18 @@
 
 What changed in each release of Arteria. The release workflow copies a version's section into its GitHub release notes, so write for people running the addon.
 
+## 2.4.0
+
+The switch your AiMesh nodes are on now shows on the map, and switches chained on one port are named after all of them. Thanks to jksmurf and scootertramp in the SNBForums thread for the reports and screenshots.
+
+- **The switch your nodes are on is drawn.** Nodes behind an unmanaged switch on one router port each had a cable of their own from the router, with no switch in sight: an unmanaged switch has no address, so it can't be named. Arteria now knows it's there from what is on the port, and draws it beside the router, with the nodes' cables leaving from it. Its cable from the router carries the whole port's traffic, and tapping a node traces it through the switch.
+  - It's drawn only where it's sure to be there: two or more things on the port (nodes, or a node and other devices), every node on it read over SSH (its key set up), and none wired behind another. A node wired behind another looks the same from the router, and only the node in front can say so. Otherwise the map is as before. Once drawn, it stays while a node is briefly busy or not answering.
+  - It costs no device its place on the map: Arteria lays the map out with the switch and without it, and keeps it only when every device that stands without it stands with it too. It never stands on a node's drawing or behind the router. A crowded page view may therefore show it only in the expanded view.
+- **Switches chained on one port are named after all of them.** Two managed switches chained on one port, each named with "switch", showed as *Switch on 10G port*: the router learns them both on that port, so which one is plugged into it can't be told. The port's switch is now named after them (*teg-switch01 + tpe-switch02*), and both stay in its list with their details. With three or more: the first two, then a count.
+- **Labels keep a little more clear of node cables.** In rare layouts a node's cable ran just under the router's label.
+
+As with the earlier feature releases, separate AI reviewers checked this one for security problems and bugs before it went out, and what they found was fixed: the switch's drawing could stand on a node's, the map was laid out too often on a busy network, and a node's brief state changes made the switch come and go.
+
 ## 2.3.1
 
 The router no longer logs you out while Arteria's page is open, and a switch is no longer named after a TV tuner behind it. Thanks to Slapdaddy in the SNBForums thread for the report, and to Squall Leonhart, who suggested the first for WiFi Insight.

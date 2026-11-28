@@ -15,7 +15,7 @@
 #              https://github.com/IfSugar/arteria/releases/latest/download/arteria.sh -o "$d/arteria.sh" && sh "$d/arteria.sh" install
 ###############################################################################
 
-VERSION="2.3.1"
+VERSION="2.4.0"
 NAME="arteria"
 # Files and folders only root can change. Scripts the router starts from service-event run with no umask, which made
 # the page's data files and their folder writable by any program on the router.
