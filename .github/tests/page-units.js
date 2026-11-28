@@ -840,12 +840,13 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	A.sel = '00:00:5E:00:53:B6'; const ro2 = T.readoutFor(n), cell = T.detailsFor(n, n.byId['00:00:5E:00:53:B6']).filter(c => c[0] === 'Behind')[0]; A.sel = null;
 	ok(cell && cell[1] === 'Switch-02 · 2 devices' && /all 2 of its devices and the switch together/.test(ro2.note) && ro2.dnS === 'counted with Switch-02',
 		'a device behind a managed switch: its details and readout name the switch', JSON.stringify({ cell: cell && cell[1], note: ro2.note, s: ro2.dnS }));
-	// one more device named like a switch on the router's port: which one is the switch can't be told, so neither is taken
+	// one more device named like a switch on the router's port: which one is on the port can't be told, so neither is taken
+	// for the switch itself; the port's switch is named after both, and both stay in its list
 	const n2 = ms(2, [['eth1', '00:00:5E:00:53:B4']]);
 	A.names.custom['00:00:5E:00:53:B4'] = { name: 'Switch-03', type: 0 };
 	const n3 = ms(3, [['eth1', '00:00:5E:00:53:B4']]), sw3 = n3.byId['port:eth1'];
-	ok(n2.byId['port:eth1'].name === 'Switch-01' && sw3 && sw3.name === 'Switch on LAN 2' && sw3.count === 4 && !sw3.self,
-		'two devices that look like switches on one port: neither is taken as the switch', JSON.stringify({ name: sw3 && sw3.name, count: sw3 && sw3.count }));
+	ok(n2.byId['port:eth1'].name === 'Switch-01' && sw3 && sw3.name === 'Switch-01 + Switch-03' && sw3.count === 4 && !sw3.self,
+		'two devices that look like switches on one port: neither is taken as the switch, which is named after both', JSON.stringify({ name: sw3 && sw3.name, count: sw3 && sw3.count }));
 	// a device the router detected as a router or switch (a TV tuner, say), not named so or given that icon: not the switch
 	delete A.names.custom['00:00:5E:00:53:B4']; delete A.names.custom[S1]; delete A.names.lease[S1]; A.names.nmp['00:00:5E:00:53:B4'] = { name: 'HDHomeRun', type: '2' };
 	const n4 = ms(4, [['eth1', '00:00:5E:00:53:B4']]), sw4 = n4.byId['port:eth1'], tuner = sw4 && sw4.behind.filter(b => b.mac === '00:00:5E:00:53:B4')[0];
@@ -866,6 +867,16 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 	ok(!took.length && sw5 && sw5.name === 'Office switch' && sw5.self && sw5.count === 3,
 		'a router or repeater icon kept from the router\'s guess doesn\'t make a device the switch; a name saying switch does',
 		JSON.stringify({ took, name: sw5 && sw5.name, count: sw5 && sw5.count }));
+	// two managed switches chained on the port, both named so: which one is on the port can't be told, so the port's switch is
+	// named after both (in name order, whatever order the router lists them in), and both stay in its list; three: two, then a count
+	A.names.custom[T4] = { name: 'tpe-switch02', type: 0 }; A.names.custom[S1] = { name: 'teg-switch01', type: 0 };
+	const sw6 = ms(10, [['eth1', T4]]).byId['port:eth1'], sw7 = ms(11, [['eth1', T4]].reverse()).byId['port:eth1'];
+	const T5 = '00:00:5E:00:53:B8'; A.names.custom[T5] = { name: 'Attic Switch', type: 0 };
+	const sw8 = ms(12, [['eth1', T5], ['eth1', T4]]).byId['port:eth1'];
+	ok(sw6 && sw6.name === 'teg-switch01 + tpe-switch02' && !sw6.self && !sw6.mac && sw6.count === 4 && names(sw6).indexOf('teg-switch01') >= 0 && names(sw6).indexOf('tpe-switch02') >= 0
+		&& sw7.name === sw6.name && sw8.name === 'Attic Switch + teg-switch01 + 1 more' && sw8.count === 5,
+		'switches chained on a port, all named so: the port\'s switch is named after them, and they stay in its list',
+		JSON.stringify({ name: sw6 && sw6.name, self: !!(sw6 && sw6.self), count: sw6 && sw6.count, behind: sw6 && names(sw6), n8: sw8 && sw8.name }));
 	A.names = AR.parseNames({});
 }
 

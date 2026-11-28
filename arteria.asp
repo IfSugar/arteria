@@ -1257,13 +1257,21 @@ function buildNet(d) {
 	});
 	/* A managed switch has an address of its own, which the router learns on the port with the devices behind it. That one is the
 	   switch itself, not a device behind it: the switch takes its name and details (renaming it renames the switch), and lists
-	   only the others. Picking it from anywhere picks the switch. Two that both look like switches: neither is taken. Only one whose
-	   name says "switch" (yours, or the one it gives itself), not its maker's: the type the router detected can be wrong (it called a
-	   TV tuner a router), and so can an icon in the router's client list. That list has no switch icon, only a router's and a
-	   repeater's, the ones the router hands out itself to what it can't place, and saving a nickname there keeps the icon the router
-	   showed then. A switch's model name (GS724T) may be any of several switches chained on the port. */
+	   only the others. Picking it from anywhere picks the switch. Only one whose name says "switch" (yours, or the one it gives
+	   itself), not its maker's: the type the router detected can be wrong (it called a TV tuner a router), and so can an icon in the
+	   router's client list. That list has no switch icon, only a router's and a repeater's, the ones the router hands out itself to
+	   what it can't place, and saving a nickname there keeps the icon the router showed then. A switch's model name (GS724T) may be
+	   any of several switches chained on the port.
+	   Two or more whose names say so: switches chained on the port, and the router learns them all there, so which one is on the
+	   port can't be told. The port's switch is named after them all (tpe-switch02 + teg-switch01, in name order, so it doesn't
+	   change from sample to sample), and they stay in its list, each with its details. */
 	net.devs.forEach(function (dv) {
 		var me = dv.behind ? dv.behind.filter(function (b) { return b.kind === 'switch' && (b.nameSrc === 'nick' || b.nameSrc === 'alias' || b.nameSrc === 'device') && /switch/i.test(b.name); }) : [];
+		if (me.length > 1) {
+			var nm = me.slice().sort(byName).map(function (b) { return b.name; });
+			dv.name = nm.slice(0, 2).join(' + ') + (nm.length > 2 ? ' + ' + (nm.length - 2) + ' more' : '');
+			return;
+		}
 		if (me.length !== 1) return;
 		me = me[0];
 		dv.self = me; dv.behind = dv.behind.filter(function (b) { return b !== me; }); dv.count = dv.behind.length;
