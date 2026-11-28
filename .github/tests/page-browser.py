@@ -258,7 +258,10 @@ async def scenario(b, scn, port):
                 for w, h in ((1440, 900), (1180, 760)):
                     await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(700)
                     r = await pg.evaluate(ROOM); u = await pg.evaluate(LINES_UNDER); c = await pg.evaluate(LABEL_COVERS)
-                    behind = await pg.evaluate("""() => { const L = Arteria.state.layout; return L.wired.filter(x => x.hub && x.slot.cx + x.slot.cy < 14.2).length; }""")
+                    # behind the router: drawn before it (less deep) where the two drawings meet, so the router hides it. Beside it,
+                    # by the plate's left corner, is fine even though it is a little less deep
+                    behind = await pg.evaluate("""() => { const L = Arteria.state.layout, T = Arteria._t, rt = T.objRouter(Arteria.state.net.router.model);
+                        return L.wired.filter(x => { const o = T.objDevice('hub', 'switch', x.slot.cx, x.slot.cy, 'L'); return x.hub && o.depth < rt.depth && T.hullsMeet(o.hull(), rt.hull(), 0); }).length; }""")
                     fit.append((w, [o for o in r['on'] if 'port:' in o], u, c, behind))
                 await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
                 check(all(not f[1] and not f[2] and f[3] == 0 and f[4] == 0 for f in fit), tag + ': in smaller windows, the switch is on no node\'s drawing, not behind the router, and lines and labels keep apart (%s)' % fit)
@@ -554,6 +557,20 @@ async def rename(b, port):
         await pg.wait_for_timeout(2300)
         kind = await pg.evaluate("Arteria.state.net.byId['%s'].kind" % mac)
         check('<Lounge purifier>%s>0>0>>' % mac in saved and saved.count(mac) == 1 and kind == 'purifier', 'rename: Enter saves it in the router\'s client list, and the device is drawn as an air purifier (%s)' % kind)
+        # a smart speaker saves its maker's icon; a plain speaker none, and a name without a kind word doesn't keep the Google
+        # Home icon an earlier version saved for it (kept, it would make the speaker a smart speaker)
+        async def ren_to(v):
+            await pg.click('#arRoEdit'); await pg.fill('#arRoIn', v); await pg.keyboard.press('Enter')
+            await pg.wait_for_function("document.getElementById('arRoName').textContent === %r && document.getElementById('arRoEd').classList.contains('hide')" % v, timeout=15000)
+            return await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
+        echo = await ren_to('Echo Dot')
+        sonos = await ren_to('Kitchen Sonos')
+        await pg.evaluate("(m => fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => fetch('/start_apply.htm', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action_mode=apply&action_script=saveNvram&custom_clientlist=' + encodeURIComponent(n.custom.replace('<Kitchen Sonos>' + m + '>0>0>>', '<Kitchen Sonos>' + m + '>0>43>>')) })))('%s')" % mac)
+        old = '<Kitchen Sonos>%s>0>43>>' % mac in await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
+        plain = await ren_to('Kitchen')
+        check('<Echo Dot>%s>0>44>>' % mac in echo and '<Kitchen Sonos>%s>0>0>>' % mac in sonos and old and '<Kitchen>%s>0>0>>' % mac in plain,
+              'rename: an Echo saves the Alexa icon, a Sonos none, and renaming one to a name without a kind word drops the Google Home icon an earlier version saved (%s)'
+              % ([e for e in (echo + sonos + plain).split('<') if mac in e] + [old],))
         # Escape while renaming in the expanded view only leaves the name
         await pg.click('#arBig'); await pg.wait_for_timeout(300)
         await pg.click('#arRoName'); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)

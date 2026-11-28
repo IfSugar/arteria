@@ -594,15 +594,16 @@ var TYPE_KIND = {
    (a Sonos) none: the router has no icon for one. */
 var ASUS_TYPE = { desktop: 34, mac: 14, laptop: 35, phone: 10, tablet: 20, tv: 23, streamer: 11, soundbar: 47, smartspeaker: 43, console: 7, nas: 4,
 	printer: 18, camera: 5, doorbell: 85, lock: 63, air: 49, light: 60, vacuum: 61, plug: 70, sensor: 62, watch: 64, appliance: 50, strip: 60, boiler: 50 };
-function asusType(kind, txt) {   /* txt: the name, and the maker */
-	if (kind === 'smartspeaker') return /echo|alexa|amazon/i.test(txt) ? 44 : /homepod|apple/i.test(txt) ? 45 : 43;
+function asusType(kind, name, maker) {   /* a smart speaker: the name says whose, else the maker */
+	if (kind === 'smartspeaker') return /homepod/i.test(name) ? 45 : /echo|alexa(?!['’]s)/i.test(name) ? 44 : /amazon/i.test(maker) ? 44 : /apple/i.test(maker) ? 45 : 43;
 	return ASUS_TYPE[kind] || 0;
 }
 /* Kinds that are a closer look at a broader one the router has an icon for: a name saying one of these narrows that icon */
-var SUB = { strip: 'light', boiler: 'appliance', washer: 'appliance', dryer: 'appliance', dishwasher: 'appliance' };
-/* An icon a name of another kind sees through: the router's smart-speaker icons on a speaker its name says is a plain one
-   (a Sonos). The router has no other speaker icon, and earlier versions of Arteria saved the Google Home one for any speaker. */
-var NAME_OVER = { speaker: 'smartspeaker' };
+var SUB = { strip: 'light', boiler: 'appliance', washer: 'appliance', dryer: 'appliance', dishwasher: 'appliance', display: 'smartspeaker' };
+/* An icon that gives way to a kind its device says it is: the router's Google Home icon on a speaker whose names (yours, or
+   its own: SonosZP) or maker say it's a plain one, a Sonos. The router has no plain speaker icon, and earlier versions of
+   Arteria saved the Google Home one for every speaker they renamed. An Alexa or HomePod icon was always picked by hand. */
+var ICON_GIVES = { 43: 'speaker' };
 /* The router's client list (custom_clientlist) with one device's entry changed, as the router's own editor writes it:
    "<name>MAC>0>icon>>", other fields kept as they were (newer firmware writes a few more empty ones: a new entry takes the
    shape of the others). No name removes the entry: the router's own name and icon come back. Every other entry stays as it
@@ -761,6 +762,12 @@ function classify(mac, name, link, al) {
 	/* What a name says: as written first, then with words run together split apart (only when nothing matched as written,
 	   so "Somfy TaHoma" stays a hub) */
 	var byName = function (s, j) { var k = nameKind(s, link === 'wifi'); return k ? res(k.kind, 'name', KEYS[j] + ' #' + k.i + (k.split ? ' split' : '')) : null; };
+	var gives = function (t) {   /* the saved icon gives way (ICON_GIVES): the first name that says a kind, else the maker, says that kind */
+		if (!ICON_GIVES[t]) return false;
+		for (var q = 0, s; q < names.length; q++) if ((s = byName(names[q], q))) return s.kind === ICON_GIVES[t];
+		var w = [m && m.vendor, m && m.vendorclass].join(' ');
+		return KIND_WEAK.some(function (e) { return e[0] === ICON_GIVES[t] && e[1].test(w); });
+	};
 	/* 1. the icon you picked in the router's client list. Saving a nickname there also saves whatever icon the editor showed,
 	   often only the router's guess at the time, so the name comes first when the saved icon is:
 	   - the router's own guess (the same icon it detects), or a loose one (any computer, any phone);
@@ -770,14 +777,15 @@ function classify(mac, name, link, al) {
 	   A name that says a closer kind of what the icon shows narrows it: a light named "Desk LED strip" is an LED strip. */
 	var key = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
 	var typed = names[0] && [l && l.host, m && m.name].every(function (h) { return !h || key(h) !== key(names[0]); }), mine = typed ? byName(names[0], 0) : null;
-	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt) && !(mine && PERSONAL[TYPE_KIND[ct]] && !PERSONAL[mine.kind]) && !(mine && (SUB[mine.kind] === TYPE_KIND[ct] || NAME_OVER[mine.kind] === TYPE_KIND[ct]))) return res(TYPE_KIND[ct], 'your icon');
+	var gave = ct !== nt && gives(ct);
+	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt) && !(mine && PERSONAL[TYPE_KIND[ct]] && !PERSONAL[mine.kind]) && !(mine && SUB[mine.kind] === TYPE_KIND[ct]) && !gave) return res(TYPE_KIND[ct], 'your icon');
 	/* 2. a name that says what it is: your nickname, then the names the device gave */
 	for (j = 0; j < names.length; j++) if ((r = byName(names[j], j))) return r;
 	/* a Wi-Fi module's maker with the name its firmware gives, when the pair says what the device is */
 	var mk = [m && m.vendor, m && m.vendorclass].join(' ');
 	for (i = 0; i < MODULE_KIND.length; i++) if (MODULE_KIND[i][1].test(mk) && [l && l.host, m && m.name].some(function (h) { return h && MODULE_KIND[i][2].test(h); })) return res(MODULE_KIND[i][0], 'module', '#' + i);
-	/* 3. the router's own icon number */
-	var t = ct || nt;
+	/* 3. the router's own icon number (not a saved one that gave way: the maker says what it is) */
+	var t = gave ? nt : ct || nt;
 	if (t === 30 || (!TYPE_KIND[t] && os === 2)) return res(link === 'wired' ? 'desktop' : 'laptop', 'windows + link');
 	if (TYPE_KIND[t]) return res(TYPE_KIND[t], ct ? 'saved icon' : 'router icon');
 	/* 4. Android says so itself (before the maker: phones carry Wi-Fi chips from module makers), then maker and DHCP vendor class */
@@ -1301,7 +1309,7 @@ function buildNet(d) {
 	   what it can't place, and saving a nickname there keeps the icon the router showed then. A switch's model name (GS724T) may be
 	   any of several switches chained on the port.
 	   Two or more whose names say so: switches chained on the port, and the router learns them all there, so which one is on the
-	   port can't be told. The port's switch is named after them all (tpe-switch02 + teg-switch01, in name order, so it doesn't
+	   port can't be told. The port's switch is named after them all (teg-switch01 + tpe-switch02, in name order, so it doesn't
 	   change from sample to sample), and they stay in its list, each with its details. */
 	net.devs.forEach(function (dv) {
 		var me = dv.behind ? dv.behind.filter(function (b) { return b.kind === 'switch' && (b.nameSrc === 'nick' || b.nameSrc === 'alias' || b.nameSrc === 'device') && /switch/i.test(b.name); }) : [];
@@ -3758,8 +3766,8 @@ function buildFlow(gs) {
 	var rb = function (key, cls) {
 		keys.push(key);
 		var dl = function (i) { return (-((hash(key) * 17 + i * 29) % 100) / 100 * 1.4).toFixed(2); };
-		return '<g data-rb="' + key + '" class="rb"><path data-f="' + key + '" class="rf' + (cls || '') + '" d="M0 0"/>' +
-			[0, 1, 2].map(function (i) { return '<path data-s="' + key + '|' + i + '" class="df-a sk bx" d="M0 0" style="animation-delay:' + dl(i) + 's"/>'; }).join('') + '</g>';
+		return '<g data-rb="' + esc(key) + '" class="rb"><path data-f="' + esc(key) + '" class="rf' + (cls || '') + '" d="M0 0"/>' +
+			[0, 1, 2].map(function (i) { return '<path data-s="' + esc(key) + '|' + i + '" class="df-a sk bx" d="M0 0" style="animation-delay:' + dl(i) + 's"/>'; }).join('') + '</g>';
 	};
 	o.push(rb('src:wan'), rb('src:loc', ' loc'));
 	gs.forEach(function (g) {
@@ -3768,15 +3776,15 @@ function buildFlow(gs) {
 		g.rows.forEach(function (r) { o.push(rb('d:' + r.id, g.node && g.node.state !== 'ok' ? ' nd' : (g.node ? ' bhc' : ''))); });
 	});
 	o.push('<path data-hl="a" class="rf hl hide" d="M0 0"/><path data-hl="b" class="rf hl hide" d="M0 0"/>');
-	var bar = function (key, x, w, cls) { return '<rect data-br="' + key + '" x="' + x + '" y="0" width="' + w + '" height="0" rx="2" class="' + cls + '"/>'; };
+	var bar = function (key, x, w, cls) { return '<rect data-br="' + esc(key) + '" x="' + x + '" y="0" width="' + w + '" height="0" rx="2" class="' + cls + '"/>'; };
 	o.push(bar('src:wan', FX0.src, FBW.src, 'bf'), bar('src:loc', FX0.src, FBW.src, 'bf'));
 	o.push('<rect data-br="rt" x="' + FX0.rt + '" y="0" width="' + FBW.rt + '" height="0" rx="2" style="fill:' + ACC + '"/>');
 	gs.forEach(function (g) {
 		o.push(bar('g:' + g.id, FX0.link, FBW.link, g.node ? 'bm' : 'bf'));
-		if (g.node) o.push(bar('n:' + g.id, FX0.mesh, FBW.mesh, 'bm'), '<rect data-br="brk:' + g.id + '" x="' + (FX0.dev + FBW.dev + 2) + '" y="0" width="2" height="0" rx="1" class="hide" style="fill:#c3c2b7"/>');
+		if (g.node) o.push(bar('n:' + g.id, FX0.mesh, FBW.mesh, 'bm'), '<rect data-br="brk:' + esc(g.id) + '" x="' + (FX0.dev + FBW.dev + 2) + '" y="0" width="2" height="0" rx="1" class="hide" style="fill:#c3c2b7"/>');
 		g.rows.forEach(function (r) { o.push(bar('d:' + r.id, FX0.dev, FBW.dev, g.node ? 'bm' : 'bf')); });
 	});
-	var lbl = function (key, inner) { return '<g data-tx="' + key + '" transform="translate(0 0)">' + inner + '</g>'; };
+	var lbl = function (key, inner) { return '<g data-tx="' + esc(key) + '" transform="translate(0 0)">' + inner + '</g>'; };
 	o.push(lbl('src:wan', '<text x="' + (FX0.src - 8) + '" y="-2" style="font-size:12px;font-weight:700;fill:#f0efec;text-anchor:end">Internet</text><text data-t="agg:wan" x="' + (FX0.src - 8) + '" y="12" style="font-size:10.5px;fill:#c3c2b7;text-anchor:end;font-variant-numeric:tabular-nums"></text>'));
 	o.push(lbl('src:loc', '<text x="' + (FX0.src - 8) + '" y="-2" style="font-size:12px;font-weight:700;fill:#f0efec;text-anchor:end">Local</text><text data-t="agg:loc" x="' + (FX0.src - 8) + '" y="12" style="font-size:10.5px;fill:#c3c2b7;text-anchor:end;font-variant-numeric:tabular-nums"></text><text x="' + (FX0.src - 8) + '" y="25" style="font-size:10px;fill:#93a9b1;text-anchor:end">LAN ↔ LAN</text>'));
 	o.push(lbl('rt', '<text data-t="rtname" x="' + (FX0.rt + 6) + '" y="0" style="font-size:12px;font-weight:700;fill:#ffcc00;text-anchor:middle"></text>'));
@@ -4224,9 +4232,12 @@ function renameSave() {
 	   a row never undo each other, and nothing is posted without that list. */
 	var job = (A.renQ || Promise.resolve()).then(liveClientList).then(function (live) {
 		var lc = parseNames({ custom: live.custom }).custom[r.mac];
-		/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
-		var m0 = A.names && A.names.nmp && A.names.nmp[r.mac];
-		var raw = renameList(live.custom, r.mac, v, k ? asusType(k.kind, v + ' ' + (m0 && m0.vendor || '')) : (lc ? lc.type : 0));
+		/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon,
+		   but not one that gave way to what the old name said (the Google Home icon on a Sonos): kept, it would make a
+		   "Stays Speaker" a smart speaker */
+		var m0 = A.names && A.names.nmp && A.names.nmp[r.mac], keep = lc ? lc.type : 0;
+		if (ICON_GIVES[keep] === r.kind) keep = 0;
+		var raw = renameList(live.custom, r.mac, v, k ? asusType(k.kind, v, String(m0 && m0.vendor || '')) : keep);
 		/* the same token again: once saved, the router deletes the copy of its list it wrote for this rename */
 		return fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 			body: pokeBody('saveNvram;start_arterianames' + live.tok) + '&custom_clientlist=' + encodeURIComponent(raw) }).then(null, function () {});   /* sent: the check says whether it took */
@@ -4279,12 +4290,12 @@ function buildReport(net) {
 		if (!dv.mac) return;   /* a port with no address learned on it */
 		var w = dv.why || {}, mac = dv.mac, c = N.custom && N.custom[mac], m = N.nmp && N.nmp[mac], l = N.lease && N.lease[mac];
 		var has = [c && c.name ? 'nick' : '', dv.alias ? 'matched' : '', l && l.host ? 'host' : '', m && m.vendor ? 'maker' : '', m && m.vendorclass ? 'vc' : ''].filter(Boolean).join(',') || '-';
-		rows.push(pad(dv.kind, 11) + pad((w.rule || '?') + (w.tok ? ': ' + w.tok : ''), 24) + pad((w.ct || 0) + '/' + (w.nt || 0), 8) + pad(w.os || 0, 4)
+		rows.push(pad(dv.kind, 13) + pad((w.rule || '?') + (w.tok ? ': ' + w.tok : ''), 24) + pad((w.ct || 0) + '/' + (w.nt || 0), 8) + pad(w.os || 0, 4)
 			+ pad(dv.link === 'wired' ? 'wired' : (dv.band || '?') + ' GHz', 9) + pad(isPrivate(mac) ? 'yes' : 'no', 8) + has);
 	});
 	rows.sort();
 	return ['Arteria ' + VERSION + ' · ' + ((net && net.router.model) || 'router') + ' · ' + rows.length + ' devices',
-		pad('kind', 11) + pad('rule', 24) + pad('icon', 8) + pad('os', 4) + pad('link', 9) + pad('private', 8) + 'has'].concat(rows,
+		pad('kind', 13) + pad('rule', 24) + pad('icon', 8) + pad('os', 4) + pad('link', 9) + pad('private', 8) + 'has'].concat(rows,
 		['', 'icon: the ASUS icon number saved in the client list / found by the router.', 'os: 1 Android, 2 Windows, 3 Linux, 4 ASUS, 5 Apple.',
 		'has: which name sources exist (nickname, host name, maker, DHCP vendor class), never their text.']).join('\n');
 }

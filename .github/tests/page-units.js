@@ -221,6 +221,11 @@ const CASES = [
 	['Smart Speaker', 43, 0, 0, 'wifi', '', '', 'smartspeaker'],            // named so (GitHub #62)
 	['SmartSpeaker', 0, 0, 0, 'wifi', '', '', 'smartspeaker'],
 	['Kitchen Sonos', 43, 0, 0, 'wifi', '', '', 'speaker'],                 // the Google Home icon Arteria saved for a speaker before: the name says plain
+	['Kitchen', 43, 0, 0, 'wired', 'Sonos, Inc.', '', 'speaker'],            // ...or the maker does, when the name says nothing
+	['Device …53:B0', 43, 0, 0, 'wired', 'Sonos, Inc.', '', 'speaker'],
+	['Kitchen', 43, 0, 0, 'wifi', 'Google, Inc.', '', 'smartspeaker'],       // a Google Home with its own icon
+	['Bedroom speaker', 44, 0, 0, 'wifi', '', '', 'smartspeaker'],           // the Alexa icon is always picked by hand: it wins
+	['Echo Show Kitchen', 44, 0, 0, 'wifi', '', '', 'display'],              // a smart display narrows a smart speaker's icon
 	['Bedroom speaker', 0, 0, 0, 'wifi', '', '', 'speaker'],
 	['Alexa Kitchen', 0, 0, 0, 'wifi', '', '', 'smartspeaker'],
 	["Alexa's iPhone", 0, 0, 5, 'wifi', 'Apple', '', 'phone'],
@@ -256,6 +261,12 @@ CASES.forEach((c, i) => {
 	if (r.kind !== c[7]) bad.push(c[0] + ' (' + c[1] + '/' + c[2] + ') -> ' + r.kind + ' by ' + r.rule + ', expected ' + c[7]);
 });
 ok(!bad.length, 'classification: ' + CASES.length + ' cases', bad.join('; '));
+// the Google Home icon gives way to a plain speaker's own host name too, not only a name you typed (a nickname that is just
+// the host name tidied up isn't one you typed)
+{ const mac = '00:00:5E:00:54:01', N = A.names; N.lease = N.lease || {};
+  N.custom[mac] = { name: 'Sonos Kitchen', type: 43 }; N.nmp[mac] = { name: '', vendor: '', vendorclass: '', type: 0, os_type: 0 }; N.lease[mac] = { host: 'Sonos-Kitchen' };
+  const r = T.classify(mac, 'Sonos Kitchen', 'wired');
+  ok(r.kind === 'speaker', 'the Google Home icon on a Sonos named after its host name: a speaker', r.kind + ' by ' + r.rule); }
 
 // ---- 2. every kind the rules can produce has a drawing of its own, an icon and a label
 const kinds = new Set(['generic', 'switch', 'iot']);
@@ -499,9 +510,10 @@ eq(RL('', M1, 'Ünïcode lamp ✓', 60), '<Ünïcode lamp ✓>' + M1 + '>0>60>>'
 /* each kind's saved icon reads back as that kind: the same icon, or a broader one its name narrows (LED strip -> light) */
 Object.keys(T.ASUS_TYPE).forEach(k => { const b = T.TYPE_KIND[T.ASUS_TYPE[k]]; if (b !== k && T.SUB[k] !== b) rlbad.push('icon ' + T.ASUS_TYPE[k] + ' for ' + k + ' reads back as ' + b); });
 // a smart speaker renamed saves the router's icon for its maker; a plain speaker none (the router has no icon for one)
-{ const at = (k, x) => T.asusType(k, x), got = [at('smartspeaker', 'Kitchen Echo '), at('smartspeaker', 'Smart Speaker Amazon Technologies Inc.'), at('smartspeaker', 'Smart Speaker Google, Inc.'),
-	at('smartspeaker', 'Bedroom HomePod '), at('speaker', 'Sonos One '), at('tv', 'LG TV ')];
-  if (JSON.stringify(got) !== '[44,44,43,45,0,23]') rlbad.push('icons saved for speakers: ' + JSON.stringify(got)); }
+{ const at = (k, n, m) => T.asusType(k, n, m || ''), got = [at('smartspeaker', 'Kitchen Echo'), at('smartspeaker', 'Smart Speaker', 'Amazon Technologies Inc.'), at('smartspeaker', 'Smart Speaker', 'Google, Inc.'),
+	at('smartspeaker', 'Bedroom HomePod'), at('speaker', 'Sonos One'), at('tv', 'LG TV'), at('smartspeaker', "Alexa's smart speaker", 'Google, Inc.'),
+	at('smartspeaker', "Alexa's HomePod"), at('smartspeaker', 'HomePod mini', 'Amazon Technologies Inc.'), at('smartspeaker', 'Smart Speaker', 'EchoStar Corporation')];
+  if (JSON.stringify(got) !== '[44,44,43,45,0,23,43,45,45,43]') rlbad.push('icons saved for speakers: ' + JSON.stringify(got)); }
 ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s client list, as the router writes it', rlbad.join('; '));
 
 // ---- 15. the short rates on labels and lists carry their unit's letter: small for bits (k, m, g), capital for bytes (K, M, G)
