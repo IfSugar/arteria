@@ -1102,4 +1102,47 @@ ok(!rlbad.length, 'Renaming rewrites only that device\'s entry in the router\'s 
 		' laid out afresh for a busy one with no room otherwise)', moved.slice(0, 4).join('; ') + ' refits ' + refits);
 }
 
+// ---- 33. nodes on a switch: a switch is drawn between the router and them only where it is sure to be there (two or more
+// things on the port, every node there read, none wired behind another), with the port's figure; and the map draws it only
+// where it costs no device its stand
+{
+	const B = 250000, N1 = '02:10:00:00:07:01', N2 = '02:10:00:00:07:02', N3 = '02:10:00:00:07:03', PC = '00:00:5E:00:53:C1', NAS = '00:00:5E:00:53:C2';
+	const nd = (mac, alias, k, o) => Object.assign({ mac, ip: '192.168.50.' + (30 + alias.length), model: 'RT-AX58U', alias, sta: '', state: 'ok', up: (5000 + 2 * k).toFixed(1), c: [],
+		u: [['eth0', String(1000 + k * 20 * B), String(1000 + k * 2 * B)]] }, o || {});
+	const mk = (k, nodes, extra) => AR.buildNet(smp({ up: (8000 + 2 * k).toFixed(1), ports: ['eth1', 'eth2'], links: [['eth0', 1, 1000], ['eth1', 1, 1000], ['eth2', 0, -1]], plab: { eth1: '1' },
+		ifs: [['eth0', '1', '1'], ['eth1', String(1000 + k * 8 * B), String(1000 + k * 90 * B)]], macs: nodes.map(n => ['eth1', n.mac]).concat(extra || []), nodes }));
+	const two = (nodes, extra) => { Object.keys(A.prev).forEach(k => { delete A.prev[k]; }); Object.keys(A.sm).forEach(k => { delete A.sm[k]; }); mk(0, nodes(0), extra); return mk(1, nodes(1), extra); };
+	const three = k => [nd(N1, 'Annex', k), nd(N2, 'Kitchen', k), nd(N3, 'Master Bedroom', k)];
+	const n1 = two(three), h1 = n1.hubs[0];
+	ok(n1.hubs.length === 1 && h1.hubOnly && h1.name === 'Switch on LAN 1' && h1.kind === 'switch' && h1.hub.nodes.length === 3 && n1.byId['port:eth1'] === h1 && n1.devs.indexOf(h1) < 0
+		&& n1.clients === 0 && h1.hub.s.dn > 50 && n1.nodes.every(n => h1.hub.nodes.indexOf(n) >= 0),
+		'three nodes, each read, on one port: a switch of their own, with the port\'s figure, and not a device of the network\'s',
+		JSON.stringify({ hubs: n1.hubs.length, name: h1 && h1.name, nodes: h1 && h1.hub.nodes.length, dn: h1 && h1.hub.s.dn, clients: n1.clients }));
+	const chain = k => [nd(N1, 'Annex', k, { w: [['eth3', 1, 1000, String(1000 + k * B), String(1000 + k * 10 * B)]], m: [['eth3', N2]] }), nd(N2, 'Kitchen', k)];
+	const n2 = two(chain), unread = k => [nd(N1, 'Annex', k), nd(N2, 'Kitchen', k, { state: 'nokey', up: null, u: undefined })];
+	const n3 = two(unread), alone = two(k => [nd(N1, 'Annex', k)]);
+	ok(!n2.hubs.length && n2.nodes[1].via === n2.nodes[0] && !n3.hubs.length && !n3.byId['port:eth1'] && !alone.hubs.length,
+		'no switch drawn in front: a node wired behind another (router, node, node), a node that isn\'t read, a node alone on its port',
+		JSON.stringify({ chain: n2.hubs.length, unread: n3.hubs.length, alone: alone.hubs.length }));
+	const n4 = two(k => [nd(N1, 'Annex', k)], [['eth1', PC], ['eth1', NAS]]), h4 = n4.hubs[0];
+	const n5 = two(k => [nd(N1, 'Annex', k)], [['eth1', PC]]), h5 = n5.hubs[0];
+	ok(h4 && n4.devs.indexOf(h4) >= 0 && h4.count === 2 && h4.hub.nodes.length === 1 && h4.s.dn < h4.hub.s.dn && h5 && h5.kind === 'switch' && h5.name === 'Switch on LAN 1'
+		&& h5.count === 1 && h5.behind[0].mac === PC && n5.clients === 1,
+		'a node with devices on its port: the switch lists them, with what the port carries beyond the node; one device is behind the switch too',
+		JSON.stringify({ c4: h4 && h4.count, own: h4 && h4.s.dn, port: h4 && h4.hub.s.dn, n5: h5 && h5.name, c5: h5 && h5.count }));
+	// on the map: in an expanded view with room, by a corner of the router's plate, the nodes' cables from it; never with a device
+	// fewer on a stand than without it
+	const keepG = T.G();
+	T.useGeom(T.geomBig(1568, 780, 3)); A.slot = {}; A.gotAny = true; A.stands = null; A.nodeZones = null; A.hubFit = null;
+	const L1 = T.mapLayout(n1), hw = L1.wired.filter(x => x.hub)[0], m1 = T.buildMap(n1, L1);
+	A.layout = L1; const ch = T.chainOf(n1, n1.nodes[0].id).join();
+	const key = A.hubFit.key; A.hubFit = { key: key, spot: null }; A.stands = null;
+	const L0 = T.mapLayout(n1);
+	ok(L1.hubs.length === 1 && Object.keys(L1.hubOf).length === 3 && hw && hw.dev === h1 && T.HUB_SPOTS.indexOf(hw.slot) >= 0 && m1.svg.indexOf('data-link="port:eth1"') >= 0
+		&& L1.tray.length <= L0.tray.length && !L0.hubs.length && ch === 'port:eth1,' + n1.nodes[0].id,
+		'on the map: the switch by the router, the nodes\' cables from it, a node traced through it, and no device fewer on a stand',
+		JSON.stringify({ hubs: L1.hubs.length, at: hw && [hw.slot.cx, hw.slot.cy], tray: L1.tray.length, without: L0.tray.length, link: m1.svg.indexOf('data-link="port:eth1"') >= 0, ch }));
+	T.useGeom(keepG); A.stands = null; A.slot = {}; A.nodeZones = null; A.hubFit = null; A.layout = null;
+}
+
 process.exit(fails ? 1 : 0);

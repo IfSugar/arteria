@@ -20,7 +20,8 @@ from playwright.async_api import async_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
-SCENARIOS = ['home', 'bulbs', 'crowd', 'house', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd', 'wired']
+SCENARIOS = ['home', 'bulbs', 'crowd', 'house', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd', 'wired',
+             'meshswitch', 'meshswitch2', 'meshchain', 'meshnokey']
 fails = []
 
 
@@ -75,7 +76,7 @@ LINES_UNDER = r"""() => {
     const L = Arteria.state.layout, from = { wan: 'wan', more: 'router' }, end = { wan: 'router' }, out = [];
     if (L.snug > 1) return out;
     L.devs.concat(L.wired).forEach(x => { from[x.dev.id] = x.dev.node ? x.dev.node.id : 'router'; });
-    L.nodes.forEach(x => { const v = x.node.viaWired && x.node.via; from[x.node.id] = v && /^node:/.test(v.id) ? v.id : 'router'; });
+    L.nodes.forEach(x => { const v = x.node.viaWired && x.node.via; from[x.node.id] = v && /^node:/.test(v.id) ? v.id : (L.hubOf || {})[x.node.id] || 'router'; });
     const labs = [...document.querySelectorAll('#ar .ar-lb')].map(b => [b.getAttribute('data-id'), b.firstElementChild.getBoundingClientRect()]).filter(l => l[1].width);
     document.querySelectorAll('#arMapScene g.lk[data-link]').forEach(g => {
         const id = g.getAttribute('data-link'), p = g.querySelectorAll('path')[1], M = p && p.getScreenCTM(), len = p ? p.getTotalLength() : 0, n = 60;
@@ -143,7 +144,7 @@ async def scenario(b, scn, port):
         await pg.goto('http://127.0.0.1:%d/user1.asp' % port)
         await ready(pg)
         small = await pg.evaluate(STAGE)
-        tag = scn.ljust(10)
+        tag = scn.ljust(11)
         if scn == 'mesh4':   # four nodes and two zones: the busiest two get them, and the tray and its list name the other two
             await pg.wait_for_timeout(2200)   # a few samples in: the busiest nodes are known
             lb = await pg.evaluate("(document.querySelector('#arMapLabels .ar-lb[data-id=\"more\"]') || {}).innerText || ''")
@@ -227,6 +228,27 @@ async def scenario(b, scn, port):
             lbov_big += await pg.evaluate(LABEL_OVERLAPS); cover_big += await pg.evaluate(LABEL_COVERS); under_big += await pg.evaluate(LINES_UNDER)
             room_big.append(await pg.evaluate(ROOM))
             await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
+        if scn.startswith('mesh') and scn != 'mesh4':   # nodes on a switch: drawn between the router and them only where it's sure, and costs no stand
+            hub = await pg.evaluate(r"""() => { const A = Arteria.state, L = A.layout, net = A.net, sw = (L.hubs[0] || {}).dev;
+                const lane = id => { const e = document.querySelector('#arMapScene [data-lane="' + id + '|dn"]'); return e ? (e.classList.contains('t') ? 'pipe' : 'arc') : 'none'; };
+                const from = id => { const g = document.querySelector('#arMapScene g.lk[data-link="' + id + '"]'); return !!g; };
+                const r = { hubs: L.hubs.length, nodes: Object.keys(L.hubOf).length, tray: L.tray.length, pipe: sw ? lane(sw.id) : '', label: '', third: '', note: '', chain: '' };
+                if (sw) {
+                    const lb = document.querySelector('#arMapLabels .ar-lb[data-id="' + sw.id + '"]'); r.label = lb ? lb.innerText.replace(/\s+/g, ' ') : '';
+                    Arteria.pick(sw.id); r.note = Arteria._t.readoutFor(net).note; Arteria.pick(null);
+                    const nd = L.nodes.find(x => L.hubOf[x.node.id]); r.chain = Arteria._t.chainOf(net, nd.node.id).slice(0, 2).join(',');
+                    r.port = sw.hub.s.dn > 0 && Math.abs(sw.hub.s.dn - net.byId[sw.id].hub.s.dn) < 1e-9;
+                    /* the same devices laid out without the switch: no fewer on the tray */
+                    const key = A.hubFit.key; A.hubFit = { key: key, spot: null }; A.stands = null; Arteria.render(); r.trayNo = A.layout.tray.length;
+                    A.hubFit = null; A.stands = null; Arteria.render(); r.trayAgain = A.layout.tray.length;
+                }
+                return r; }""")
+            if scn in ('meshswitch', 'meshswitch2'):
+                check(hub['hubs'] == 1 and hub['nodes'] == 3 and hub['pipe'] == 'pipe' and 'Switch on LAN 2' in hub['label'] and hub['chain'].startswith('port:eth3,node:')
+                      and hub['note'].startswith('On it: Annex, Kitchen') and 'Master Bedroom' in hub['note'] and hub['port'] and hub['tray'] <= hub['trayNo'] and hub['trayAgain'] == hub['tray'],
+                      tag + ': nodes on a switch: the switch is drawn between the router and them, their cables leave from it, a node is traced through it (%s)' % hub)
+            else:
+                check(hub['hubs'] == 0 and hub['nodes'] == 0, tag + ': a node wired behind another, or a node not read: no switch drawn in front of the nodes (%s)' % hub)
         check(cover_big == 0, tag + 'expanded view: labels don\'t cover other devices (%d)' % cover_big)
         check(not under_big, tag + 'expanded view: no traffic line runs under another device\'s label (%s)' % (', '.join(under_big[:4]) or 'none'))
         if scn == 'crowd':   # a smaller window, where a crowd of labels has the least room
