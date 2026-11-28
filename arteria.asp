@@ -2714,7 +2714,9 @@ function arcPath(p0, p1, bulge, from, to) {
 /* Does a traffic line pass under label r (whose id is lid): its first and last 30% are left to the labels at its ends */
 function pathUnder(pa, r, lid) {
 	if (pa.bb[2] <= r[0] + 1 || pa.bb[0] >= r[2] - 1 || pa.bb[3] <= r[1] + 1 || pa.bb[1] >= r[3] - 1) return false;
-	var n = pa.pts.length, lo = lid && lid === pa.from ? Math.ceil(n * 0.3) : 0, hi = lid && lid === pa.to ? Math.floor(n * 0.7) : n;
+	/* the hub's label may cover the first 30% of a line leaving it: kept to 28% here, so a line drawn a little differently
+	   (its lanes, its corners) still isn't under it past 30% */
+	var n = pa.pts.length, lo = lid && lid === pa.from ? Math.ceil(n * 0.28) : 0, hi = lid && lid === pa.to ? Math.floor(n * 0.7) : n;
 	for (var i = lo; i < hi; i++) { var p = pa.pts[i]; if (p[0] > r[0] + 1 && p[0] < r[2] - 1 && p[1] > r[1] + 1 && p[1] < r[3] - 1) return true; }
 	return false;
 }
