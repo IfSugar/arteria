@@ -21,7 +21,7 @@ from playwright.async_api import async_playwright
 HERE = os.path.dirname(os.path.abspath(__file__))
 CHROME = sys.argv[1] if len(sys.argv) > 1 else (shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser'))
 SCENARIOS = ['home', 'bulbs', 'crowd', 'house', 'kinds1', 'kinds2', 'kinds3', 'kinds4', 'kinds5', 'kinds6', 'newer', 'nokey', 'offline', 'weak', 'busy', 'quiet', 'nonode', 'hostile', 'mesh4', 'nodecrowd', 'wired',
-             'meshswitch', 'meshswitch2', 'meshchain', 'meshnokey']
+             'meshswitch', 'meshswitch1', 'meshswitch2', 'meshchain', 'meshnokey']
 fails = []
 
 
@@ -237,16 +237,34 @@ async def scenario(b, scn, port):
                     const lb = document.querySelector('#arMapLabels .ar-lb[data-id="' + sw.id + '"]'); r.label = lb ? lb.innerText.replace(/\s+/g, ' ') : '';
                     Arteria.pick(sw.id); r.note = Arteria._t.readoutFor(net).note; Arteria.pick(null);
                     const nd = L.nodes.find(x => L.hubOf[x.node.id]); r.chain = Arteria._t.chainOf(net, nd.node.id).slice(0, 2).join(',');
-                    r.port = sw.hub.s.dn > 0 && Math.abs(sw.hub.s.dn - net.byId[sw.id].hub.s.dn) < 1e-9;
+                    /* one figure for it: its label, its readout and the list of the busiest show the same (the cable carries the whole port) */
+                    const lab = (document.querySelector('#arMapLabels .ar-lb[data-id="' + sw.id + '"] .v') || {}).textContent || '';
+                    Arteria.pick(sw.id); const ro = Arteria._t.readoutFor(net); Arteria.pick(null);
+                    const dv = net.byId[sw.id], sh = x => Arteria._t.short(x);
+                    r.same = lab.indexOf(sh(dv.dn)) >= 0 && Math.abs(parseFloat(ro.dnN) - (dv.dn >= 1 ? dv.dn : dv.dn * 1000)) < 0.06 * Math.max(1, dv.dn >= 1 ? dv.dn : dv.dn * 1000);
                     /* the same devices laid out without the switch: no fewer on the tray */
                     const key = A.hubFit.key; A.hubFit = { key: key, spot: null }; A.stands = null; Arteria.render(); r.trayNo = A.layout.tray.length;
                     A.hubFit = null; A.stands = null; Arteria.render(); r.trayAgain = A.layout.tray.length;
                 }
                 return r; }""")
-            if scn in ('meshswitch', 'meshswitch2'):
+            if scn in ('meshswitch', 'meshswitch1', 'meshswitch2'):
+                extra = {'meshswitch': '', 'meshswitch1': ' and Garage PC', 'meshswitch2': ' and 2 devices'}[scn]
                 check(hub['hubs'] == 1 and hub['nodes'] == 3 and hub['pipe'] == 'pipe' and 'Switch on LAN 2' in hub['label'] and hub['chain'].startswith('port:eth3,node:')
-                      and hub['note'].startswith('On it: Annex, Kitchen') and 'Master Bedroom' in hub['note'] and hub['port'] and hub['tray'] <= hub['trayNo'] and hub['trayAgain'] == hub['tray'],
-                      tag + ': nodes on a switch: the switch is drawn between the router and them, their cables leave from it, a node is traced through it (%s)' % hub)
+                      and hub['note'].startswith('On it: Annex, Kitchen' + (', Master Bedroom' + extra if extra else ' and Master Bedroom')) and hub['tray'] <= hub['trayNo'] and hub['trayAgain'] == hub['tray']
+                      and hub['same'], tag + ': nodes on a switch: the switch is drawn between the router and them, their cables leave from it, a node is traced through it, '
+                      'one figure for it everywhere (%s)' % hub)
+                # in smaller windows too: the switch never on a node's drawing or behind the router, and nothing under or over a label
+                fit = []
+                for w, h in ((1440, 900), (1180, 760)):
+                    await pg.set_viewport_size({'width': w, 'height': h}); await pg.wait_for_timeout(700)
+                    r = await pg.evaluate(ROOM); u = await pg.evaluate(LINES_UNDER); c = await pg.evaluate(LABEL_COVERS)
+                    # behind the router: drawn before it (less deep) where the two drawings meet, so the router hides it. Beside it,
+                    # by the plate's left corner, is fine even though it is a little less deep
+                    behind = await pg.evaluate("""() => { const L = Arteria.state.layout, T = Arteria._t, rt = T.objRouter(Arteria.state.net.router.model);
+                        return L.wired.filter(x => { const o = T.objDevice('hub', 'switch', x.slot.cx, x.slot.cy, 'L'); return x.hub && o.depth < rt.depth && T.hullsMeet(o.hull(), rt.hull(), 0); }).length; }""")
+                    fit.append((w, [o for o in r['on'] if 'port:' in o], u, c, behind))
+                await pg.set_viewport_size({'width': 1600, 'height': 900}); await pg.wait_for_timeout(500)
+                check(all(not f[1] and not f[2] and f[3] == 0 and f[4] == 0 for f in fit), tag + ': in smaller windows, the switch is on no node\'s drawing, not behind the router, and lines and labels keep apart (%s)' % fit)
             else:
                 check(hub['hubs'] == 0 and hub['nodes'] == 0, tag + ': a node wired behind another, or a node not read: no switch drawn in front of the nodes (%s)' % hub)
         check(cover_big == 0, tag + 'expanded view: labels don\'t cover other devices (%d)' % cover_big)
@@ -539,6 +557,20 @@ async def rename(b, port):
         await pg.wait_for_timeout(2300)
         kind = await pg.evaluate("Arteria.state.net.byId['%s'].kind" % mac)
         check('<Lounge purifier>%s>0>0>>' % mac in saved and saved.count(mac) == 1 and kind == 'purifier', 'rename: Enter saves it in the router\'s client list, and the device is drawn as an air purifier (%s)' % kind)
+        # a smart speaker saves its maker's icon; a plain speaker none, and a name without a kind word doesn't keep the Google
+        # Home icon an earlier version saved for it (kept, it would make the speaker a smart speaker)
+        async def ren_to(v):
+            await pg.click('#arRoEdit'); await pg.fill('#arRoIn', v); await pg.keyboard.press('Enter')
+            await pg.wait_for_function("document.getElementById('arRoName').textContent === %r && document.getElementById('arRoEd').classList.contains('hide')" % v, timeout=15000)
+            return await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
+        echo = await ren_to('Echo Dot')
+        sonos = await ren_to('Kitchen Sonos')
+        await pg.evaluate("(m => fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => fetch('/start_apply.htm', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'action_mode=apply&action_script=saveNvram&custom_clientlist=' + encodeURIComponent(n.custom.replace('<Kitchen Sonos>' + m + '>0>0>>', '<Kitchen Sonos>' + m + '>0>43>>')) })))('%s')" % mac)
+        old = '<Kitchen Sonos>%s>0>43>>' % mac in await pg.evaluate("fetch('/ext/arteria/names.htm').then(r => r.json()).then(n => n.custom)")
+        plain = await ren_to('Kitchen')
+        check('<Echo Dot>%s>0>44>>' % mac in echo and '<Kitchen Sonos>%s>0>0>>' % mac in sonos and old and '<Kitchen>%s>0>0>>' % mac in plain,
+              'rename: an Echo saves the Alexa icon, a Sonos none, and renaming one to a name without a kind word drops the Google Home icon an earlier version saved (%s)'
+              % ([e for e in (echo + sonos + plain).split('<') if mac in e] + [old],))
         # Escape while renaming in the expanded view only leaves the name
         await pg.click('#arBig'); await pg.wait_for_timeout(300)
         await pg.click('#arRoName'); await pg.keyboard.press('Escape'); await pg.wait_for_timeout(150)
