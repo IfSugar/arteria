@@ -575,7 +575,7 @@ var TYPE_KIND = {
 	9: 'phone', 10: 'phone', 19: 'phone', 28: 'phone', 33: 'phone',
 	20: 'tablet', 21: 'tablet', 25: 'tablet', 29: 'tablet', 73: 'tablet',
 	23: 'tv', 11: 'streamer', 12: 'streamer', 27: 'streamer', 46: 'streamer', 47: 'soundbar',
-	43: 'speaker', 44: 'speaker', 45: 'speaker', 48: 'speaker', 81: 'speaker',
+	43: 'smartspeaker', 44: 'smartspeaker', 45: 'smartspeaker', 48: 'speaker', 81: 'speaker',   /* Google Home, Amazon Alexa, Apple HomePod: smart speakers */
 	7: 'console', 74: 'console', 75: 'console', 76: 'console', 77: 'console',
 	4: 'nas', 2: 'switch', 24: 'switch', 78: 'switch',
 	18: 'printer', 26: 'printer',
@@ -589,11 +589,20 @@ var TYPE_KIND = {
    a DHCP vendor class -> 9/22/30/31): a clear name beats these, even when they were saved with a nickname. */
 /* Renaming a device on the page saves the router's icon for what the name says, so the router's client list shows the same
    kind; a kind the router has no icon for saves none (0), so a stale guess doesn't outrank the name. An LED strip saves the
-   router's light icon and a boiler its appliance icon: the name still makes them a strip and a boiler (see SUB). */
-var ASUS_TYPE = { desktop: 34, mac: 14, laptop: 35, phone: 10, tablet: 20, tv: 23, streamer: 11, soundbar: 47, speaker: 43, console: 7, nas: 4,
+   router's light icon and a boiler its appliance icon: the name still makes them a strip and a boiler (see SUB). A smart
+   speaker saves the router's icon for its maker's (Google Home, Amazon Alexa, Apple HomePod, see asusType); a plain speaker
+   (a Sonos) none: the router has no icon for one. */
+var ASUS_TYPE = { desktop: 34, mac: 14, laptop: 35, phone: 10, tablet: 20, tv: 23, streamer: 11, soundbar: 47, smartspeaker: 43, console: 7, nas: 4,
 	printer: 18, camera: 5, doorbell: 85, lock: 63, air: 49, light: 60, vacuum: 61, plug: 70, sensor: 62, watch: 64, appliance: 50, strip: 60, boiler: 50 };
+function asusType(kind, txt) {   /* txt: the name, and the maker */
+	if (kind === 'smartspeaker') return /echo|alexa|amazon/i.test(txt) ? 44 : /homepod|apple/i.test(txt) ? 45 : 43;
+	return ASUS_TYPE[kind] || 0;
+}
 /* Kinds that are a closer look at a broader one the router has an icon for: a name saying one of these narrows that icon */
 var SUB = { strip: 'light', boiler: 'appliance', washer: 'appliance', dryer: 'appliance', dishwasher: 'appliance' };
+/* An icon a name of another kind sees through: the router's smart-speaker icons on a speaker its name says is a plain one
+   (a Sonos). The router has no other speaker icon, and earlier versions of Arteria saved the Google Home one for any speaker. */
+var NAME_OVER = { speaker: 'smartspeaker' };
 /* The router's client list (custom_clientlist) with one device's entry changed, as the router's own editor writes it:
    "<name>MAC>0>icon>>", other fields kept as they were (newer firmware writes a few more empty ones: a new entry takes the
    shape of the others). No name removes the entry: the router's own name and icon come back. Every other entry stays as it
@@ -633,7 +642,7 @@ var KIND_STRONG = [
 	['soundbar', /sound ?bar|sonos[ _-]?(arc|beam|ray)|playbar|playbase|av[ -]?receiver|\bavr\b|denon(?![ _-]?home)|marantz|yamaha|onkyo|home[ -]?(cinema|theat)|\bhw-[a-z]{1,2}\d{2,3}|\bpolk\b|\barcam\b/i],   /* before TV: "Vizio soundbar" */
 	['tv', /\btv\b|tv$|television|bravia|webos|tizen|\b[oq]led|hisense(?![ _-]?(ac|a\/c|air|fridge))|vizio|^(kd|xr|xbr|kdl)[-_]?\d{2}[a-z]|^(qn|un|qe|ue|gq)\d{2}[a-z]|\btcl\b(?![ _-]?(ac|a\/c|air|phone|tab))|viera|aquos|ambilight|vidaa|the[ _-]?frame|grundig|\bmetz\b|loewe/i],   /* with Sony and Samsung model numbers */
 	['display', /echo[ _-]?(show|spot|hub)|nest[ _-]?hub|google[ _-]?home[ _-]?hub|smart[ _-]?(display|clock)|\bportal\b|lenovo[ _-]?smart|(photo|picture|digital)[ _-]?frame|nixplay|aura[ _-]?frame|meural|frameo|pix-?star/i],   /* before smart speaker: an Echo Show */
-	['smartspeaker', /homepod|\becho\b|echo[ _-]?(dot|pop|studio)|alexa(?!['’]s)|google[ _-]?home|nest[ _-]?(mini|audio)|^amazon-[0-9a-f]{6,}$/i],   /* Amazon's own devices call themselves amazon-<hex>: Echos, most often */
+	['smartspeaker', /smart[ _-]?speaker|homepod|\becho\b|echo[ _-]?(dot|pop|studio)|alexa(?!['’]s)|google[ _-]?home|nest[ _-]?(mini|audio)|^amazon-[0-9a-f]{6,}$/i],   /* Amazon's own devices call themselves amazon-<hex>: Echos, most often */
 	['speaker', /speaker|sonos|subwoofer|\bsubw\b|\bbose\b|\bheos\b|\bjbl\b|bluesound|\bwiim\b|libratone|bang[ _-]?(&|and)?[ _-]?olufsen|\bbeo(play|sound|lab)|harman|marshall|ultimate[ _-]?ears|\bnaim\b|devialet|\bkef\b|audio[ _-]?pro|volumio|moode|squeezebox|picoreplayer|denon[ _-]?home/i],
 	['console', /playstation|\bps[345]\b|xbox|nintendo|steam ?(deck|machine)|\bswitch[ _-]?(oled|lite)\b|rog[ _-]?ally|legion[ _-]?go|ayaneo|retroid|anbernic|\bwii\b|msi[ _-]?claw/i],
 	['fitness', /peloton|\btonal\b|treadmill|exercise|fitness|\browing|\brower\b|concept[ _-]?2|ergometer|hydrow|wahoo|\bkickr|\btacx|\bzwift|elliptical|spin[ _-]?bike|indoor[ _-]?(bike|cycle)|\bechelon|nordictrack|\bifit\b|technogym|bowflex|speediance/i],
@@ -761,7 +770,7 @@ function classify(mac, name, link, al) {
 	   A name that says a closer kind of what the icon shows narrows it: a light named "Desk LED strip" is an LED strip. */
 	var key = function (s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
 	var typed = names[0] && [l && l.host, m && m.name].every(function (h) { return !h || key(h) !== key(names[0]); }), mine = typed ? byName(names[0], 0) : null;
-	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt) && !(mine && PERSONAL[TYPE_KIND[ct]] && !PERSONAL[mine.kind]) && !(mine && SUB[mine.kind] === TYPE_KIND[ct])) return res(TYPE_KIND[ct], 'your icon');
+	if (ct && TYPE_KIND[ct] && ct !== nt && (!TYPE_LOOSE[ct] || nt) && !(mine && PERSONAL[TYPE_KIND[ct]] && !PERSONAL[mine.kind]) && !(mine && (SUB[mine.kind] === TYPE_KIND[ct] || NAME_OVER[mine.kind] === TYPE_KIND[ct]))) return res(TYPE_KIND[ct], 'your icon');
 	/* 2. a name that says what it is: your nickname, then the names the device gave */
 	for (j = 0; j < names.length; j++) if ((r = byName(names[j], j))) return r;
 	/* a Wi-Fi module's maker with the name its firmware gives, when the pair says what the device is */
@@ -4216,7 +4225,8 @@ function renameSave() {
 	var job = (A.renQ || Promise.resolve()).then(liveClientList).then(function (live) {
 		var lc = parseNames({ custom: live.custom }).custom[r.mac];
 		/* the router's icon for what the name says (none when it has no icon for it); a name without a kind keeps the icon */
-		var raw = renameList(live.custom, r.mac, v, k ? ASUS_TYPE[k.kind] || 0 : (lc ? lc.type : 0));
+		var m0 = A.names && A.names.nmp && A.names.nmp[r.mac];
+		var raw = renameList(live.custom, r.mac, v, k ? asusType(k.kind, v + ' ' + (m0 && m0.vendor || '')) : (lc ? lc.type : 0));
 		/* the same token again: once saved, the router deletes the copy of its list it wrote for this rename */
 		return fetch('/start_apply.htm', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 			body: pokeBody('saveNvram;start_arterianames' + live.tok) + '&custom_clientlist=' + encodeURIComponent(raw) }).then(null, function () {});   /* sent: the check says whether it took */
@@ -4678,7 +4688,7 @@ function initial() {
 	boot();
 }
 window.initial = initial;
-window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, wanArea: wanArea, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, standGroups: standGroups, placeLabels: placeLabels, shapeAt: shapeAt, hullsMeet: hullsMeet, labelSpots: labelSpots, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout, HUB_SPOTS: HUB_SPOTS }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
+window.Arteria = { _t: { short: short, renameList: renameList, nameKind: nameKind, ASUS_TYPE: ASUS_TYPE, asusType: asusType, SUB: SUB, objDevice: objDevice, objNode: objNode, objRouter: objRouter, iconSvg: iconSvg, ICON: ICON, classify: classify, P: P, poly: poly, formOf: formOf, hubBody: hubBody, Obj: Obj, buildAliases: buildAliases, isPrivate: isPrivate, detailsFor: detailsFor, nameInfo: nameInfo, KIND_LABEL: KIND_LABEL, TYPE_KIND: TYPE_KIND, KIND_STRONG: KIND_STRONG, KIND_WEAK: KIND_WEAK, buildReport: buildReport, geomSmall: geomSmall, geomBig: geomBig, wanArea: wanArea, G: function () { return G; }, useGeom: function (g) { G = g; }, mapLayout: mapLayout, standGroups: standGroups, placeLabels: placeLabels, shapeAt: shapeAt, hullsMeet: hullsMeet, labelSpots: labelSpots, pickNodes: pickNodes, hiddenSet: hiddenSet, chainOf: chainOf, readoutFor: readoutFor, renameTarget: renameTarget, linkShort: linkShort, trayName: trayName, noZoneText: noZoneText, buildMap: buildMap, flowGroups: flowGroups, buildFlow: buildFlow, flowLayout: flowLayout, HUB_SPOTS: HUB_SPOTS }, state: A, setBig: setBig, render: render, onSample: onSample, report: function () { return buildReport(A.net); }, buildNet: buildNet, parseNames: parseNames, pick: pick, setTab: setTab, setMode: setMode };
 })();
 </script>
 </head>
