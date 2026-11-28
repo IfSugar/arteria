@@ -205,12 +205,32 @@ nets_json() {   # ["ifname","network name",1 for a radio's own interface] for ev
 # The firmware's own map of its ports ('rc port_status', on firmware that has it): each LAN port's number as printed on the
 # router, its interface and its link. lan_ifnames lists the ports in the router's order on most models, but not on all:
 # the RT-AX88U's LAN 1-4 are eth4-eth1, and its LAN 5-8 all sit behind eth5, a link to a second switch chip that is always up.
+# 'rc port_status', at most PS_WAIT seconds. On some routers with AiMesh nodes it can stop answering and never come back
+# (a GT-AX11000 Pro with two nodes: the nodes' part comes from a closed library), and a sampler waiting on it froze
+# with it, its lock still held, so no sampler the page started could run. When it doesn't answer, the last map it gave
+# is used (a router's ports don't change), and it isn't asked again for 10 minutes. It never holds the sampler's lock.
+PS_WAIT=${AR_PS_WAIT:-5}
+port_status() {
+	ps_f="$TMPD/port_status"
+	if [ ! -d "$TMPD" ] || [ -L "$TMPD" ] || [ ! -O "$TMPD" ]; then rc port_status 2>&1 8>&- 9>&-; return 0; fi   # no folder of ours yet (check)
+	if ps_s=$(date -r "$ps_f.slow" +%s 2>/dev/null) && [ $(( $(now) - ps_s )) -lt 600 ]; then cat "$ps_f" 2>/dev/null; return 0; fi
+	( exec rc port_status > "$ps_f.$$" 2>&1 8>&- 9>&- ) &
+	ps_p=$!
+	if wait_pid "$ps_p" "$PS_WAIT"; then
+		mv -f "$ps_f.$$" "$ps_f"; rm -f "$ps_f.slow"
+	else
+		kill -9 "$ps_p" 2>/dev/null; rm -f "$ps_f.$$"   # not waited for: a call stuck in the kernel would keep this one too
+		[ -f "$ps_f.slow" ] || log "the firmware's port map ('rc port_status') didn't answer within $PS_WAIT s: using the last one it gave, and asking again in 10 minutes"
+		touch "$ps_f.slow"
+	fi
+	cat "$ps_f" 2>/dev/null
+}
 port_table() {   # lines "ifname number up Mb/s" for the LAN ports; nothing on firmware without the map
 	have rc || return 0
 	# the router's own ports come first (a USB port's devices on lines of their own, usb_path=, after it); what follows, its
 	# AiMesh nodes' ports from a closed library, is left out: the parse stops at the end of the router's block, or at a port
 	# label it has already seen. A bond's members are named as the bond (lan_ports).
-	rc port_status 2>&1 | awk -v bm="$(bonds | awk '{ for (i = 2; i <= NF; i++) printf "%s=%s ", $i, $1 }')" '
+	port_status | awk -v bm="$(bonds | awk '{ for (i = 2; i <= NF; i++) printf "%s=%s ", $i, $1 }')" '
 		BEGIN { n = split(bm, a, " "); for (k = 1; k <= n; k++) { split(a[k], b, "="); B[b[1]] = b[2] } }
 		go && !/phy_port_id=/ && !/^[ \t]*usb_path=/ { exit } /phy_port_id=/ { go = 1; l = ""; i = ""; s = ""; r = ""
 		n = split($0, f, ","); for (k = 1; k <= n; k++) { e = f[k]; gsub(/^ +| +$/, "", e); p = index(e, "="); if (!p) continue
@@ -866,7 +886,10 @@ service_event() {   # action service
 		"$NAME")
 			tmpd; touch "$TMPD/heartbeat"
 			# the sampler's own errors are kept (doctor shows them): it is started with nowhere else to say anything
-			sampler_running || paused_recently || { : > "$TMPD/sampler.err"; (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>> "$TMPD/sampler.err" &); } ;;   # paused: the page says why
+			# a lock left held by what a sampler that's gone left running: ended first, or this sampler would give up at once
+			sampler_running || paused_recently || {
+				lock_left && { lock_holders; log "ending what a stopped sampler left holding its lock (${LH_CMDS#; })"; lock_clear; }
+				: > "$TMPD/sampler.err"; (sh "$SCRIPT" sampler < /dev/null > /dev/null 2>> "$TMPD/sampler.err" &); } ;;   # paused: the page says why
 		"${NAME}stop")
 			rm -f "$TMPD/heartbeat"
 			p=$(cat "$TMPD/sampler.pid" 2>/dev/null)
@@ -894,6 +917,36 @@ stop_all() {   # sampler and node sessions, e.g. before an update or uninstall
 	pid_ours "$p" "$NAME.sh sampler" && kill "$p" 2>/dev/null
 	node_stop_all
 	rm -f "$TMPD/sampler.pid" "$TMPD/heartbeat"
+	lock_clear   # a sampler waiting on a program that never ends only stops when that program does: both go
+}
+
+# The sampler's lock. Only something Arteria started has it open (it's in Arteria's own folder): a sampler, or what a
+# sampler started and left running when it was killed. While anything has it open, every sampler the page starts gives
+# up at once.
+lock_free() { [ ! -f "$TMPD/sampler.lock" ] || ( flock -n 9 ) 2>/dev/null 9< "$TMPD/sampler.lock"; }
+lock_holders() {   # -> LH_PIDS, and LH_CMDS ("; sh arteria.sh; rc", each program's name only)
+	LH_PIDS=""; LH_CMDS=""; lh_l="$TMPD/sampler.lock"
+	for lh_q in /proc/[0-9]*; do
+		[ "${lh_q#/proc/}" = "$$" ] && continue
+		for lh_d in "$lh_q"/fd/*; do
+			[ "$(readlink "$lh_d" 2>/dev/null)" = "$lh_l" ] || continue
+			LH_PIDS="$LH_PIDS ${lh_q#/proc/}"; LH_CMDS="$LH_CMDS; $(tr '\000' ' ' 2>/dev/null < "$lh_q/cmdline" | awk 'NR == 1 { n = split($1, a, "/"); p = a[n]; if (p ~ /^(ba|a|)sh$/ && $2 != "") { n = split($2, a, "/"); p = p " " a[n] } print p }' | tr -cd '\040-\176' | cut -c1-40)"; break
+		done
+	done
+}
+lock_clear() {   # ends whatever holds the lock -> 0 once it's free
+	lock_free && return 0
+	lock_holders; [ -n "$LH_PIDS" ] && kill $LH_PIDS 2>/dev/null
+	dr_wait 3 lock_free && return 0
+	lock_holders; [ -n "$LH_PIDS" ] && kill -9 $LH_PIDS 2>/dev/null
+	dr_wait 2 lock_free
+}
+# Held, with no sampler running, since the last sampler opened it over 20 s ago: left by one that's gone (a new sampler
+# opens it, which dates it, just before it writes its pid)
+lock_left() {
+	lock_free && return 1
+	ll_m=$(date -r "$TMPD/sampler.lock" +%s 2>/dev/null) || return 1
+	[ $(( $(now) - ll_m )) -ge 20 ]
 }
 
 # ---- web UI (Merlin Addons API) ------------------------------------------------
@@ -1845,27 +1898,17 @@ dr_request() {
 # A lock left held: something still has the sampler's lock open (a process left from a sampler that was killed), so every
 # sampler the page starts gives up at once.
 dr_lock() {
-	l="$TMPD/sampler.lock"
 	sampler_running && return 0
-	[ -f "$l" ] || return 0
-	( flock -n 9 ) 2>/dev/null 9< "$l" && return 0
-	hp=""; hc=""
-	for q in /proc/[0-9]*; do
-		for d in "$q"/fd/*; do
-			[ "$(readlink "$d" 2>/dev/null)" = "$l" ] || continue
-			hp="$hp ${q#/proc/}"; hc="$hc; $(tr '\000' ' ' 2>/dev/null < "$q/cmdline" | awk 'NR == 1 { n = split($1, a, "/"); p = a[n]; if (p ~ /^(ba|a|)sh$/ && $2 != "") { n = split($2, a, "/"); p = p " " a[n] } print p }' | tr -cd '\040-\176' | cut -c1-40)"; break
-		done
-	done
+	lock_free && return 0
+	lock_holders; hc=$LH_CMDS
 	if [ "$DR_FX" = 1 ]; then   # only something Arteria started has its private lock (in its own folder) open: all of them go
-		kill $hp 2>/dev/null
-		if ! dr_wait 3 dr_lock_free; then
+		if ! lock_clear; then
 			dr_warn "something still holds the sampler's lock, so the page can't start sampling${hc:+ (${hc#; })}, and stopping it didn't free it: a reboot does"
 			return 0
 		fi
 	fi
 	dr_fix "something still holds the sampler's lock, so the page can't start sampling${hc:+ (${hc#; })}"
 }
-dr_lock_free() { ( flock -n 9 ) 2>/dev/null 9< "$TMPD/sampler.lock"; }
 
 doctor() {   # [fix]
 	tmpd; DR_FX=0; [ "$1" = fix ] && DR_FX=1; DR_F=0; DR_W=0; DR_D=0

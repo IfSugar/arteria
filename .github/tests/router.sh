@@ -122,6 +122,7 @@ EOF
 cat > "$B/rc" <<EOF
 #!$bb sh
 [ "\$1" = port_status ] || exit 0
+[ -f "$t/rc-hang" ] && exec sleep 601   # a test: the firmware's port map stops answering
 p() { printf ' phy_port_id=%s, label_name=%s, cap=2, cap_name=LAN, max_rate=1000, ifname=%s, state=%s, link_rate=%s, duplex=full, tx_packets=1, rx_packets=1, tx_bytes=1, rx_bytes=1, crc_errors=0\\n' "\$@" >&2; }
 p 4 W0 eth0 up 1000
 [ -f "$t/rc-usb-first" ] && printf ' phy_port_id=-1, label_name=U1, cap=8, cap_name=USB, max_rate=5000, ifname=(null), state=down, link_rate=0\\nusb_path=1-1, node=x, type=storage, manufacturer=Acme, product=Stick, serial=SECRET123\\n' >&2
@@ -920,6 +921,39 @@ echo "$other" > "$R/tmp/arteria/sampler.pid"; echo "$other" > "$R/tmp/arteria/no
 runi startup > /dev/null 2>&1   # stops the sampler and node sessions, as an update or uninstall does
 kill -0 "$other" 2>/dev/null && ok "stale pid files never signal another process" || bad "Arteria killed a process that wasn't its own"
 kill "$other" 2>/dev/null; wait "$other" 2>/dev/null || true
+
+# ---- 3a: a firmware call that never ends, and a lock left held -----------------------------------
+# The firmware's port map stops answering (a GT-AX11000 Pro with two nodes): the sampler uses the last map it gave and goes
+# on, the call is ended, and the system log says so once
+hung() { pgrep -f "sleep 601" > /dev/null 2>&1; }
+running_sampler() { [ -f "$R/tmp/arteria/sampler.pid" ] && kill -0 "$(cat "$R/tmp/arteria/sampler.pid" 2>/dev/null)" 2>/dev/null; }
+touch "$t/rc-hang"; rm -f "$W/live.htm"; : > "$t/syslog"
+AR_PS_WAIT=1 runi service_event start arteria
+waitfor 10 seq_at_least 2
+if seq_at_least 2 && ! hung && [ "$(grep -c "port map ('rc port_status') didn't answer within 1 s" "$t/syslog")" = 1 ] && grep -q '"plab":{"eth' "$W/live.htm"; then
+	ok "a firmware port map that never answers: the sampler goes on with the last map it gave, the call is ended, the log says so once"
+else bad "port map that never answers (seq $(grep -o '"seq":[0-9]*' "$W/live.htm" 2>/dev/null), hung: $(pgrep -f 'sleep 601' | wc -l)):"; cat "$t/syslog"; fi
+runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
+pkill -f "sleep 601" 2>/dev/null || true; rm -f "$t/rc-hang" "$R/tmp/arteria/port_status.slow"
+# Something a sampler that's gone left holding its lock (the call above, where nothing ended it): the page's next request
+# ends it and sampling starts. A lock just opened (a sampler starting) is left alone
+lock_holder() { ( exec "$bb" sh -c 'flock 9; while :; do sleep 1; done' arteria-left 9>"$R/tmp/arteria/sampler.lock" ) & holder=$!; sleep 0.5; }
+lock_holder; : > "$t/syslog"
+runi service_event start arteria; sleep 1.5
+if kill -0 $holder 2>/dev/null && ! running_sampler && grep -q 'another sampler holds' "$R/tmp/arteria/sampler.err"; then
+	touch -d '1 minute ago' "$R/tmp/arteria/sampler.lock"
+	runi service_event start arteria; waitfor 8 running_sampler
+	if ! kill -0 $holder 2>/dev/null && running_sampler && grep -q "ending what a stopped sampler left holding its lock" "$t/syslog"; then
+		ok "a lock left held by what a stopped sampler left running: the page's next request ends it, and sampling starts"
+	else bad "a lock left held, the page's request (holder $(kill -0 $holder 2>/dev/null && echo alive || echo gone)):"; cat "$t/syslog"; cat "$R/tmp/arteria/sampler.err"; fi
+else bad "a lock just opened was taken from its holder, or a sampler ran without it"; cat "$R/tmp/arteria/sampler.err"; fi
+kill $holder 2>/dev/null || true; wait $holder 2>/dev/null || true
+runi service_event start arteriastop; waitfor 6 sampler_gone; waitfor 6 no_session
+# An update or uninstall (stop_all) ends what holds the lock too, not only the sampler whose pid it knows
+lock_holder; runi startup > /dev/null 2>&1
+kill -0 $holder 2>/dev/null && { bad "stopping Arteria (an update) left something holding the sampler's lock"; kill $holder; } \
+	|| ok "stopping Arteria (an update or uninstall) ends whatever holds the sampler's lock"
+wait $holder 2>/dev/null || true
 rm -rf "$R/tmp/arteria" "$W" "$R/tmp/menuTree.js" "$R/jffs/addons/arteria/webui_page" "$R"/www/user/user*
 
 # /tmp/arteria planted as a link by someone else: Arteria won't use it, so nothing runs or is written through it
